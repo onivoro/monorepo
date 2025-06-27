@@ -1,0 +1,8 @@
+{
+  "name": "lib-browser-react-cognito",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/browser/react-cognito/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {}
+}

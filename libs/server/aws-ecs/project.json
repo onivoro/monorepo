@@ -1,0 +1,8 @@
+{
+  "name": "lib-server-aws-ecs",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/aws-ecs/src",
+  "projectType": "library",
+  "targets": {},
+  "tags": []
+}

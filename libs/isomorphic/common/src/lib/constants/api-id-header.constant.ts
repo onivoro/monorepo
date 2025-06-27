@@ -1,0 +1,1 @@
+export const apiIdHeader = 'x-api-id';

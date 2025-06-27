@@ -1,0 +1,8 @@
+{
+  "name": "lib-server-open-ai",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/open-ai/src",
+  "projectType": "library",
+  "targets": {},
+  "tags": []
+}

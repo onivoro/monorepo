@@ -1,0 +1,21 @@
+// Bun Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`EcsService mapObjectToEcsEnvironmentArray given "{"hot":"sauce"}", lives up to its name 1`] = `
+[
+  {
+    "Name": "hot",
+    "Value": "sauce",
+  },
+]
+`;
+
+exports[`EcsService mapObjectToEcsEnvironmentArray given "null", lives up to its name 1`] = `[]`;
+
+exports[`EcsService mapObjectToEcsEnvironmentArray given "{"age":337}", lives up to its name 1`] = `
+[
+  {
+    "Name": "age",
+    "Value": 337,
+  },
+]
+`;

@@ -1,0 +1,21 @@
+{
+    "workbench.colorCustomizations": {
+        "[Default Dark+]": {
+             "activityBar.background": "#e1098a",
+            "activityBar.foreground": "#09e1d3",
+            "statusBar.background": "#e1098a",
+            "statusBar.foreground": "#09e1d3",
+            "titleBar.activeBackground": "#e1098a",
+            "titleBar.activeForeground": "#09e1d3"
+        },
+        "[Default Light+]": {
+            "activityBar.background": "#e1098a",
+            "activityBar.foreground": "#09e1d3",
+            "statusBar.background": "#e1098a",
+            "statusBar.foreground": "#09e1d3",
+            "titleBar.activeBackground": "#e1098a",
+            "titleBar.activeForeground": "#09e1d3"
+        }
+    },
+    "nxConsole.generateAiAgentRules": true
+}

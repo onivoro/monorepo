@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.isomorphic.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "outDir": "../../../dist/out-tsc"
+  },
+  "files": [],
+  "include": [],
+  "references": [
+    {
+      "path": "./tsconfig.lib.json"
+    }
+  ]
+}

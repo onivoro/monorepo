@@ -1,0 +1,8 @@
+{
+  "name": "lib-server-aws-sqs",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/aws-sqs/src",
+  "projectType": "library",
+  "targets": {},
+  "tags": []
+}

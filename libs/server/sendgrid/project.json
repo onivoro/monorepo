@@ -1,0 +1,8 @@
+{
+  "name": "lib-server-sendgrid",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/sendgrid/src",
+  "projectType": "library",
+  "targets": {},
+  "tags": []
+}

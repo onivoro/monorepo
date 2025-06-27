@@ -1,0 +1,8 @@
+{
+  "name": "lib-isomorphic-common",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/isomorphic/common/src",
+  "projectType": "library",
+  "targets": {},
+  "tags": []
+}

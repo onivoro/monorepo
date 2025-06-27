@@ -1,0 +1,8 @@
+{
+  "name": "lib-browser-react-common",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/browser/react-common/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {}
+}

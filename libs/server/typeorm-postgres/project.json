@@ -1,0 +1,8 @@
+{
+  "name": "lib-server-typeorm-postgres",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/typeorm-postgres/src",
+  "projectType": "library",
+  "targets": {},
+  "tags": []
+}

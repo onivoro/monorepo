@@ -1,0 +1,1 @@
+export type TCreateable = { createdAt: Date | string };

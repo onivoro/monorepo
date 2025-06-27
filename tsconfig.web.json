@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "allowJs": false,
+    "esModuleInterop": false,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "types": [
+      "@nx/react/typings/cssmodule.d.ts",
+      "@nx/react/typings/image.d.ts",
+      "node",
+      "vite/client",
+    ],
+  },
+  "references": [
+    { "path": "./libs/browser/amplify/tsconfig.json" },
+    { "path": "./libs/browser/common/tsconfig.json" },
+    { "path": "./libs/browser/components/tsconfig.json" },
+    { "path": "./libs/browser/forms/tsconfig.json" },
+    { "path": "./libs/browser/monaco/tsconfig.json" },
+  ]
+}

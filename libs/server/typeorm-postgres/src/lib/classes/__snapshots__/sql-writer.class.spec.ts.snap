@@ -1,0 +1,8 @@
+// Bun Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`SqlWriter addColumn worx 1`] = `"ALTER TABLE "blah" ADD "id" character varying PRIMARY KEY "`;
+
+exports[`SqlWriter createTable worx 1`] = `
+"CREATE TABLE "blah" ("id" character varying PRIMARY KEY ,
+"active" boolean NOT NULL );"
+`;

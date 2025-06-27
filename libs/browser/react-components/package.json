@@ -1,0 +1,22 @@
+{
+  "name": "@onivoro/browser-react-components",
+  "version": "0.0.1",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./index.mjs",
+      "require": "./index.js"
+    }
+  },
+  "dependencies": {
+    "@radix-ui/react-select": "2.1.2"
+  },
+  "peerDependencies": {
+    "@mui/material": "^7.0.0",
+    "@emotion/react": "^11.0.0",
+    "@emotion/styled": "^11.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  }
+}

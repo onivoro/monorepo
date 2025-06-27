@@ -1,0 +1,1 @@
+export type TControlRenderer = ({ isSubmitting, isDirty, isValid }: any, form?: any) => any;
