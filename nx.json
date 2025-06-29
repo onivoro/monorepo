@@ -125,8 +125,37 @@
     }
   },
   "release": {
+    "projects": ["server-*"],
+    "projectsRelationship": "fixed",
+    "releaseTagPattern": "@onivoro/server-packages-v{version}",
     "version": {
-      "preVersionCommand": "npx nx run-many -t build"
+      "preVersionCommand": "npx nx run-many -t build --projects=\"server-*\"",
+      "conventionalCommits": true,
+      "generatorOptions": {
+        "specifierSource": "conventional-commits",
+        "fallbackCurrentVersionResolver": "disk",
+        "currentVersionResolver": "disk"
+      }
+    },
+    "changelog": {
+      "workspaceChangelog": false,
+      "projectChangelogs": {
+        "renderOptions": {
+          "authors": true,
+          "commitReferences": true,
+          "versionTitleDate": true
+        }
+      }
+    },
+    "git": {
+      "commit": true,
+      "tag": true,
+      "commitMessage": "chore(release): publish @onivoro/server-* v{version}",
+      "tagMessage": "Release @onivoro/server-packages v{version}"
+    },
+    "npm": {
+      "publish": true,
+      "tag": "latest"
     }
   },
   "useLegacyCache": true
