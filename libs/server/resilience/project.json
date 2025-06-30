@@ -11,7 +11,10 @@
         "outputPath": "dist/libs/server/resilience",
         "main": "libs/server/resilience/src/index.ts",
         "tsConfig": "libs/server/resilience/tsconfig.lib.json",
-        "assets": ["libs/server/resilience/*.md"]
+        "assets": [
+          "libs/server/resilience/README.md",
+          "libs/server/resilience/package.json"
+        ]
       }
     },
     "test": {

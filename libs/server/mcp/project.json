@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/mcp/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/mcp",
+        "main": "libs/server/mcp/src/index.ts",
+        "tsConfig": "libs/server/mcp/tsconfig.lib.json",
+        "assets": [
+          "libs/server/mcp/README.md",
+          "libs/server/mcp/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }

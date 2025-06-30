@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/aws-credential-providers/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/aws-credential-providers",
+        "main": "libs/server/aws-credential-providers/src/index.ts",
+        "tsConfig": "libs/server/aws-credential-providers/tsconfig.lib.json",
+        "assets": [
+          "libs/server/aws-credential-providers/README.md",
+          "libs/server/aws-credential-providers/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }

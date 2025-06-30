@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/sendgrid/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/sendgrid",
+        "main": "libs/server/sendgrid/src/index.ts",
+        "tsConfig": "libs/server/sendgrid/tsconfig.lib.json",
+        "assets": [
+          "libs/server/sendgrid/README.md",
+          "libs/server/sendgrid/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }

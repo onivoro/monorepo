@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/typeorm-postgres/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/typeorm-postgres",
+        "main": "libs/server/typeorm-postgres/src/index.ts",
+        "tsConfig": "libs/server/typeorm-postgres/tsconfig.lib.json",
+        "assets": [
+          "libs/server/typeorm-postgres/README.md",
+          "libs/server/typeorm-postgres/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }

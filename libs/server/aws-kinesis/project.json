@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/aws-kinesis/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/aws-kinesis",
+        "main": "libs/server/aws-kinesis/src/index.ts",
+        "tsConfig": "libs/server/aws-kinesis/tsconfig.lib.json",
+        "assets": [
+          "libs/server/aws-kinesis/README.md",
+          "libs/server/aws-kinesis/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }

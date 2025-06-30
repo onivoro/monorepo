@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/typeorm-mysql/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/typeorm-mysql",
+        "main": "libs/server/typeorm-mysql/src/index.ts",
+        "tsConfig": "libs/server/typeorm-mysql/tsconfig.lib.json",
+        "assets": [
+          "libs/server/typeorm-mysql/README.md",
+          "libs/server/typeorm-mysql/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }

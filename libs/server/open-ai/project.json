@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/open-ai/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/open-ai",
+        "main": "libs/server/open-ai/src/index.ts",
+        "tsConfig": "libs/server/open-ai/tsconfig.lib.json",
+        "assets": [
+          "libs/server/open-ai/README.md",
+          "libs/server/open-ai/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }

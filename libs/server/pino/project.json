@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/pino/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/pino",
+        "main": "libs/server/pino/src/index.ts",
+        "tsConfig": "libs/server/pino/tsconfig.lib.json",
+        "assets": [
+          "libs/server/pino/README.md",
+          "libs/server/pino/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }

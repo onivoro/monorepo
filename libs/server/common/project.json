@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/common/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/common",
+        "main": "libs/server/common/src/index.ts",
+        "tsConfig": "libs/server/common/tsconfig.lib.json",
+        "assets": [
+          "libs/server/common/README.md",
+          "libs/server/common/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }

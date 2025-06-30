@@ -3,6 +3,20 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/server/aws-iam/src",
   "projectType": "library",
-  "targets": {},
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/aws-iam",
+        "main": "libs/server/aws-iam/src/index.ts",
+        "tsConfig": "libs/server/aws-iam/tsconfig.lib.json",
+        "assets": [
+          "libs/server/aws-iam/README.md",
+          "libs/server/aws-iam/package.json"
+        ]
+      }
+    }
+  },
   "tags": []
 }
