@@ -1,12 +1,10 @@
 {
-  "name": "@onivoro/server-aws-sts",
+  "name": "@onivoro/server-common",
   "version": "23.0.0",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "dependencies": {
-    "@onivoro/server-aws-credential-providers": "23.0.0",
-    "@onivoro/server-common": "23.0.0",
     "tslib": "^2.3.0"
   }
 }

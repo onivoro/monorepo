@@ -6,6 +6,9 @@
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "dependencies": {
+    "@onivoro/server-b2b-orm": "23.0.0",
+    "@onivoro/server-common": "23.0.0",
+    "@onivoro/server-sendgrid": "23.0.0",
     "tslib": "^2.3.0"
   }
 }
