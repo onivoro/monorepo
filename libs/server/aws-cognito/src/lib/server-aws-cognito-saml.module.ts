@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import { ServerAwsCognitoSamlConfig } from './server-aws-cognito-saml-config.class';
 import { TokenRetrievalService } from './services/token-retrieval.service';
 import { TokenRetrievalController } from './controllers/token-retrieval.controller';

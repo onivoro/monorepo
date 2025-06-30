@@ -1,5 +1,5 @@
 import { Body, Param, Post, Res } from "@nestjs/common";
-import { DefaultApiController } from "@onivoro/server/common";
+import { DefaultApiController } from "@onivoro/server-common";
 import { ApiBody, ApiParam } from "@nestjs/swagger";
 import { ServerAwsCognitoOidcConfig } from "../server-aws-cognito-oidc-config.class";
 import { TokensDto } from "../dtos/tokens.dto";

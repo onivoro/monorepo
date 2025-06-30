@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import { STSClient } from '@aws-sdk/client-sts';
 import { StsService } from './services/sts.service';
 import { ServerAwsStsConfig } from './classes/server-aws-sts-config.class';
-import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server/aws-credential-providers';
+import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
 
 let stsClient: STSClient | null = null;
 

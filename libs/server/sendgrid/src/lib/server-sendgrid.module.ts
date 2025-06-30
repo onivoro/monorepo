@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { EmailService } from './services/email.service';
 import { ServerSendgridConfig } from './classes/server-sendgrid-config.class';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import sgMail, { MailService } from '@sendgrid/mail';
 
 let mailSvc: MailService | null = null;

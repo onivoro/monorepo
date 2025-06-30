@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { Get, Param, Res } from "@nestjs/common";
-import { DefaultApiController, ValueDto } from "@onivoro/server/common";
+import { DefaultApiController, ValueDto } from "@onivoro/server-common";
 import { ApiResponse } from "@nestjs/swagger";
 import { ServerAwsCognitoOidcConfig } from "../server-aws-cognito-oidc-config.class";
 import { OidcClientConfigDto } from "../dtos/oidc-client-config.dto";

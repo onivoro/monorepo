@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { SqsService } from './services/sqs.service';
 import { ServerAwsSqsConfig } from './classes/server-aws-sqs-config.class';
-import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server/aws-credential-providers';
+import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
 
 let sqsClient: SQSClient | null = null;
 

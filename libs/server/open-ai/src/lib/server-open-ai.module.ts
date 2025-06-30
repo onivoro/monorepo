@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { moduleFactory } from "@onivoro/server/common";
+import { moduleFactory } from "@onivoro/server-common";
 import OpenAIApi from "openai";
 import { ServerOpenAiConfig } from "./server-open-ai-config.class";
 import { OpenAiService } from "./services/open-ai.service";

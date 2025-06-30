@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { LoggerModule, PinoLogger } from 'nestjs-pino';
 import { ServerPinoConfig } from './classes/server-pino-config.class';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import { patchConsole } from './functions/patch-console.function';
 
 @Module({})

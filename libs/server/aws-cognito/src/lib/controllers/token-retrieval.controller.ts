@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Post } from "@nestjs/common";
-import { DefaultApiController, ValueDto } from "@onivoro/server/common";
+import { DefaultApiController, ValueDto } from "@onivoro/server-common";
 import { TokenRetrievalService } from "../services/token-retrieval.service";
 import { ApiBody } from "@nestjs/swagger";
 

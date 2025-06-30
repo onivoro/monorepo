@@ -1,4 +1,4 @@
-import { User } from "@onivoro/server/b2b-orm";
+import { User } from "@onivoro/server-b2b-orm";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 
 export class AccountUserDto {

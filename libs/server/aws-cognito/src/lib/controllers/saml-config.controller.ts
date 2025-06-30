@@ -1,5 +1,5 @@
 import { Get } from "@nestjs/common";
-import { DefaultApiController } from "@onivoro/server/common";
+import { DefaultApiController } from "@onivoro/server-common";
 import { ApiResponse } from "@nestjs/swagger";
 import { CognitoSamlClientConfigDto } from "../dtos/cognito-saml-client-config.dto";
 import { ServerAwsCognitoSamlConfig } from "../server-aws-cognito-saml-config.class";

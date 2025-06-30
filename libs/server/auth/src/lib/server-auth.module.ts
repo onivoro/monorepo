@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 
-import { moduleFactory, ServerCommonModule } from '@onivoro/server/common';
+import { moduleFactory, ServerCommonModule } from '@onivoro/server-common';
 
 import { LoginController } from './controllers/login.controller';
 import { LoginService } from './services/login.service';

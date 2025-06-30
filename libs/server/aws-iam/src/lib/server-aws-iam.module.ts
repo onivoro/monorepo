@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import { IAMClient } from '@aws-sdk/client-iam';
 import { IamService } from './services/iam.service';
 import { ServerAwsIamConfig } from './classes/server-aws-iam-config.class';
-import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server/aws-credential-providers';
+import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
 
 let iamClient: IAMClient | null = null;
 

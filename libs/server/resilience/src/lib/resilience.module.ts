@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { RetryService } from './services/retry.service';
 import { ConcurrencyManager } from './services/concurrency-manager.service';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import { SemaphoreService } from './services/semaphore.service';
 
 @Module({})

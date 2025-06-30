@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import { RedshiftDataClient, RedshiftDataClientConfig } from '@aws-sdk/client-redshift-data';
 import { RedshiftDataService } from './services/redshift.service';
 import { ServerAwsRedshiftDataConfig } from './classes/server-aws-redshift-config.class';
 import { RedshiftServerlessClient } from '@aws-sdk/client-redshift-serverless';
 import { RedshiftClient } from '@aws-sdk/client-redshift';
-import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server/aws-credential-providers';
+import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
 
 let redshiftClient: RedshiftClient | null = null;
 let redshiftDataClient: RedshiftDataClient | null = null;

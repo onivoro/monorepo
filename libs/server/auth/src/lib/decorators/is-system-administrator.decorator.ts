@@ -1,4 +1,4 @@
-import { RoleEnum } from "@onivoro/server/b2b-orm";
+import { RoleEnum } from "@onivoro/server-b2b-orm";
 import { IAccessToken } from "@onivoro/isomorphic/common";
 import { createAuthParamDecorator } from "../functions/create-auth-param-decorator.function";
 

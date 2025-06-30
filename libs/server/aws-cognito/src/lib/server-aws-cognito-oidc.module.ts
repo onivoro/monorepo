@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import { JwksClient } from 'jwks-rsa';
 import { ServerAwsCognitoOidcConfig } from './server-aws-cognito-oidc-config.class';
 import { OidcConfigController } from './controllers/oidc-config.controller';

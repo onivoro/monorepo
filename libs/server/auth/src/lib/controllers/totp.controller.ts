@@ -1,6 +1,6 @@
 import { Body, Param, Post } from '@nestjs/common';
 import { ApiBody, ApiParam, ApiResponse } from '@nestjs/swagger';
-import { DefaultApiController, SuccessDto } from '@onivoro/server/common';
+import { DefaultApiController, SuccessDto } from '@onivoro/server-common';
 import { TotpService } from '../services/totp.service';
 import { ServerAuthConfig } from '../classes/server-auth-config.class';
 import { TotpGenerationDto } from '../dtos/totp-generation.dto';

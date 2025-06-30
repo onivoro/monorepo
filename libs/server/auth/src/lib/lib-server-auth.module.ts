@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ServerCommonModule } from '@onivoro/server/common';
-import { moduleFactory } from '@onivoro/server/common';
+import { ServerCommonModule } from '@onivoro/server-common';
+import { moduleFactory } from '@onivoro/server-common';
 import { ServerAuthModule } from './server-auth.module';
 import { IdentityController } from './controllers/identity.controller';
-import { ServerSendgridModule } from '@onivoro/server/sendgrid';
+import { ServerSendgridModule } from '@onivoro/server-sendgrid';
 import { LibServerAuthConfig } from './lib-server-auth-config.class';
 
 @Module({})

@@ -3,7 +3,7 @@ import { LoginWithEmailAndPasswordDto } from '../dtos/login-with-email-and-passw
 import { LoginWithApiCredentialsDto } from '../dtos/login-with-api-credentials.dto';
 import { ApiBody, ApiResponse } from '@nestjs/swagger';
 import { LoginService } from '../services/login.service';
-import { DefaultApiController, ValueDto } from '@onivoro/server/common';
+import { DefaultApiController, ValueDto } from '@onivoro/server-common';
 
 @DefaultApiController('login')
 export class LoginController<TAccessToken> {

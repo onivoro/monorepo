@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { moduleFactory } from '@onivoro/server/common';
+import { moduleFactory } from '@onivoro/server-common';
 import { KinesisClient } from '@aws-sdk/client-kinesis';
 import { KinesisService } from './services/kinesis.service';
 import { ServerAwsKinesisConfig } from './classes/server-aws-kinesis-config.class';
-import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server/aws-credential-providers';
+import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
 
 let kinesisClient: KinesisClient | null = null;
 

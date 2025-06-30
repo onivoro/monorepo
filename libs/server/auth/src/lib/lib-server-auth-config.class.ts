@@ -1,4 +1,4 @@
-import { EnvironmentClass } from "@onivoro/server/common";
+import { EnvironmentClass } from "@onivoro/server-common";
 
 @EnvironmentClass()
 export class LibServerAuthConfig {
