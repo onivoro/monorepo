@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-auth",
-  "version": "0.0.1",
+  "version": "23.0.0",
   "private": true,
   "type": "commonjs",
   "main": "./src/index.js",

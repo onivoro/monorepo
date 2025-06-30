@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-common",
-  "version": "0.0.1",
+  "version": "23.0.0",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
