@@ -140,7 +140,6 @@
     "@nx/webpack": "20.5.0",
     "@nx/workspace": "20.5.0",
     "@nxlv/python": "^20.3.2",
-    "@onivoro/onix": "^20.5.47",
     "@playwright/test": "^1.50.0",
     "@rspack/cli": "^1.1.5",
     "@rspack/core": "1.2.7",
