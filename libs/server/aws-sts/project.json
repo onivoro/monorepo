@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/aws-sts/README.md",
           "libs/server/aws-sts/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

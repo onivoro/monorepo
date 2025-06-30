@@ -1,4 +1,4 @@
-import { MILLIS_PER_DAY } from "@onivoro/isomorphic/common";
+import { MILLIS_PER_DAY } from "../constants/millis-per-day.constant";
 
 const iso8601Regex = /\d{4}-\d{2}-\d{2}/;
 

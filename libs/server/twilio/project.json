@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/twilio/README.md",
           "libs/server/twilio/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

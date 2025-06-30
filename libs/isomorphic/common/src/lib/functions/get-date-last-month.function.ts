@@ -1,4 +1,4 @@
-import { MILLIS_PER_DAY } from "@onivoro/isomorphic/common";
+import { MILLIS_PER_DAY } from "../constants/millis-per-day.constant";
 
 export function getDateLastMonth() {
     const days = new Date().getUTCDate() + 1;

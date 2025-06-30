@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/aws-cognito/README.md",
           "libs/server/aws-cognito/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

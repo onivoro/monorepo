@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/typeorm-postgres/README.md",
           "libs/server/typeorm-postgres/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

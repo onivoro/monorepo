@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/auth/README.md",
           "libs/server/auth/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

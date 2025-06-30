@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/aws-ecs/README.md",
           "libs/server/aws-ecs/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

@@ -5,11 +5,17 @@
   "projectType": "library",
   "targets": {
     "build": {
-      "executor": "@nx/vite:build",
-      "generatePackageJson": true,
+      "executor": "@nx/js:tsc",
       "outputs": ["{options.outputPath}"],
       "options": {
-        "outputPath": "dist/libs/isomorphic/axios"
+        "outputPath": "dist/libs/isomorphic/axios",
+        "main": "libs/isomorphic/axios/src/index.ts",
+        "tsConfig": "libs/isomorphic/axios/tsconfig.lib.json",
+        "assets": [
+          "libs/isomorphic/axios/README.md",
+          "libs/isomorphic/axios/package.json"
+        ],
+        "declaration": true
       }
     }
   },

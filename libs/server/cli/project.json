@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/cli/README.md",
           "libs/server/cli/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

@@ -1,4 +1,4 @@
-import { ILookup } from "@onivoro/isomorphic/common";
+import { ILookup } from "../types/lookup.interface";
 
 export function mapEnumToLookupArray<TEnum extends object>(enumeration: TEnum): ILookup<string, string>[] {
     return Object.entries(enumeration)

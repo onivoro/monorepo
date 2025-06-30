@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/mcp/README.md",
           "libs/server/mcp/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

@@ -119,7 +119,7 @@
     }
   },
   "release": {
-    "projects": ["lib-server-*"],
+    "projects": ["lib-server-*", "lib-isomorphic-*"],
     "projectsRelationship": "fixed"
   }
 }

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ILookup } from "@onivoro/isomorphic/common";
+import { ILookup } from "@onivoro/isomorphic-common";
 
 export class LookupDto implements ILookup<string, string> {
     @ApiProperty({ type: 'string' }) value: string;

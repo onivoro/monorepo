@@ -1,4 +1,4 @@
-import { v4 } from '@onivoro/isomorphic/common';
+import { v4 } from '@onivoro/isomorphic-common';
 import { ArgumentMetadata } from '@nestjs/common';
 import { Injectable, PipeTransform, BadRequestException } from '@nestjs/common';
 

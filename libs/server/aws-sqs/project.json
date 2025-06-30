@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/aws-sqs/README.md",
           "libs/server/aws-sqs/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

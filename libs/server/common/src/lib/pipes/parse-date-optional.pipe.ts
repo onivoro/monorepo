@@ -1,4 +1,4 @@
-import { dateIso8601, isValidDate } from '@onivoro/isomorphic/common';
+import { dateIso8601, isValidDate } from '@onivoro/isomorphic-common';
 import { PipeTransform, Injectable, ArgumentMetadata, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
 
 @Injectable()

@@ -1,4 +1,18 @@
-import { Company } from "@onivoro/axios/b2b";
-
-export type TCompany = Pick<Company, 'id' | 'statusId' | 'renewalDate' | 'name' | 'ein' | 'duns' | 'address1' | 'address2' | 'city' | 'state' | 'zip' | 'phone' | 'externalId' | 'bmiThresholdWithComorbidities' | 'bmiThresholdWithoutComorbidities'
-    | 'membershipType' >;
+export type TCompany = {
+    id: string;
+    statusId: string;
+    renewalDate: string;
+    name: string;
+    ein: string;
+    duns: string;
+    address1: string;
+    address2: string;
+    city: string;
+    state: string;
+    zip: string;
+    phone: string;
+    externalId: string;
+    bmiThresholdWithComorbidities: number;
+    bmiThresholdWithoutComorbidities: number;
+    membershipType: string;
+};

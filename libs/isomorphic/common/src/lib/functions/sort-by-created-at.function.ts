@@ -1,4 +1,4 @@
-import { TCreateable } from "@onivoro/isomorphic/common";
+import { TCreateable } from "../types/createable.type";
 
 export function sortByCreatedAt<TEntity extends TCreateable>(a: TEntity, b: TEntity) {
     const isLessThan = a.createdAt < b.createdAt;

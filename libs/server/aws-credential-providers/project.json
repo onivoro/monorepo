@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/aws-credential-providers/README.md",
           "libs/server/aws-credential-providers/package.json"
-        ]
+        ],
+        "declaration": true
       }
     }
   },

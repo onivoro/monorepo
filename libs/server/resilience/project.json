@@ -14,7 +14,8 @@
         "assets": [
           "libs/server/resilience/README.md",
           "libs/server/resilience/package.json"
-        ]
+        ],
+        "declaration": true
       }
     },
     "test": {
