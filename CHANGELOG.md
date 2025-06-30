@@ -1,3 +1,14 @@
+# 24.0.0 (2025-06-30)
+
+### 🩹 Fixes
+
+- imports ([4049f4d](https://github.com/onivoro/monorepo/commit/4049f4d))
+- release prep ([546f1cf](https://github.com/onivoro/monorepo/commit/546f1cf))
+
+### ❤️ Thank You
+
+- icedlee337
+
 # 23.0.0 (2025-06-30)
 
 This was a version bump only, there were no code changes.
