@@ -44,10 +44,12 @@
       "@onivoro/server-resilience": ["libs/server/resilience/src/index.ts"],
       "@onivoro/server-sendgrid": ["libs/server/sendgrid/src/index.ts"],
       "@onivoro/server-twilio": ["libs/server/twilio/src/index.ts"],
-      "@onivoro/server-typeorm-mysql": ["libs/server/typeorm-mysql/src/index.ts"],
+      "@onivoro/server-typeorm-mysql": [
+        "libs/server/typeorm-mysql/src/index.ts"
+      ],
       "@onivoro/server-typeorm-postgres": [
         "libs/server/typeorm-postgres/src/index.ts"
-      ],
+      ]
     }
   },
   "exclude": ["node_modules", "tmp", "_tmp"],

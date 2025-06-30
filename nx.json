@@ -119,8 +119,7 @@
     }
   },
   "release": {
-    "projects": ["server-*"],
+    "projects": ["lib-server-*"],
     "projectsRelationship": "fixed"
-  },
-  "useLegacyCache": true
+  }
 }
