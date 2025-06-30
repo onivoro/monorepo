@@ -1,6 +1,6 @@
 # @onivoro/isomorphic-common
 
-Common utilities, functions, types, and constants shared between browser and server environments. This comprehensive library provides essential building blocks for TypeScript applications with a focus on type safety, reliability, and consistent behavior across different runtime environments.
+Common utilities, functions, types, and constants shared between browser and server environments in the Onivoro monorepo. This library provides essential building blocks for TypeScript applications with a focus on type safety and consistent behavior across different runtime environments.
 
 ## Installation
 
@@ -13,134 +13,202 @@ npm install @onivoro/isomorphic-common
 - **Isomorphic Design**: Works identically in browser and Node.js environments
 - **String Manipulation**: Case conversion, formatting, and validation utilities
 - **Array Operations**: Chunking, sorting, deduplication, and transformation functions
-- **Date/Time Utilities**: Calendar operations, offset calculations, and formatting
-- **Financial Functions**: Currency formatting, money calculations, and validation
-- **Type Utilities**: Advanced TypeScript type helpers and interfaces
+- **Date/Time Utilities**: Calendar operations, offset calculations, and time constants
+- **Financial Functions**: Currency formatting and money calculations
+- **Type Utilities**: TypeScript type helpers and interfaces
 - **Validation Functions**: Data validation and parsing utilities
 - **Testing Helpers**: Mock functions and test arrangement utilities
-- **Constants**: Common values, regex patterns, and configuration constants
+- **Constants**: Authentication headers, regex patterns, and time constants
 
-## Quick Start
+## Constants
 
-### String Operations
-
+### Authentication Headers
 ```typescript
-import { 
-  camelCase, 
-  kebabCase, 
-  snakeCase, 
-  upperFirst,
-  sanitizeFilename,
-  formatUsd 
-} from '@onivoro/isomorphic-common';
+import { apiKeyHeader } from '@onivoro/isomorphic-common';
 
-// Case conversions
-camelCase('hello world'); // 'helloWorld'
-kebabCase('Hello World'); // 'hello-world'
-snakeCase('Hello World'); // 'hello_world'
-upperFirst('hello'); // 'Hello'
-
-// File operations
-sanitizeFilename('My File/Name?.txt'); // 'My File Name .txt'
-
-// Currency formatting
-formatUsd(1234.56); // '$1,234.56'
-formatUsd('1234.56'); // '$1,234.56'
+// Use in HTTP requests
+const headers = {
+  [apiKeyHeader]: 'your-api-key' // 'x-api-key'
+};
 ```
 
-### Array Manipulation
+### Time Constants
+```typescript
+import { MILLIS_PER_DAY, MILLIS_PER_HOUR, MILLIS_PER_MINUTE } from '@onivoro/isomorphic-common';
 
+// Time constants (calculated from MILLIS_PER_MINUTE base)
+const hoursInDay = MILLIS_PER_DAY / MILLIS_PER_HOUR; // 24
+const minutesInHour = MILLIS_PER_HOUR / MILLIS_PER_MINUTE; // 60
+
+// Set timeouts
+setTimeout(() => {}, MILLIS_PER_MINUTE); // 1 minute timeout
+```
+
+### Regular Expressions
+```typescript
+import { 
+  email, 
+  phone, 
+  zip, 
+  v4, 
+  dateIso8601, 
+  numeric,
+  ssn,
+  ein 
+} from '@onivoro/isomorphic-common';
+
+// Validate email
+const isValidEmail = email.test('user@example.com'); // true
+
+// Validate phone number (format: 123-456-7890)
+const isValidPhone = phone.test('123-456-7890'); // true
+
+// Validate ZIP code (5 digits)
+const isValidZip = zip.test('12345'); // true
+
+// Validate UUID v4
+const isValidUuid = v4.test('550e8400-e29b-41d4-a716-446655440000'); // true
+
+// Validate ISO date (YYYY-MM-DD)
+const isValidDate = dateIso8601.test('2023-12-31'); // true
+```
+
+## String Functions
+
+### Case Conversion
+```typescript
+import { camelCase, kebabCase, snakeCase } from '@onivoro/isomorphic-common';
+
+// camelCase(string: string): string
+camelCase('hello world'); // 'helloWorld'
+camelCase('--foo-bar--'); // 'fooBar'
+camelCase('__FOO_BAR__'); // 'fooBar'
+
+// kebabCase(string: string): string
+kebabCase('Hello World'); // 'hello-world'
+kebabCase('fooBar'); // 'foo-bar'
+
+// snakeCase(string: string): string
+snakeCase('Hello World'); // 'hello_world'
+snakeCase('fooBar'); // 'foo_bar'
+```
+
+## Array Functions
+
+### Array Manipulation
 ```typescript
 import { 
   chunk, 
-  toUniqueArray, 
-  removeElementAtIndex,
-  sortByName,
-  sortById,
-  sortNumbers
+  removeElementAtIndex, 
+  toUniqueArray 
 } from '@onivoro/isomorphic-common';
 
-// Chunking arrays
-chunk([1, 2, 3, 4, 5, 6], 3); // [[1, 2], [3, 4], [5, 6]]
+// chunk<T>(array: T[], numDivisions: number): T[][]
+// Divides array into N divisions (NOT chunks of size N)
+chunk([1, 2, 3, 4, 5, 6], 3); // [[1, 2], [3, 4], [5, 6]] - 3 divisions
+chunk([1, 2, 3, 4, 5], 2); // [[1, 2, 3], [4, 5]] - 2 divisions
 
-// Remove duplicates
-toUniqueArray([1, 2, 2, 3, 3, 4]); // [1, 2, 3, 4]
-
-// Remove element by index
+// removeElementAtIndex<T>(array: T[], indexToRemove: number): T[]
 removeElementAtIndex(['a', 'b', 'c'], 1); // ['a', 'c']
 
-// Sorting utilities
-sortByName([{name: 'Bob'}, {name: 'Alice'}]); // [{name: 'Alice'}, {name: 'Bob'}]
-sortById([{id: 3}, {id: 1}, {id: 2}]); // [{id: 1}, {id: 2}, {id: 3}]
-sortNumbers([3, 1, 4, 1, 5]); // [1, 1, 3, 4, 5]
+// toUniqueArray<TElement>(elements: TElement[]): TElement[]
+toUniqueArray([1, 2, 2, 3, 3, 4]); // [1, 2, 3, 4]
 ```
 
-### Date and Time Operations
+### Sorting Functions
+```typescript
+import { 
+  sortByName, 
+  sortById, 
+  sortNumbers 
+} from '@onivoro/isomorphic-common';
 
+// sortByName<TEntity extends { name: string }>(a: TEntity, b: TEntity): number
+const users = [{ name: 'Bob' }, { name: 'Alice' }];
+users.sort(sortByName); // [{ name: 'Alice' }, { name: 'Bob' }]
+
+// sortById<TEntity extends { id: string }>(a: TEntity, b: TEntity): number
+const items = [{ id: '3' }, { id: '1' }, { id: '2' }];
+items.sort(sortById); // [{ id: '1' }, { id: '2' }, { id: '3' }]
+
+// sortNumbers(a: number, b: number): number
+const numbers = [3, 1, 4, 1, 5];
+numbers.sort(sortNumbers); // [1, 1, 3, 4, 5]
+```
+
+## Date/Time Functions
+
+### Date Operations
 ```typescript
 import { 
   addOffset, 
-  subtractOffset,
-  getDateRangeForMonth,
-  splitDateRangeIntoDays,
-  isValidDate,
-  tryParseDate,
-  toCalendarDate,
-  fromCalendarDate
+  subtractOffset, 
+  getDateRangeForMonth
 } from '@onivoro/isomorphic-common';
 
-// Date offset calculations
+// addOffset(input: string | Date | undefined | null): Date | undefined
 const date = new Date('2023-01-15');
-addOffset(date, 7); // Add 7 days
-subtractOffset(date, 2); // Subtract 2 days
+const withOffset = addOffset(date); // Adds timezone offset
 
-// Monthly date ranges
-getDateRangeForMonth(2023, 0); // January 2023 range
+// subtractOffset(input: string | Date | undefined | null): Date | undefined
+const withoutOffset = subtractOffset(date); // Subtracts timezone offset
 
-// Date validation
-isValidDate(new Date('2023-01-15')); // true
-isValidDate(new Date('invalid')); // false
-
-// Safe date parsing
-tryParseDate('2023-01-15'); // Date object or null
+// getDateRangeForMonth(year: number, month: number): {startDate: Date, endDate: Date}
+const { startDate, endDate } = getDateRangeForMonth(2023, 0); // January 2023 (month 0-indexed)
 ```
 
-### Financial and Money Operations
-
+### Date Utilities
 ```typescript
 import { 
-  money, 
-  toDollarsAndCents,
-  round,
-  formatUsd 
+  isValidDate, 
+  parseBool
 } from '@onivoro/isomorphic-common';
 
-// Money calculations (in cents)
-const price = money(19.99); // 1999 cents
-const tax = money(price * 0.08); // Calculate tax
-const total = price + tax;
+// isValidDate(dateString: string | Date): Date | undefined
+const validDate = isValidDate('2023-01-15'); // Date object
+const invalidDate = isValidDate('invalid'); // undefined
 
-// Convert back to dollars
-toDollarsAndCents(total); // { dollars: 21, cents: 59 }
-
-// Rounding
-round(19.999, 2); // 20.00
-round(19.994, 2); // 19.99
-
-// Currency display
-formatUsd(total / 100); // '$21.59'
+// parseBool(asc: string | boolean | null | undefined): boolean
+parseBool('true'); // true
+parseBool('false'); // false
+parseBool(true); // true
+parseBool(null); // false
 ```
 
-## Usage Examples
-
-### Data Transformation
+## Financial Functions
 
 ```typescript
 import { 
-  mapEnumToOptions,
-  mapEntitiesToOptions,
-  convertObjectToLiteral,
-  propertiestoArray
+  formatUsd, 
+  money, 
+  toDollarsAndCents, 
+  round 
+} from '@onivoro/isomorphic-common';
+
+// formatUsd(rawAmount?: number | string): string
+formatUsd(1234.56); // '$1,234.56'
+formatUsd('1234.56'); // '$1,234.56'
+formatUsd(); // '$0.00'
+
+// money(rawValue: number | string): string | undefined
+money(19.99); // '$19.99'
+money('abc'); // undefined
+
+// toDollarsAndCents(input: string | number): string
+toDollarsAndCents(19.99); // 'nineteen dollars and ninety-nine cents'
+toDollarsAndCents(20); // 'twenty dollars'
+
+// round(numberToRound: number, scalingFactor: number): number
+round(19.999, 100); // 20.00 (rounds to nearest cent)
+round(19.994, 100); // 19.99
+```
+
+## Data Transformation
+
+### Enum Utilities
+```typescript
+import { 
+  mapEnumToOptions
 } from '@onivoro/isomorphic-common';
 
 enum Status {
@@ -149,243 +217,71 @@ enum Status {
   PENDING = 'pending'
 }
 
-// Convert enum to dropdown options
-const statusOptions = mapEnumToOptions(Status);
-// [{ label: 'Active', value: 'active' }, ...]
+// mapEnumToOptions<TEntity extends object>(enumeration: TEntity, includeBlank = true)
+const options = mapEnumToOptions(Status);
+// [{ display: '', value: '' }, { display: 'ACTIVE', value: 'active' }, ...]
 
-// Convert entities to options
-const users = [{ id: 1, name: 'John' }, { id: 2, name: 'Jane' }];
-const userOptions = mapEntitiesToOptions(users, 'name', 'id');
-// [{ label: 'John', value: 1 }, { label: 'Jane', value: 2 }]
+const optionsNoBlank = mapEnumToOptions(Status, false);
+// [{ display: 'ACTIVE', value: 'active' }, ...]
 ```
 
-### Boolean and String Parsing
+### Entity Utilities
+```typescript
+import { getUserFullName } from '@onivoro/isomorphic-common';
+
+// getUserFullName(user: TNameable | undefined): string
+const user = { firstName: 'John', lastName: 'Doe' };
+getUserFullName(user); // 'John Doe'
+getUserFullName(undefined); // 'undefined undefined'
+```
+
+## JSON Utilities
 
 ```typescript
 import { 
-  parseBool,
-  fromBooleanString,
-  toBooleanString,
-  fromCsvString,
-  toCsvString
+  tryJsonParse, 
+  tryJsonStringify 
 } from '@onivoro/isomorphic-common';
 
-// Boolean parsing
-parseBool('true'); // true
-parseBool('1'); // true
-parseBool('yes'); // true
-parseBool('false'); // false
+// tryJsonParse<T>(parseable: string | null | undefined): T | null
+const parsed = tryJsonParse<{name: string}>('{"name":"John"}'); // {name: 'John'}
+const failed = tryJsonParse('invalid json'); // null
 
-// CSV operations
-const items = fromCsvString('apple,banana,cherry');
-// ['apple', 'banana', 'cherry']
-
-toCsvString(['apple', 'banana', 'cherry']);
-// 'apple,banana,cherry'
+// tryJsonStringify<T>(object: T | null | undefined, fmtr?: any, spaces?: number): string | null
+const json = tryJsonStringify({name: 'John'}); // '{"name":"John"}'
+const formatted = tryJsonStringify({name: 'John'}, null, 2); // Pretty formatted JSON
 ```
 
-### Testing Utilities
+## Utility Functions
 
+```typescript
+import { sleep } from '@onivoro/isomorphic-common';
+
+// sleep(milliseconds = 0): Promise<void>
+await sleep(1000); // Wait 1 second
+await sleep(); // Wait 0 milliseconds (next tick)
+```
+
+## Type Definitions
+
+### Interfaces
 ```typescript
 import { 
-  arrangeActAssert,
-  mockCalls 
+  ILookup, 
+  TNameable 
 } from '@onivoro/isomorphic-common';
 
-// Test structure helper
-const testCase = arrangeActAssert({
-  arrange: () => ({ input: 'test data' }),
-  act: (arranged) => processData(arranged.input),
-  assert: (result) => expect(result).toBeTruthy()
-});
+// Lookup interface for key-value pairs
+const lookup: ILookup<string, number> = {
+  display: 'Option 1',
+  value: 1
+};
 
-// Mock function calls tracking
-const mockTracker = mockCalls();
-mockTracker.track('functionName', ['arg1', 'arg2']);
-mockTracker.getCalls('functionName'); // [['arg1', 'arg2']]
-```
-
-## API Reference
-
-### String Functions
-
-#### Case Conversion
-- `camelCase(string)` - Convert to camelCase
-- `kebabCase(string)` - Convert to kebab-case  
-- `snakeCase(string)` - Convert to snake_case
-- `upperFirst(string)` - Capitalize first letter
-
-#### String Utilities
-- `sanitizeFilename(filename)` - Remove invalid filename characters
-- `removeAlphaChars(string)` - Remove alphabetic characters
-- `words(string)` - Split string into words array
-- `toString(value)` - Convert value to string safely
-
-### Array Functions
-
-#### Array Manipulation
-- `chunk<T>(array, numDivisions)` - Split array into chunks
-- `toUniqueArray<T>(array)` - Remove duplicate elements
-- `removeElementAtIndex<T>(array, index)` - Remove element by index
-
-#### Sorting Functions
-- `sortByName<T>(array)` - Sort objects by name property
-- `sortById<T>(array)` - Sort objects by id property
-- `sortByFullName<T>(array)` - Sort objects by full name
-- `sortByCreatedAt<T>(array)` - Sort objects by creation date
-- `sortNumbers(array)` - Sort numeric array
-
-### Date/Time Functions
-
-#### Date Operations
-- `addOffset(date, days)` - Add days to date
-- `subtractOffset(date, days)` - Subtract days from date
-- `getDateRangeForMonth(year, month)` - Get month's date range
-- `getDateLastMonth()` - Get previous month's date
-- `splitDateRangeIntoDays(start, end)` - Split range into daily intervals
-
-#### Date Utilities
-- `isValidDate(date)` - Check if date is valid
-- `tryParseDate(string)` - Safely parse date string
-- `toCalendarDate(date)` - Convert to calendar format
-- `fromCalendarDate(string)` - Parse calendar date string
-- `useDate(date)` - React hook for date handling
-
-#### Time Constants
-- `MILLIS_PER_MINUTE` - Milliseconds in a minute
-- `MILLIS_PER_HOUR` - Milliseconds in an hour
-- `MILLIS_PER_DAY` - Milliseconds in a day
-
-### Financial Functions
-
-#### Money Operations
-- `money(amount)` - Convert dollars to cents
-- `toDollarsAndCents(cents)` - Convert cents to dollars/cents object
-- `formatUsd(amount)` - Format as USD currency
-- `round(number, precision)` - Round to decimal places
-
-### Type Utilities
-
-#### Interfaces
-- `ILookup<T>` - Key-value lookup interface
-- `IAccessToken` - Access token structure
-- `IEntityProvider<T>` - Entity provider interface
-
-#### Type Helpers
-- `KeysOf<T>` - Extract keys of type T
-- `Createable<T>` - Type for creatable entities
-- `Nameable` - Type for entities with name property
-- `Company` - Company type definition
-
-### Data Transformation
-
-#### Enum Utilities
-- `mapEnumToOptions(enum)` - Convert enum to option array
-- `mapEnumToArrayOfValues(enum)` - Convert enum to value array
-- `mapEnumToLookupArray(enum)` - Convert enum to lookup array
-
-#### Object Utilities
-- `convertObjectToLiteral(object)` - Convert to literal object
-- `propertiesToArray(object)` - Convert properties to array
-- `mapEntitiesToOptions(entities, labelKey, valueKey)` - Convert entities to options
-
-### Validation Functions
-
-#### Data Validation
-- `parseBool(value)` - Parse boolean from various formats
-- `isSymbol(value)` - Check if value is symbol
-- `tryJsonParse(string)` - Safely parse JSON
-- `tryJsonStringify(object)` - Safely stringify JSON
-
-#### String Validation
-- `fromBooleanString(string)` - Convert string to boolean
-- `toBooleanString(boolean)` - Convert boolean to string
-- `fromCsvString(string)` - Parse CSV string
-- `toCsvString(array)` - Convert array to CSV
-
-### Utility Functions
-
-#### General Utilities
-- `sleep(milliseconds)` - Async sleep function
-- `getTag(value)` - Get object type tag
-- `getUserFullName(user)` - Get user's full name
-- `toDecimalBase(number, base)` - Convert to decimal base
-
-#### Testing Helpers
-- `arrangeActAssert(config)` - Structure test cases
-- `mockCalls()` - Track mock function calls
-
-### Constants
-
-#### Headers and Authentication
-- `API_ID_HEADER` - API ID header constant
-- `API_KEY_HEADER` - API key header constant  
-- `AUTH_COOKIE_NAME` - Authentication cookie name
-
-#### Regular Expressions
-- `REGEXES` - Common regex patterns object
-
-## Advanced Usage
-
-### Custom Type Guards
-
-```typescript
-import { isSymbol, isValidDate } from '@onivoro/isomorphic-common';
-
-function processValue(value: unknown) {
-  if (isSymbol(value)) {
-    return value.toString();
-  }
-  
-  if (value instanceof Date && isValidDate(value)) {
-    return value.toISOString();
-  }
-  
-  return String(value);
-}
-```
-
-### Complex Data Transformations
-
-```typescript
-import { 
-  chunk, 
-  mapEntitiesToOptions, 
-  sortByName,
-  toUniqueArray 
-} from '@onivoro/isomorphic-common';
-
-function processUserData(users: User[]) {
-  return chunk(
-    toUniqueArray(
-      sortByName(users)
-    ),
-    10 // Process in batches of 10
-  ).map(batch => 
-    mapEntitiesToOptions(batch, 'fullName', 'id')
-  );
-}
-```
-
-### Date Range Operations
-
-```typescript
-import { 
-  getDateRangeForMonth,
-  splitDateRangeIntoDays,
-  addOffset,
-  subtractOffset 
-} from '@onivoro/isomorphic-common';
-
-function getMonthlyReportDates(year: number, month: number) {
-  const { start, end } = getDateRangeForMonth(year, month);
-  
-  // Add buffer days
-  const reportStart = subtractOffset(start, 1);
-  const reportEnd = addOffset(end, 1);
-  
-  return splitDateRangeIntoDays(reportStart, reportEnd);
-}
+// Nameable type
+const user: TNameable = {
+  firstName: 'John',
+  lastName: 'Doe'
+};
 ```
 
 ## License

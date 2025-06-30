@@ -1,23 +1,19 @@
 # @onivoro/server-aws-sqs
 
-A NestJS module for integrating with AWS SQS (Simple Queue Service), providing message publishing, polling, queue management, and batch processing capabilities for your server applications.
+A NestJS module for integrating with AWS SQS (Simple Queue Service) using AWS SDK v3. This library provides a simplified service for message publishing, queue verification, message counting, and batch message processing.
 
 ## Installation
 
-```bash
-npm install @onivoro/server-aws-sqs
-```
+This library is part of the Onivoro monorepo and should be used as an internal dependency.
 
 ## Features
 
-- **Message Publishing**: Send messages to SQS queues
-- **Queue Polling**: Receive and process messages from queues
-- **Batch Processing**: Handle multiple messages efficiently
-- **Queue Management**: Create, verify, and manage SQS queues
-- **Message Visibility**: Control message visibility timeout
-- **Dead Letter Queues**: Support for failed message handling
-- **Automatic Retry**: Built-in retry logic for failed operations
-- **Environment-Based Configuration**: Configurable SQS settings per environment
+- **Message Publishing**: Send JSON messages to SQS queues with error handling
+- **Queue Verification**: Verify queue existence and check permissions
+- **Message Counting**: Get approximate number of messages in queue
+- **Batch Processing**: Process messages in batches with automatic deletion
+- **AWS SDK v3**: Uses the latest AWS SDK with modern command-based API
+- **Environment-Based Configuration**: Simple configuration via environment variables
 
 ## Quick Start
 
@@ -30,8 +26,8 @@ import { ServerAwsSqsModule } from '@onivoro/server-aws-sqs';
   imports: [
     ServerAwsSqsModule.configure({
       AWS_REGION: 'us-east-1',
-      AWS_SQS_URL: process.env.SQS_QUEUE_URL,
-      AWS_PROFILE: process.env.AWS_PROFILE || 'default',
+      AWS_SQS_URL: 'https://sqs.us-east-1.amazonaws.com/account-id/queue-name',
+      AWS_PROFILE: 'your-aws-profile', // optional
     }),
   ],
 })
@@ -68,78 +64,120 @@ export class MessageService {
 
 ### ServerAwsSqsConfig
 
-```typescript
-import { ServerAwsSqsConfig } from '@onivoro/server-aws-sqs';
+The configuration class requires these properties:
 
-export class AppSqsConfig extends ServerAwsSqsConfig {
-  AWS_REGION = process.env.AWS_REGION || 'us-east-1';
-  AWS_SQS_URL = process.env.SQS_QUEUE_URL || 'https://sqs.us-east-1.amazonaws.com/123456789012/my-queue';
-  AWS_PROFILE = process.env.AWS_PROFILE || 'default';
-  MAX_RECEIVE_COUNT = parseInt(process.env.SQS_MAX_RECEIVE_COUNT) || 3;
-  VISIBILITY_TIMEOUT = parseInt(process.env.SQS_VISIBILITY_TIMEOUT) || 30;
-  WAIT_TIME_SECONDS = parseInt(process.env.SQS_WAIT_TIME_SECONDS) || 20;
+```typescript
+export class ServerAwsSqsConfig {
+  AWS_PROFILE?: string;      // Optional AWS profile
+  AWS_REGION: string;        // AWS region (required)
+  AWS_SQS_URL: string;       // Full SQS queue URL (required)
 }
 ```
 
 ### Environment Variables
 
 ```bash
-# AWS Configuration
+# Required
 AWS_REGION=us-east-1
-AWS_PROFILE=default
+AWS_SQS_URL=https://sqs.us-east-1.amazonaws.com/123456789012/my-queue
 
-# SQS Configuration
-SQS_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/123456789012/my-queue
-SQS_MAX_RECEIVE_COUNT=3
-SQS_VISIBILITY_TIMEOUT=30
-SQS_WAIT_TIME_SECONDS=20
+# Optional
+AWS_PROFILE=default
 ```
 
-## Services
+## SqsService API
 
-### SqsService
+### publish<TData>(event: TData)
 
-The main service for SQS operations:
+Publishes a message to the configured SQS queue. The message is JSON-serialized automatically.
 
 ```typescript
-import { SqsService } from '@onivoro/server-aws-sqs';
+// Simple message
+await sqsService.publish({ type: 'USER_CREATED', userId: '123' });
 
-@Injectable()
-export class QueueMessageService {
-  constructor(private sqsService: SqsService) {}
-
-  async publishOrder(order: OrderData) {
-    await this.sqsService.publish({
-      type: 'ORDER_CREATED',
-      data: order,
-      timestamp: new Date().toISOString(),
-      correlationId: order.id
-    });
+// Complex message
+await sqsService.publish({
+  eventType: 'ORDER_PROCESSED',
+  orderId: 'order-456',
+  customerData: {
+    id: 'customer-789',
+    email: 'customer@example.com'
+  },
+  timestamp: new Date().toISOString(),
+  metadata: {
+    source: 'order-service',
+    version: '1.0'
   }
+});
+```
 
-  async publishNotification(notification: NotificationData) {
-    await this.sqsService.publish({
-      type: 'NOTIFICATION',
-      data: notification,
-      timestamp: new Date().toISOString()
-    });
-  }
+**Error Handling**: Errors are caught and logged to console, but the method does not throw.
 
-  async getQueueStats() {
-    const messageCount = await this.sqsService.getApproximateNumberOfMessages();
-    return { messageCount };
-  }
+### verifyQueue()
+
+Verifies that the queue exists and the service has proper permissions to access it.
+
+```typescript
+try {
+  await sqsService.verifyQueue();
+  console.log('Queue is accessible');
+} catch (error) {
+  // Handle specific error types:
+  // - AWS.SimpleQueueService.NonExistentQueue: Queue doesn't exist
+  // - AccessDeniedException: Insufficient permissions
+  console.error('Queue verification failed:', error);
 }
 ```
 
-## Usage Examples
+**Returns**: `Promise<boolean>` - Returns `true` on success, throws on failure.
 
-### Message Publisher Service
+### getApproximateNumberOfMessages()
+
+Gets the approximate number of messages currently in the queue.
 
 ```typescript
-import { SqsService } from '@onivoro/server-aws-sqs';
-import { Injectable } from '@nestjs/common';
+const messageCount = await sqsService.getApproximateNumberOfMessages();
+console.log(`Queue has approximately ${messageCount} messages`);
 
+// Use for monitoring
+if (messageCount > 1000) {
+  console.warn('Queue backlog is high!');
+}
+```
+
+**Returns**: `Promise<number>` - The approximate message count.
+
+### processMessageBatches(maxIterations: number)
+
+Processes messages from the queue in batches, automatically deleting successfully processed messages.
+
+```typescript
+// Process up to 10 iterations (batches)
+await sqsService.processMessageBatches(10);
+
+// Process fewer batches for quick processing
+await sqsService.processMessageBatches(3);
+```
+
+**Batch Configuration**:
+- **MaxNumberOfMessages**: 10 messages per batch
+- **WaitTimeSeconds**: 20 seconds (long polling)
+- **VisibilityTimeout**: 30 seconds
+- **Auto-deletion**: Messages are automatically deleted after retrieval
+
+**Processing Logic**:
+1. Checks message count before each iteration
+2. Receives up to 10 messages with long polling
+3. Parses message bodies as JSON
+4. Logs received messages to console
+5. Automatically deletes all received messages
+6. Continues until max iterations or no messages remain
+
+## Usage Examples
+
+### Event Publishing Service
+
+```typescript
 @Injectable()
 export class EventPublisherService {
   constructor(private sqsService: SqsService) {}
@@ -150,332 +188,25 @@ export class EventPublisherService {
       userId,
       data: eventData,
       timestamp: new Date().toISOString(),
-      messageId: `${userId}-${Date.now()}`,
-      version: '1.0'
+      correlationId: `user-${userId}-${Date.now()}`
     };
 
     await this.sqsService.publish(message);
-    console.log(`Published ${eventType} event for user ${userId}`);
   }
 
-  async publishBatchEvents(events: Array<{ userId: string; eventType: string; data: any }>) {
-    const publishPromises = events.map(event => 
-      this.publishUserEvent(event.userId, event.eventType, event.data)
+  async publishOrderEvents(orders: Array<{ id: string; status: string; customerId: string }>) {
+    // Publish multiple events
+    const publishPromises = orders.map(order =>
+      this.sqsService.publish({
+        type: 'ORDER_STATUS_CHANGED',
+        orderId: order.id,
+        customerId: order.customerId,
+        newStatus: order.status,
+        timestamp: new Date().toISOString()
+      })
     );
 
-    await Promise.all(publishPromises);
-    console.log(`Published ${events.length} events to queue`);
-  }
-
-  async publishDelayedEvent(eventData: any, delaySeconds: number) {
-    // Note: For delayed messages, you'd need to use DelaySeconds parameter
-    // This would require extending the SqsService or using SQS client directly
-    const message = {
-      ...eventData,
-      scheduledFor: new Date(Date.now() + delaySeconds * 1000).toISOString()
-    };
-
-    await this.sqsService.publish(message);
-  }
-}
-```
-
-### Custom Message Processor
-
-```typescript
-import { SqsService } from '@onivoro/server-aws-sqs';
-import { Injectable } from '@nestjs/common';
-import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
-
-@Injectable()
-export class CustomMessageProcessor {
-  constructor(
-    private sqsService: SqsService,
-    private sqsClient: SQSClient
-  ) {}
-
-  async processMessagesWithCustomLogic() {
-    try {
-      const response = await this.sqsClient.send(new ReceiveMessageCommand({
-        QueueUrl: process.env.SQS_QUEUE_URL,
-        MaxNumberOfMessages: 10,
-        WaitTimeSeconds: 20,
-        VisibilityTimeout: 60 // Longer timeout for complex processing
-      }));
-
-      const messages = response.Messages || [];
-
-      for (const message of messages) {
-        try {
-          const messageData = JSON.parse(message.Body || '{}');
-          
-          // Process the message based on its type
-          await this.processMessageByType(messageData);
-
-          // Delete the message after successful processing
-          await this.sqsClient.send(new DeleteMessageCommand({
-            QueueUrl: process.env.SQS_QUEUE_URL,
-            ReceiptHandle: message.ReceiptHandle
-          }));
-
-          console.log(`Successfully processed message: ${message.MessageId}`);
-        } catch (error) {
-          console.error(`Failed to process message ${message.MessageId}:`, error);
-          // Message will become visible again after visibility timeout
-        }
-      }
-
-      return messages.length;
-    } catch (error) {
-      console.error('Error processing messages:', error);
-      throw error;
-    }
-  }
-
-  private async processMessageByType(messageData: any) {
-    switch (messageData.type || messageData.eventType) {
-      case 'ORDER_CREATED':
-        await this.processOrderCreated(messageData.data);
-        break;
-      case 'USER_REGISTERED':
-        await this.processUserRegistration(messageData.data);
-        break;
-      case 'NOTIFICATION':
-        await this.processNotification(messageData.data);
-        break;
-      default:
-        console.warn(`Unknown message type: ${messageData.type}`);
-    }
-  }
-
-  private async processOrderCreated(orderData: any) {
-    console.log(`Processing order: ${orderData.id}`);
-    // Implement order processing logic
-  }
-
-  private async processUserRegistration(userData: any) {
-    console.log(`Processing user registration: ${userData.email}`);
-    // Implement user registration processing logic
-  }
-
-  private async processNotification(notificationData: any) {
-    console.log(`Processing notification: ${notificationData.type}`);
-    // Implement notification processing logic
-  }
-}
-```
-
-### Queue Management Service
-
-```typescript
-import { SQSClient, CreateQueueCommand, GetQueueAttributesCommand, SetQueueAttributesCommand } from '@aws-sdk/client-sqs';
-import { Injectable } from '@nestjs/common';
-
-@Injectable()
-export class SqsQueueManagementService {
-  constructor(private sqsClient: SQSClient) {}
-
-  async createQueue(queueName: string, attributes?: Record<string, string>) {
-    const params = {
-      QueueName: queueName,
-      Attributes: {
-        VisibilityTimeoutSeconds: '30',
-        MessageRetentionPeriod: '1209600', // 14 days
-        ReceiveMessageWaitTimeSeconds: '20', // Enable long polling
-        ...attributes
-      }
-    };
-
-    return this.sqsClient.send(new CreateQueueCommand(params));
-  }
-
-  async createDeadLetterQueue(mainQueueName: string, maxReceiveCount: number = 3) {
-    // Create dead letter queue
-    const dlqName = `${mainQueueName}-dlq`;
-    const dlqResponse = await this.createQueue(dlqName);
-    
-    if (!dlqResponse.QueueUrl) {
-      throw new Error('Failed to create dead letter queue');
-    }
-
-    // Get DLQ attributes to get ARN
-    const dlqAttributes = await this.sqsClient.send(new GetQueueAttributesCommand({
-      QueueUrl: dlqResponse.QueueUrl,
-      AttributeNames: ['QueueArn']
-    }));
-
-    const dlqArn = dlqAttributes.Attributes?.QueueArn;
-    if (!dlqArn) {
-      throw new Error('Failed to get DLQ ARN');
-    }
-
-    // Create main queue with DLQ configuration
-    const redrivePolicy = JSON.stringify({
-      deadLetterTargetArn: dlqArn,
-      maxReceiveCount
-    });
-
-    return this.createQueue(mainQueueName, {
-      RedrivePolicy: redrivePolicy
-    });
-  }
-
-  async getQueueAttributes(queueUrl: string) {
-    return this.sqsClient.send(new GetQueueAttributesCommand({
-      QueueUrl: queueUrl,
-      AttributeNames: ['All']
-    }));
-  }
-
-  async updateQueueAttributes(queueUrl: string, attributes: Record<string, string>) {
-    return this.sqsClient.send(new SetQueueAttributesCommand({
-      QueueUrl: queueUrl,
-      Attributes: attributes
-    }));
-  }
-}
-```
-
-### Batch Message Processing Service
-
-```typescript
-import { SQSClient, ReceiveMessageCommand, DeleteMessageBatchCommand } from '@aws-sdk/client-sqs';
-import { Injectable } from '@nestjs/common';
-
-@Injectable()
-export class SqsBatchProcessorService {
-  constructor(private sqsClient: SQSClient) {}
-
-  async processBatchesWithRetry(queueUrl: string, maxBatches: number = 10, retryAttempts: number = 3) {
-    let processedBatches = 0;
-    let totalProcessedMessages = 0;
-
-    while (processedBatches < maxBatches) {
-      try {
-        const response = await this.sqsClient.send(new ReceiveMessageCommand({
-          QueueUrl: queueUrl,
-          MaxNumberOfMessages: 10,
-          WaitTimeSeconds: 20,
-          VisibilityTimeout: 300 // 5 minutes for batch processing
-        }));
-
-        const messages = response.Messages || [];
-        if (messages.length === 0) {
-          console.log('No more messages to process');
-          break;
-        }
-
-        console.log(`Processing batch of ${messages.length} messages`);
-
-        // Process messages with retry logic
-        const processedMessages = await this.processMessagesWithRetry(messages, retryAttempts);
-        
-        // Delete successfully processed messages
-        if (processedMessages.length > 0) {
-          await this.deleteMessageBatch(queueUrl, processedMessages);
-          totalProcessedMessages += processedMessages.length;
-        }
-
-        processedBatches++;
-      } catch (error) {
-        console.error(`Error processing batch ${processedBatches + 1}:`, error);
-        // Continue with next batch
-      }
-    }
-
-    return {
-      processedBatches,
-      totalProcessedMessages
-    };
-  }
-
-  private async processMessagesWithRetry(messages: any[], maxRetries: number) {
-    const processedMessages = [];
-
-    for (const message of messages) {
-      let retryCount = 0;
-      let processed = false;
-
-      while (retryCount < maxRetries && !processed) {
-        try {
-          const messageData = JSON.parse(message.Body || '{}');
-          await this.processMessage(messageData);
-          processedMessages.push(message);
-          processed = true;
-        } catch (error) {
-          retryCount++;
-          console.error(`Retry ${retryCount}/${maxRetries} failed for message ${message.MessageId}:`, error);
-          
-          if (retryCount < maxRetries) {
-            await this.delay(1000 * retryCount); // Exponential backoff
-          }
-        }
-      }
-
-      if (!processed) {
-        console.error(`Failed to process message ${message.MessageId} after ${maxRetries} retries`);
-      }
-    }
-
-    return processedMessages;
-  }
-
-  private async deleteMessageBatch(queueUrl: string, messages: any[]) {
-    const entries = messages.map((message, index) => ({
-      Id: index.toString(),
-      ReceiptHandle: message.ReceiptHandle
-    }));
-
-    return this.sqsClient.send(new DeleteMessageBatchCommand({
-      QueueUrl: queueUrl,
-      Entries: entries
-    }));
-  }
-
-  private async processMessage(messageData: any) {
-    // Implement your message processing logic here
-    console.log('Processing message:', messageData);
-    
-    // Simulate processing time
-    await this.delay(100);
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-}
-```
-
-## Advanced Usage
-
-### Message Deduplication
-
-```typescript
-@Injectable()
-export class SqsDeduplicationService {
-  private processedMessages = new Set<string>();
-
-  async publishWithDeduplication(data: any, deduplicationId?: string) {
-    const messageId = deduplicationId || this.generateMessageId(data);
-    
-    if (this.processedMessages.has(messageId)) {
-      console.log(`Message ${messageId} already processed, skipping`);
-      return;
-    }
-
-    const message = {
-      ...data,
-      deduplicationId: messageId,
-      timestamp: new Date().toISOString()
-    };
-
-    await this.sqsService.publish(message);
-    this.processedMessages.add(messageId);
-  }
-
-  private generateMessageId(data: any): string {
-    // Generate a unique ID based on message content
-    return Buffer.from(JSON.stringify(data)).toString('base64');
+    await Promise.allSettled(publishPromises);
   }
 }
 ```
@@ -484,91 +215,203 @@ export class SqsDeduplicationService {
 
 ```typescript
 @Injectable()
-export class SqsMonitoringService {
+export class QueueMonitoringService {
   constructor(private sqsService: SqsService) {}
 
-  async getQueueMetrics() {
-    const messageCount = await this.sqsService.getApproximateNumberOfMessages();
-    
-    return {
-      approximateNumberOfMessages: messageCount,
-      timestamp: new Date().toISOString(),
-      status: messageCount > 1000 ? 'HIGH_LOAD' : 'NORMAL'
-    };
+  async getQueueHealth() {
+    try {
+      const [isAccessible, messageCount] = await Promise.all([
+        this.sqsService.verifyQueue().then(() => true).catch(() => false),
+        this.sqsService.getApproximateNumberOfMessages().catch(() => -1)
+      ]);
+
+      return {
+        accessible: isAccessible,
+        messageCount,
+        status: this.determineStatus(messageCount),
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      return {
+        accessible: false,
+        messageCount: -1,
+        status: 'ERROR',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
-  async monitorQueue(intervalMs: number = 60000) {
+  private determineStatus(messageCount: number): string {
+    if (messageCount < 0) return 'ERROR';
+    if (messageCount === 0) return 'EMPTY';
+    if (messageCount < 100) return 'NORMAL';
+    if (messageCount < 1000) return 'BUSY';
+    return 'OVERLOADED';
+  }
+
+  async startMonitoring(intervalSeconds: number = 60) {
     setInterval(async () => {
-      try {
-        const metrics = await this.getQueueMetrics();
-        console.log('Queue metrics:', metrics);
-        
-        if (metrics.status === 'HIGH_LOAD') {
-          console.warn('Queue has high message load!');
-          // Implement alerting logic here
-        }
-      } catch (error) {
-        console.error('Error monitoring queue:', error);
+      const health = await this.getQueueHealth();
+      console.log('Queue Health:', health);
+      
+      if (health.status === 'OVERLOADED') {
+        console.warn('⚠️ Queue is overloaded! Consider scaling processing.');
       }
-    }, intervalMs);
+    }, intervalSeconds * 1000);
   }
 }
+```
+
+### Message Processing Worker
+
+```typescript
+@Injectable()
+export class MessageProcessorService {
+  constructor(private sqsService: SqsService) {}
+
+  async startProcessing(maxBatches: number = 50) {
+    console.log(`Starting message processing (max ${maxBatches} batches)...`);
+    
+    const startTime = Date.now();
+    await this.sqsService.processMessageBatches(maxBatches);
+    const duration = Date.now() - startTime;
+    
+    console.log(`Processing completed in ${duration}ms`);
+  }
+
+  async processUntilEmpty(maxIterations: number = 100) {
+    let iteration = 0;
+    let messageCount = await this.sqsService.getApproximateNumberOfMessages();
+    
+    console.log(`Starting processing: ${messageCount} messages in queue`);
+    
+    while (messageCount > 0 && iteration < maxIterations) {
+      await this.sqsService.processMessageBatches(1);
+      messageCount = await this.sqsService.getApproximateNumberOfMessages();
+      iteration++;
+      
+      console.log(`Iteration ${iteration}: ${messageCount} messages remaining`);
+      
+      // Brief pause between iterations
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    console.log(`Processing complete. Final count: ${messageCount} messages`);
+  }
+}
+```
+
+### Scheduled Processing Service
+
+```typescript
+@Injectable()
+export class ScheduledProcessorService {
+  private isProcessing = false;
+  
+  constructor(private sqsService: SqsService) {}
+
+  @Cron('*/30 * * * * *') // Every 30 seconds
+  async processMessages() {
+    if (this.isProcessing) {
+      console.log('Processing already in progress, skipping...');
+      return;
+    }
+
+    this.isProcessing = true;
+    
+    try {
+      const messageCount = await this.sqsService.getApproximateNumberOfMessages();
+      
+      if (messageCount > 0) {
+        console.log(`Processing ${messageCount} messages...`);
+        await this.sqsService.processMessageBatches(5); // Process up to 5 batches
+      }
+    } catch (error) {
+      console.error('Scheduled processing failed:', error);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+}
+```
+
+## Error Handling
+
+The service handles errors gracefully:
+
+```typescript
+// Publishing - errors are logged but not thrown
+await sqsService.publish({ data: 'test' }); // Won't throw even if queue is inaccessible
+
+// Queue verification - throws on error for proper error handling
+try {
+  await sqsService.verifyQueue();
+} catch (error) {
+  if (error.name === 'AWS.SimpleQueueService.NonExistentQueue') {
+    console.error('Queue does not exist');
+  } else if (error.name === 'AccessDeniedException') {
+    console.error('Insufficient permissions');
+  }
+}
+
+// Message counting - throws on error
+try {
+  const count = await sqsService.getApproximateNumberOfMessages();
+} catch (error) {
+  console.error('Failed to get message count:', error);
+}
+
+// Batch processing - errors logged per batch, doesn't stop processing
+await sqsService.processMessageBatches(10); // Continues even if some batches fail
 ```
 
 ## Best Practices
 
-### 1. Error Handling
+### 1. Message Structure
+
+Use consistent message structures for better processing:
 
 ```typescript
-async safePublish<T>(data: T): Promise<boolean> {
-  try {
-    await this.sqsService.publish(data);
-    return true;
-  } catch (error: any) {
-    console.error('Failed to publish message:', error);
-    
-    if (error.name === 'InvalidParameterValue') {
-      console.error('Invalid message format');
-    } else if (error.name === 'AWS.SimpleQueueService.NonExistentQueue') {
-      console.error('Queue does not exist');
-    }
-    
-    return false;
-  }
+interface StandardMessage {
+  type: string;
+  data: any;
+  timestamp: string;
+  correlationId?: string;
+  source?: string;
+  version?: string;
 }
+
+await sqsService.publish({
+  type: 'USER_REGISTRATION',
+  data: { userId: '123', email: 'user@example.com' },
+  timestamp: new Date().toISOString(),
+  correlationId: 'reg-123',
+  source: 'auth-service',
+  version: '1.0'
+});
 ```
 
-### 2. Message Validation
+### 2. Batch Processing Considerations
+
+- The service processes messages but doesn't provide custom message handling
+- Messages are automatically deleted after being received
+- Use moderate `maxIterations` values to avoid infinite processing
+- Monitor message counts before and after processing
+
+### 3. Queue Monitoring
 
 ```typescript
-validateMessage(message: any): boolean {
-  return message && 
-         typeof message === 'object' && 
-         message.type && 
-         message.data;
+// Regular health checks
+const health = await sqsService.verifyQueue().catch(() => false);
+const count = await sqsService.getApproximateNumberOfMessages().catch(() => 0);
+
+if (!health) {
+  console.error('Queue health check failed');
 }
-```
 
-### 3. Graceful Shutdown
-
-```typescript
-@Injectable()
-export class SqsGracefulShutdown {
-  private isShuttingDown = false;
-
-  async shutdown() {
-    this.isShuttingDown = true;
-    console.log('Gracefully shutting down SQS processing...');
-    
-    // Wait for current processing to complete
-    await this.waitForProcessingToComplete();
-    
-    console.log('SQS processing shutdown complete');
-  }
-
-  private async waitForProcessingToComplete() {
-    // Implement logic to wait for current processing to complete
-  }
+if (count > threshold) {
+  console.warn(`Queue backlog: ${count} messages`);
 }
 ```
 
@@ -583,11 +426,13 @@ describe('SqsService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      imports: [ServerAwsSqsModule.configure({
-        AWS_REGION: 'us-east-1',
-        AWS_SQS_URL: 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue',
-        AWS_PROFILE: 'test'
-      })],
+      imports: [
+        ServerAwsSqsModule.configure({
+          AWS_REGION: 'us-east-1',
+          AWS_SQS_URL: 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue',
+          AWS_PROFILE: 'test'
+        }),
+      ],
     }).compile();
 
     service = module.get<SqsService>(SqsService);
@@ -597,21 +442,37 @@ describe('SqsService', () => {
     expect(service).toBeDefined();
   });
 
-  it('should publish message', async () => {
-    const testData = { test: 'data' };
+  it('should publish message without throwing', async () => {
+    const testData = { type: 'TEST_EVENT', data: 'test' };
     await expect(service.publish(testData)).resolves.not.toThrow();
+  });
+
+  it('should get message count', async () => {
+    const count = await service.getApproximateNumberOfMessages();
+    expect(typeof count).toBe('number');
+    expect(count).toBeGreaterThanOrEqual(0);
   });
 });
 ```
 
 ## API Reference
 
-### Exported Classes
-- `ServerAwsSqsConfig`: Configuration class for SQS settings
-- `ServerAwsSqsModule`: NestJS module for SQS integration
+### Configuration Classes
+- `ServerAwsSqsConfig`: Configuration class requiring AWS_REGION and AWS_SQS_URL
 
-### Exported Services
-- `SqsService`: Main SQS service with message publishing and processing capabilities
+### Modules  
+- `ServerAwsSqsModule`: NestJS module with `configure()` method for setup
+
+### Services
+- `SqsService`: Main service with four methods:
+  - `publish<TData>(event: TData): Promise<void>`
+  - `verifyQueue(): Promise<boolean>`
+  - `getApproximateNumberOfMessages(): Promise<number>`
+  - `processMessageBatches(maxIterations: number): Promise<void>`
+
+### AWS SDK Dependencies
+- Uses `@aws-sdk/client-sqs` v3
+- Commands used: `SendMessageCommand`, `GetQueueAttributesCommand`, `ReceiveMessageCommand`, `DeleteMessageBatchCommand`
 
 ## License
 

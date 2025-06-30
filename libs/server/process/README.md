@@ -1,6 +1,6 @@
 # @onivoro/server-process
 
-A comprehensive process management library for Node.js applications, providing utilities for executing commands, managing Docker containers, PostgreSQL operations, and handling system processes with reactive programming support.
+A lightweight Node.js process management library providing utilities for command execution, Docker container operations, PostgreSQL commands, and reactive process handling.
 
 ## Installation
 
@@ -10,516 +10,379 @@ npm install @onivoro/server-process
 
 ## Features
 
-- **Command Execution**: Promise-based and reactive command execution
-- **Docker Integration**: Docker container management utilities
-- **PostgreSQL Tools**: PSql command execution and database operations
-- **Process Management**: Spawn and manage child processes
-- **Reactive Streams**: RxJS-based reactive process handling
-- **JSON Processing**: Parse command output as JSON
+- **Promise-based Command Execution**: Simple async/await command execution
+- **Reactive Process Streams**: RxJS-based reactive command execution
+- **Docker Container Support**: Execute commands within Docker containers
+- **PostgreSQL Integration**: Execute psql commands with container support
+- **Process I/O Management**: Handle stdin/stdout streams reactively
+- **JSON Output Processing**: Parse command output as JSON
 - **Line-by-Line Processing**: Stream processing for large outputs
-- **Error Handling**: Comprehensive error handling for process operations
-- **Cross-Platform**: Works on Windows, macOS, and Linux
-
-## Quick Start
-
-### Basic Command Execution
-
-```typescript
-import { execPromise, shell } from '@onivoro/server-process';
-
-// Simple command execution
-const result = await execPromise('ls -la');
-console.log(result.stdout);
-
-// Alternative using shell function (if available in common)
-const output = await shell('pwd');
-console.log(output);
-```
-
-### Docker Operations
-
-```typescript
-import { Docker } from '@onivoro/server-process';
-
-const docker = new Docker();
-
-// List running containers
-const containers = await docker.listContainers();
-
-// Run a container
-await docker.run('nginx:latest', {
-  ports: ['80:80'],
-  detach: true,
-  name: 'my-nginx'
-});
-
-// Execute command in container
-const result = await docker.exec('my-nginx', 'ls /usr/share/nginx/html');
-```
-
-### PostgreSQL Operations
-
-```typescript
-import { PSql } from '@onivoro/server-process';
-
-const psql = new PSql({
-  host: 'localhost',
-  port: 5432,
-  database: 'mydb',
-  username: 'user',
-  password: 'password'
-});
-
-// Execute SQL query
-const users = await psql.query('SELECT * FROM users');
-
-// Execute SQL file
-await psql.executeFile('./migrations/001_create_tables.sql');
-```
-
-## Usage Examples
-
-### Reactive Command Execution
-
-```typescript
-import { execRx, execRxAsLines, execRxAsJson } from '@onivoro/server-process';
-import { tap, catchError } from 'rxjs/operators';
-import { of } from 'rxjs';
-
-// Execute command reactively
-execRx('ping google.com')
-  .pipe(
-    tap(data => console.log('Output:', data)),
-    catchError(error => {
-      console.error('Command failed:', error);
-      return of(null);
-    })
-  )
-  .subscribe();
-
-// Process output line by line
-execRxAsLines('tail -f /var/log/system.log')
-  .pipe(
-    tap(line => console.log('Log line:', line))
-  )
-  .subscribe();
-
-// Parse JSON output
-execRxAsJson('docker inspect my-container')
-  .pipe(
-    tap(json => console.log('Container info:', json))
-  )
-  .subscribe();
-```
-
-### Process Spawning
-
-```typescript
-import { spawnPromise } from '@onivoro/server-process';
-
-// Spawn a long-running process
-const result = await spawnPromise('node', ['server.js'], {
-  cwd: '/path/to/app',
-  env: { ...process.env, NODE_ENV: 'production' }
-});
-
-console.log('Process exit code:', result.code);
-console.log('Process output:', result.stdout);
-```
-
-### Docker Container Management
-
-```typescript
-import { Docker } from '@onivoro/server-process';
-
-class ContainerManager {
-  private docker = new Docker();
-
-  async deployApplication(imageName: string, config: any): Promise<string> {
-    // Pull latest image
-    await this.docker.pull(imageName);
-
-    // Stop existing container if running
-    try {
-      await this.docker.stop(config.containerName);
-      await this.docker.remove(config.containerName);
-    } catch (error) {
-      // Container might not exist, continue
-    }
-
-    // Run new container
-    const containerId = await this.docker.run(imageName, {
-      name: config.containerName,
-      ports: config.ports,
-      volumes: config.volumes,
-      env: config.environment,
-      detach: true,
-      restart: 'unless-stopped'
-    });
-
-    return containerId;
-  }
-
-  async getContainerLogs(containerName: string): Promise<string> {
-    return this.docker.logs(containerName, { tail: 100 });
-  }
-
-  async healthCheck(containerName: string): Promise<boolean> {
-    try {
-      const result = await this.docker.exec(containerName, 'curl -f http://localhost/health');
-      return result.exitCode === 0;
-    } catch (error) {
-      return false;
-    }
-  }
-}
-```
-
-### Database Migration with PSql
-
-```typescript
-import { PSql } from '@onivoro/server-process';
-import { readdir } from 'fs/promises';
-import { join } from 'path';
-
-class MigrationRunner {
-  private psql: PSql;
-
-  constructor(connectionConfig: any) {
-    this.psql = new PSql(connectionConfig);
-  }
-
-  async runMigrations(migrationsDir: string): Promise<void> {
-    // Ensure migrations table exists
-    await this.psql.query(`
-      CREATE TABLE IF NOT EXISTS migrations (
-        id SERIAL PRIMARY KEY,
-        filename VARCHAR(255) NOT NULL,
-        executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Get executed migrations
-    const executedMigrations = await this.psql.query(
-      'SELECT filename FROM migrations ORDER BY id'
-    );
-    const executedFiles = executedMigrations.map(row => row.filename);
-
-    // Get migration files
-    const files = await readdir(migrationsDir);
-    const migrationFiles = files
-      .filter(file => file.endsWith('.sql'))
-      .sort();
-
-    // Execute pending migrations
-    for (const file of migrationFiles) {
-      if (!executedFiles.includes(file)) {
-        console.log(`Executing migration: ${file}`);
-        
-        try {
-          await this.psql.executeFile(join(migrationsDir, file));
-          await this.psql.query(
-            'INSERT INTO migrations (filename) VALUES ($1)',
-            [file]
-          );
-          console.log(`Migration ${file} completed successfully`);
-        } catch (error) {
-          console.error(`Migration ${file} failed:`, error);
-          throw error;
-        }
-      }
-    }
-  }
-
-  async rollback(steps: number = 1): Promise<void> {
-    const migrations = await this.psql.query(
-      'SELECT filename FROM migrations ORDER BY id DESC LIMIT $1',
-      [steps]
-    );
-
-    for (const migration of migrations) {
-      // Execute rollback script if exists
-      const rollbackFile = migration.filename.replace('.sql', '.rollback.sql');
-      try {
-        await this.psql.executeFile(rollbackFile);
-        await this.psql.query(
-          'DELETE FROM migrations WHERE filename = $1',
-          [migration.filename]
-        );
-        console.log(`Rolled back migration: ${migration.filename}`);
-      } catch (error) {
-        console.error(`Rollback failed for ${migration.filename}:`, error);
-        throw error;
-      }
-    }
-  }
-}
-```
-
-### System Monitoring
-
-```typescript
-import { execPromise, execRxAsLines } from '@onivoro/server-process';
-
-class SystemMonitor {
-  async getSystemInfo(): Promise<any> {
-    const [cpu, memory, disk] = await Promise.all([
-      this.getCpuInfo(),
-      this.getMemoryInfo(),
-      this.getDiskInfo()
-    ]);
-
-    return { cpu, memory, disk };
-  }
-
-  private async getCpuInfo(): Promise<any> {
-    const result = await execPromise('cat /proc/cpuinfo');
-    // Parse CPU information
-    return this.parseCpuInfo(result.stdout);
-  }
-
-  private async getMemoryInfo(): Promise<any> {
-    const result = await execPromise('free -m');
-    return this.parseMemoryInfo(result.stdout);
-  }
-
-  private async getDiskInfo(): Promise<any> {
-    const result = await execPromise('df -h');
-    return this.parseDiskInfo(result.stdout);
-  }
-
-  monitorSystemLogs(): void {
-    execRxAsLines('tail -f /var/log/syslog')
-      .subscribe(line => {
-        if (this.isErrorLog(line)) {
-          this.handleSystemError(line);
-        }
-      });
-  }
-
-  private isErrorLog(line: string): boolean {
-    return line.toLowerCase().includes('error') || 
-           line.toLowerCase().includes('fail');
-  }
-
-  private handleSystemError(errorLine: string): void {
-    console.error('System error detected:', errorLine);
-    // Implement alerting logic
-  }
-}
-```
-
-### Process Exit Handling
-
-```typescript
-import { exit, listen } from '@onivoro/server-process';
-
-class GracefulShutdown {
-  private cleanup: Array<() => Promise<void>> = [];
-
-  addCleanupTask(task: () => Promise<void>): void {
-    this.cleanup.push(task);
-  }
-
-  setupGracefulShutdown(): void {
-    // Listen for termination signals
-    listen('SIGTERM', async () => {
-      console.log('Received SIGTERM, shutting down gracefully...');
-      await this.performCleanup();
-      exit(0);
-    });
-
-    listen('SIGINT', async () => {
-      console.log('Received SIGINT, shutting down gracefully...');
-      await this.performCleanup();
-      exit(0);
-    });
-
-    // Handle uncaught exceptions
-    process.on('uncaughtException', async (error) => {
-      console.error('Uncaught exception:', error);
-      await this.performCleanup();
-      exit(1);
-    });
-  }
-
-  private async performCleanup(): Promise<void> {
-    console.log('Performing cleanup tasks...');
-    
-    await Promise.all(
-      this.cleanup.map(async (task, index) => {
-        try {
-          await task();
-          console.log(`Cleanup task ${index + 1} completed`);
-        } catch (error) {
-          console.error(`Cleanup task ${index + 1} failed:`, error);
-        }
-      })
-    );
-  }
-}
-
-// Usage
-const shutdown = new GracefulShutdown();
-
-// Add cleanup tasks
-shutdown.addCleanupTask(async () => {
-  // Close database connections
-  await database.close();
-});
-
-shutdown.addCleanupTask(async () => {
-  // Stop background jobs
-  await jobQueue.stop();
-});
-
-shutdown.setupGracefulShutdown();
-```
 
 ## API Reference
 
 ### Command Execution
 
-#### execPromise(command, options?)
+#### `execPromise(cmd, options?)`
 
-Execute a command and return a promise:
-
-```typescript
-interface ExecResult {
-  stdout: string;
-  stderr: string;
-  code: number;
-}
-
-function execPromise(command: string, options?: ExecOptions): Promise<ExecResult>
-```
-
-#### spawnPromise(command, args?, options?)
-
-Spawn a process and return a promise:
+Execute a command and return a promise that resolves to stdout as a string:
 
 ```typescript
-function spawnPromise(
-  command: string, 
-  args?: string[], 
-  options?: SpawnOptions
-): Promise<SpawnResult>
+import { execPromise } from '@onivoro/server-process';
+
+// Simple command execution
+const output = await execPromise('ls -la');
+console.log(output); // stdout as string
+
+// With options
+const result = await execPromise('git status', { cwd: '/path/to/repo' });
 ```
 
-### Reactive Execution
+**Parameters:**
+- `cmd: string` - Command to execute
+- `options?: EncodingOption & ExecOptions` - Node.js exec options
 
-#### execRx(command, options?)
+**Returns:** `Promise<string>` - Command stdout
 
-Execute command reactively:
+#### `spawnPromise(program, args?, options?)`
+
+Spawn a process and return a promise that resolves to joined stdout:
 
 ```typescript
-function execRx(command: string, options?: ExecOptions): Observable<string>
+import { spawnPromise } from '@onivoro/server-process';
+
+// Spawn with arguments
+const output = await spawnPromise('node', ['--version']);
+console.log(output); // Node.js version
+
+// With spawn options
+const result = await spawnPromise('npm', ['install'], { 
+  cwd: '/path/to/project',
+  env: { ...process.env, NODE_ENV: 'production' }
+});
 ```
 
-#### execRxAsLines(command, options?)
+**Parameters:**
+- `program: string` - Program to spawn
+- `args?: string[]` - Command arguments
+- `options?: any` - Node.js spawn options
 
-Execute command and emit output line by line:
+**Returns:** `Promise<string>` - Joined stdout (rejects with stderr on error)
+
+### Reactive Command Execution
+
+#### `execRx(cmd, options?, emitStdErr?)`
+
+Execute a command reactively, emitting stdout (and optionally stderr):
 
 ```typescript
-function execRxAsLines(command: string, options?: ExecOptions): Observable<string>
+import { execRx } from '@onivoro/server-process';
+
+execRx('ping -c 3 google.com').subscribe({
+  next: (output) => console.log('Output:', output),
+  error: (err) => console.error('Error:', err),
+  complete: () => console.log('Command completed')
+});
+
+// Without stderr
+execRx('ls -la', undefined, false).subscribe(console.log);
 ```
 
-#### execRxAsJson(command, options?)
+**Parameters:**
+- `cmd: string` - Command to execute
+- `options?: EncodingOption & ExecOptions` - Node.js exec options
+- `emitStdErr?: boolean` - Include stderr in output (default: true)
 
-Execute command and parse output as JSON:
+**Returns:** `Observable<string>` - Command output stream
+
+#### `execRxAsLines(cmd, options?, emitStdErr?)`
+
+Execute a command and emit output line by line:
 
 ```typescript
-function execRxAsJson<T>(command: string, options?: ExecOptions): Observable<T>
+import { execRxAsLines } from '@onivoro/server-process';
+
+execRxAsLines('cat large-file.txt').subscribe({
+  next: (line) => console.log('Line:', line),
+  complete: () => console.log('File processed')
+});
 ```
+
+**Parameters:**
+- `cmd: string` - Command to execute
+- `options?: ExecOptions` - Node.js exec options
+- `emitStdErr?: boolean` - Include stderr in output (default: true)
+
+**Returns:** `Observable<string>` - Stream of individual lines
+
+#### `execRxAsJson(cmd, options?, emitStdErr?)`
+
+Execute a command and parse output as JSON:
+
+```typescript
+import { execRxAsJson } from '@onivoro/server-process';
+
+execRxAsJson('docker inspect my-container').subscribe({
+  next: (json) => console.log('Container info:', json),
+  error: (err) => console.error('Failed to parse JSON:', err)
+});
+```
+
+**Parameters:**
+- `cmd: string` - Command to execute
+- `options?: ExecOptions` - Node.js exec options
+- `emitStdErr?: boolean` - Include stderr in output (default: true)
+
+**Returns:** `Observable<any>` - Stream of parsed JSON objects
 
 ### Docker Class
 
-Docker container management:
+Execute commands within Docker containers:
 
 ```typescript
-class Docker {
-  async run(image: string, options?: DockerRunOptions): Promise<string>
-  async stop(container: string): Promise<void>
-  async remove(container: string): Promise<void>
-  async exec(container: string, command: string): Promise<ExecResult>
-  async logs(container: string, options?: LogOptions): Promise<string>
-  async listContainers(): Promise<ContainerInfo[]>
-  async pull(image: string): Promise<void>
-}
+import { Docker } from '@onivoro/server-process';
+
+const docker = new Docker('my-postgres-container', 'psql');
+
+// Execute psql command in container
+docker.execRx('-c "SELECT version();"').subscribe({
+  next: (result) => console.log('DB Version:', result),
+  error: (err) => console.error('Query failed:', err)
+});
 ```
+
+**Constructor:**
+- `containerName: string` - Name of the Docker container
+- `binaryName: string` - Binary to execute within the container
+
+**Methods:**
+- `execRx(cmd, options?, emitStdErr?)` - Execute command reactively within container
 
 ### PSql Class
 
-PostgreSQL operations:
+Execute PostgreSQL commands with optional Docker container support:
 
 ```typescript
-class PSql {
-  constructor(config: PSqlConfig)
-  async query(sql: string, params?: any[]): Promise<any[]>
-  async executeFile(filePath: string): Promise<void>
-  async transaction<T>(callback: (client: any) => Promise<T>): Promise<T>
+import { PSql } from '@onivoro/server-process';
+
+// Local psql
+const psql = new PSql();
+psql.execRx('SELECT COUNT(*) FROM users;', 'mydb', 'postgres').subscribe(console.log);
+
+// Container-based psql
+const containerPsql = new PSql('postgres-container');
+containerPsql.execRx('SELECT NOW();', 'mydb', 'postgres').subscribe(console.log);
+```
+
+**Constructor:**
+- `containerName?: string` - Optional Docker container name
+
+**Methods:**
+- `execRx(cmd, db, username)` - Execute psql command
+  - `cmd: string` - SQL command to execute
+  - `db: string` - Database name
+  - `username: string` - PostgreSQL username
+
+### Process I/O Management
+
+#### `listen()`
+
+Create reactive streams for process stdin/stdout:
+
+```typescript
+import { listen } from '@onivoro/server-process';
+
+const { stdout, stdin } = listen();
+
+// Handle stdin data
+stdin.subscribe((data) => {
+  console.log('Received input:', data.toString());
+});
+
+// stdin automatically completes when process.stdin closes
+```
+
+**Returns:** `{ stdout: Subject, stdin: Subject }` - Reactive streams for process I/O
+
+#### `exit(code)`
+
+Create a process exit function with specified exit code:
+
+```typescript
+import { exit } from '@onivoro/server-process';
+
+const exitWithError = exit(1);
+const exitSuccess = exit(0);
+
+// Use in error handling
+if (someErrorCondition) {
+  console.error('Fatal error occurred');
+  exitWithError();
 }
 ```
 
-### Process Management
+**Parameters:**
+- `code: number` - Exit code
 
-#### listen(signal, callback)
+**Returns:** `() => never` - Function that exits the process
 
-Listen for process signals:
+## Usage Examples
+
+### Basic Command Execution
 
 ```typescript
-function listen(signal: string, callback: () => void | Promise<void>): void
+import { execPromise, spawnPromise } from '@onivoro/server-process';
+
+async function deployApp() {
+  try {
+    // Check if Docker is running
+    await execPromise('docker --version');
+    
+    // Build and deploy
+    const buildOutput = await spawnPromise('docker', ['build', '-t', 'myapp', '.']);
+    console.log('Build completed:', buildOutput);
+    
+    const runOutput = await spawnPromise('docker', ['run', '-d', '-p', '3000:3000', 'myapp']);
+    console.log('Container started:', runOutput);
+  } catch (error) {
+    console.error('Deployment failed:', error);
+  }
+}
 ```
 
-#### exit(code?)
-
-Exit process with optional code:
+### Reactive Log Monitoring
 
 ```typescript
-function exit(code?: number): never
+import { execRxAsLines } from '@onivoro/server-process';
+
+function monitorLogs(logFile: string) {
+  execRxAsLines(`tail -f ${logFile}`)
+    .subscribe({
+      next: (line) => {
+        if (line.includes('ERROR')) {
+          console.error('🚨 Error detected:', line);
+          // Trigger alert
+        } else if (line.includes('WARN')) {
+          console.warn('⚠️  Warning:', line);
+        }
+      },
+      error: (err) => console.error('Log monitoring failed:', err)
+    });
+}
+
+monitorLogs('/var/log/app.log');
 ```
 
-## Best Practices
-
-1. **Error Handling**: Always handle errors in process operations
-2. **Resource Cleanup**: Use proper cleanup for long-running processes
-3. **Signal Handling**: Implement graceful shutdown for production applications
-4. **Stream Processing**: Use reactive streams for large outputs
-5. **Security**: Validate input when executing external commands
-6. **Logging**: Log process operations for debugging and monitoring
-7. **Timeouts**: Set appropriate timeouts for long-running operations
-8. **Environment**: Use environment-specific configurations
-
-## Security Considerations
-
-1. **Command Injection**: Always validate and sanitize command inputs
-2. **Privilege Escalation**: Run processes with minimal required privileges
-3. **Environment Variables**: Be careful with sensitive environment variables
-4. **File Permissions**: Ensure proper file permissions for executed scripts
-5. **Container Security**: Follow Docker security best practices
-
-## Testing
+### Database Operations with Docker
 
 ```typescript
-import { execPromise, Docker } from '@onivoro/server-process';
+import { PSql } from '@onivoro/server-process';
 
-describe('Process Operations', () => {
-  it('should execute commands', async () => {
-    const result = await execPromise('echo "Hello World"');
-    expect(result.stdout.trim()).toBe('Hello World');
-    expect(result.code).toBe(0);
+class DatabaseManager {
+  private psql = new PSql('postgres-container');
+
+  async checkHealth() {
+    return new Promise((resolve, reject) => {
+      this.psql.execRx('SELECT 1;', 'postgres', 'admin').subscribe({
+        next: (result) => {
+          console.log('Database is healthy');
+          resolve(result);
+        },
+        error: reject
+      });
+    });
+  }
+
+  async getUserCount(database: string) {
+    return new Promise((resolve, reject) => {
+      this.psql.execRx('SELECT COUNT(*) FROM users;', database, 'admin').subscribe({
+        next: (result) => resolve(parseInt(result.trim())),
+        error: reject
+      });
+    });
+  }
+}
+```
+
+### JSON Processing
+
+```typescript
+import { execRxAsJson } from '@onivoro/server-process';
+
+interface ContainerInfo {
+  Id: string;
+  Name: string;
+  State: { Status: string };
+}
+
+function getContainerStatus(containerName: string) {
+  execRxAsJson<ContainerInfo[]>(`docker inspect ${containerName}`).subscribe({
+    next: (containers) => {
+      const container = containers[0];
+      console.log(`Container ${container.Name} is ${container.State.Status}`);
+    },
+    error: (err) => console.error('Failed to get container info:', err)
   });
+}
+```
 
-  it('should handle command errors', async () => {
-    try {
-      await execPromise('nonexistent-command');
-      fail('Should have thrown an error');
-    } catch (error) {
-      expect(error.code).not.toBe(0);
+### Process I/O Handling
+
+```typescript
+import { listen, exit } from '@onivoro/server-process';
+
+function setupInteractiveMode() {
+  const { stdin } = listen();
+  
+  console.log('Enter commands (type "exit" to quit):');
+  
+  stdin.subscribe({
+    next: (data) => {
+      const input = data.toString().trim();
+      
+      if (input === 'exit') {
+        console.log('Goodbye!');
+        exit(0)();
+      } else {
+        console.log(`You entered: ${input}`);
+      }
+    },
+    complete: () => {
+      console.log('Input stream closed');
+      exit(0)();
     }
   });
+}
+```
+
+## Error Handling
+
+All functions handle errors appropriately:
+
+- **Promise-based functions** reject with error details
+- **Reactive functions** emit errors through the error channel
+- **Process execution errors** include exit codes and stderr information
+
+```typescript
+import { execPromise, execRx } from '@onivoro/server-process';
+
+// Promise error handling
+try {
+  await execPromise('nonexistent-command');
+} catch (error) {
+  console.error('Command failed:', error.message);
+}
+
+// Reactive error handling
+execRx('invalid-command').subscribe({
+  next: (output) => console.log(output),
+  error: (error) => console.error('Command error:', error),
+  complete: () => console.log('Done')
 });
 ```
+
+## TypeScript Support
+
+All functions are fully typed with TypeScript interfaces. The library uses Node.js built-in types for options and return values.
 
 ## License
 

@@ -1,6 +1,6 @@
 # @onivoro/isomorphic-axios
 
-HTTP client utilities and Axios configuration for both browser and server environments. This package provides a comprehensive set of tools for creating configurable Axios instances with built-in retry logic, error handling, and request/response interceptors that work seamlessly across client and server codebases.
+Lightweight Axios wrapper for creating configured HTTP clients with built-in error handling and retry logic. This package provides utilities for creating Axios instances with custom interceptors and integrating with OpenAPI-generated client classes.
 
 ## Installation
 
@@ -10,112 +10,299 @@ npm install @onivoro/isomorphic-axios
 
 ## Features
 
-- **Isomorphic Design**: Works identically in browser and Node.js environments
-- **Advanced Axios Factory**: Create pre-configured Axios instances with custom interceptors
-- **Retry Logic**: Built-in request retry mechanism with configurable delays
-- **Error Handling**: Flexible error handling with status-specific handlers
-- **Header Management**: Dynamic header setting based on request context
-- **API Client Factory**: Streamlined creation of API clients from OpenAPI specs
-- **TypeScript Support**: Full TypeScript support with comprehensive type definitions
+- **Simple Axios Instance Creation**: Quick setup with error handlers and header injection
+- **Advanced Factory Pattern**: Comprehensive configuration with retry logic and status-specific handlers
+- **OpenAPI Integration**: Seamless integration with auto-generated API client classes
+- **Built-in Retry Logic**: Configurable retry mechanism with delays
+- **TypeScript Support**: Full type definitions for all configurations
 
-## Quick Start
+## API Reference
 
-### Basic Axios Instance Creation
+### Core Functions
+
+#### `createAxiosInstance(config: TApiConfig): AxiosInstance`
+
+Creates a basic Axios instance with request/response interceptors for headers and error handling.
 
 ```typescript
 import { createAxiosInstance } from '@onivoro/isomorphic-axios';
 
-// Create a simple axios instance
-const apiClient = createAxiosInstance({
+const client = createAxiosInstance({
   apiUrl: 'https://api.example.com',
-  accessToken: 'your-token-here'
+  addHeaders: (req) => ({
+    'Authorization': `Bearer ${getToken()}`,
+    'X-API-Key': 'my-api-key'
+  }),
+  on400: (response) => {
+    console.error('Bad request:', response.data);
+  },
+  on401: (response) => {
+    // Handle unauthorized
+    window.location.href = '/login';
+  },
+  on403: (response) => {
+    console.error('Forbidden:', response.data);
+  },
+  on500: (response) => {
+    console.error('Server error:', response.data);
+  },
+  onRequest: (request) => {
+    console.log('Request:', request.url);
+  },
+  onResponse: (response) => {
+    console.log('Response:', response.status);
+  },
+  onError: (response) => {
+    console.error('Error:', response);
+  }
 });
 
-// Use the instance
-const response = await apiClient.get('/users');
+// Use the client
+const data = await client.get('/users');
 ```
 
-### Advanced Axios Factory with Custom Configuration
+**Note**: Error handlers (on400, on401, etc.) do not throw errors by default. If an error handler is not provided for a status code, the error will be thrown.
+
+#### `createApi<TApi>(DefaultApi: ConstructorFunction<TApi>, config: TApiConfig): TApi`
+
+Creates an instance of an OpenAPI-generated client class with a configured Axios instance.
+
+```typescript
+import { createApi } from '@onivoro/isomorphic-axios';
+import { UserApi } from './generated/api';
+
+const userApi = createApi(UserApi, {
+  apiUrl: 'https://api.example.com',
+  addHeaders: (req) => ({
+    'Authorization': `Bearer ${getToken()}`
+  }),
+  on401: (response) => {
+    // Handle unauthorized
+    redirectToLogin();
+  }
+});
+
+// Use the generated API methods
+const users = await userApi.getUsers();
+const user = await userApi.createUser({ name: 'John Doe' });
+```
+
+**Note**: This function is designed to work with OpenAPI client generators that accept `(configuration, basePath, axiosInstance)` as constructor parameters.
+
+#### `axiosInstanceFactory<TData>(params): AxiosInstance`
+
+Advanced factory for creating Axios instances with retry logic and granular control over headers and error handling.
 
 ```typescript
 import { axiosInstanceFactory } from '@onivoro/isomorphic-axios';
 
-const axiosInstance = axiosInstanceFactory({
+const client = axiosInstanceFactory({
   headerSetters: {
     'Authorization': (req) => `Bearer ${getToken()}`,
-    'X-API-Key': (req) => process.env.API_KEY,
-    'Content-Type': (req) => 'application/json'
+    'X-Request-ID': (req) => generateRequestId()
   },
   errorHandlers: {
-    401: async (error, response) => {
-      // Handle unauthorized errors
+    401: async (err, response) => {
+      // Handle unauthorized
       await refreshToken();
-      return retry(error);
+      throw err; // Retry will happen if configured
     },
-    500: async (error, response) => {
-      // Handle server errors
-      console.error('Server error:', response?.data);
-      throw error;
-    },
-    0: async (error, response) => {
-      // Default error handler
-      console.error('Request failed:', error.message);
-      throw error;
+    0: async (err, response) => {
+      // Default handler for unhandled status codes
+      console.error('Request failed:', err);
+      throw err;
     }
   },
   beforeRetryHandlers: {
-    429: async (error, response) => {
-      // Handle rate limiting before retry
+    429: async (err, response) => {
+      // Wait before retrying rate-limited requests
       const retryAfter = response?.headers['retry-after'];
-      if (retryAfter) {
-        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-      }
+      await sleep(retryAfter * 1000);
     }
   },
   axiosConfigOverride: {
     timeout: 10000,
     retry: 3,
+    retryDelay: 1000
+  }
+});
+```
+
+**Important**: 
+- Error handlers must either return a value or throw an error
+- The `0` key in errorHandlers/beforeRetryHandlers acts as a default handler
+- Retry logic is built into the interceptor
+
+#### `retryAxiosCall<TData>(err: any, instance: AxiosInstance): Promise<any>`
+
+Utility function for manually implementing retry logic. Used internally by `axiosInstanceFactory`.
+
+```typescript
+import { retryAxiosCall } from '@onivoro/isomorphic-axios';
+
+// Custom retry implementation
+instance.interceptors.response.use(
+  response => response,
+  async (error) => {
+    if (error.config && error.config.retry > 0) {
+      return await retryAxiosCall(error, instance);
+    }
+    throw error;
+  }
+);
+```
+
+### Constants
+
+#### `defaultAxiosConfig: IRetryConfig<any>`
+
+Default configuration for retry behavior:
+
+```typescript
+{
+  retry: 3,
+  retryDelay: 1000
+}
+```
+
+### Types
+
+#### `TApiConfig`
+
+Configuration type for `createAxiosInstance` and `createApi`:
+
+```typescript
+type TApiConfig = {
+  apiUrl: string;
+  uiUrl?: string;
+  addHeaders?: (req: any) => Record<string, string>;
+  on400?: (response: any) => any;
+  on401?: (response: any) => any;
+  on403?: (response: any) => any;
+  on500?: (response: any) => any;
+  onRequest?: (request: any) => any;
+  onResponse?: (response: any) => any;
+  onError?: (response: any) => any;
+};
+```
+
+#### `IRetryConfig<TData>`
+
+Extends Axios request config with retry settings:
+
+```typescript
+interface IRetryConfig<TData> extends AxiosRequestConfig<TData> {
+  retry?: number;
+  retryDelay?: number;
+}
+```
+
+#### `TErrorHandler<TData>`
+
+Type for error handling functions:
+
+```typescript
+type TErrorHandler<TData> = (
+  err?: any,
+  res?: AxiosResponse<TData, IRetryConfig<TData>>
+) => Promise<TData>;
+```
+
+#### `THeaderSetterMap<TData>`
+
+Map of header names to functions that compute header values:
+
+```typescript
+type THeaderSetterMap<TData> = Record<string, (req: IRetryConfig<TData>) => string>;
+```
+
+#### `TErrorHandlerMap<TData>`
+
+Map of HTTP status codes to error handlers:
+
+```typescript
+type TErrorHandlerMap<TData> = Record<number, TErrorHandler<TData>>;
+```
+
+## Common Usage Patterns
+
+### Simple API Client
+
+```typescript
+import { createAxiosInstance } from '@onivoro/isomorphic-axios';
+
+const api = createAxiosInstance({
+  apiUrl: process.env.API_URL,
+  addHeaders: () => ({
+    'Authorization': `Bearer ${localStorage.getItem('token')}`
+  }),
+  on401: () => {
+    localStorage.removeItem('token');
+    window.location.href = '/login';
+  }
+});
+
+// Make requests
+const users = await api.get('/users');
+const user = await api.post('/users', { name: 'Jane Doe' });
+```
+
+### API Client with Retry Logic
+
+```typescript
+import { axiosInstanceFactory, defaultAxiosConfig } from '@onivoro/isomorphic-axios';
+
+const apiWithRetry = axiosInstanceFactory({
+  headerSetters: {
+    'Authorization': () => `Bearer ${getToken()}`
+  },
+  errorHandlers: {
+    0: async (err) => {
+      console.error('Request failed:', err.message);
+      throw err;
+    }
+  },
+  beforeRetryHandlers: {
+    0: async (err) => {
+      console.log(`Retrying request... ${err.config.retry} attempts left`);
+    }
+  },
+  axiosConfigOverride: {
+    ...defaultAxiosConfig,
+    baseURL: 'https://api.example.com',
+    retry: 5,
     retryDelay: 2000
   }
 });
 ```
 
-## Usage Examples
-
-### Creating API Clients
+### OpenAPI Client Integration
 
 ```typescript
 import { createApi } from '@onivoro/isomorphic-axios';
-import { DefaultApi } from './generated-client';
+import { DefaultApi } from './generated';
 
-// Create an API client from generated OpenAPI client
-const apiClient = createApi(DefaultApi, {
-  apiUrl: 'https://api.example.com',
-  accessToken: 'your-token'
+const api = createApi(DefaultApi, {
+  apiUrl: process.env.API_BASE_URL,
+  addHeaders: (req) => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    
+    const token = getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    return headers;
+  },
+  onError: (response) => {
+    logError('API Error', response);
+  }
 });
 
-// Use the generated API methods
-const users = await apiClient.getUsers();
-const user = await apiClient.createUser({ name: 'John Doe' });
-```
-
-### Manual Retry Logic
-
-```typescript
-import { retryAxiosCall } from '@onivoro/isomorphic-axios';
-import axios from 'axios';
-
-const instance = axios.create();
-
-instance.interceptors.response.use(
-  response => response,
-  async (error) => {
-    if (shouldRetry(error)) {
-      return retryAxiosCall(error, instance);
-    }
-    throw error;
-  }
-);
+// Use typed methods from generated client
+const result = await api.getUserById(123);
 ```
 
 ### Environment-Specific Configuration
@@ -123,191 +310,41 @@ instance.interceptors.response.use(
 ```typescript
 import { createAxiosInstance } from '@onivoro/isomorphic-axios';
 
-// Browser environment
-const browserClient = createAxiosInstance({
-  apiUrl: window.location.origin + '/api',
-  accessToken: localStorage.getItem('token')
-});
+const isDev = process.env.NODE_ENV === 'development';
 
-// Server environment
-const serverClient = createAxiosInstance({
-  apiUrl: process.env.INTERNAL_API_URL,
-  accessToken: process.env.SERVICE_TOKEN
-});
-```
-
-### Request/Response Interceptors
-
-```typescript
-import { axiosInstanceFactory } from '@onivoro/isomorphic-axios';
-
-const client = axiosInstanceFactory({
-  headerSetters: {
-    'X-Request-ID': () => generateRequestId(),
-    'X-User-Agent': () => getUserAgent(),
-    'X-Timestamp': () => new Date().toISOString()
-  },
-  errorHandlers: {
-    // Retry on network errors
-    0: async (error) => {
-      if (error.code === 'NETWORK_ERROR') {
-        throw new Error('Network connection failed');
-      }
-      throw error;
-    },
-    // Handle authentication errors
-    401: async (error) => {
-      await signOut();
-      window.location.href = '/login';
-      throw error;
-    },
-    // Handle validation errors
-    422: async (error) => {
-      const validationErrors = error.response?.data?.errors;
-      throw new ValidationError(validationErrors);
+const client = createAxiosInstance({
+  apiUrl: isDev ? 'http://localhost:3000' : 'https://api.prod.com',
+  addHeaders: (req) => ({
+    'Authorization': `Bearer ${getToken()}`,
+    ...(isDev && { 'X-Debug': 'true' })
+  }),
+  onRequest: isDev ? (req) => {
+    console.log(`[API] ${req.method?.toUpperCase()} ${req.url}`);
+  } : undefined,
+  onResponse: isDev ? (res) => {
+    console.log(`[API] Response ${res.status}`);
+  } : undefined,
+  onError: (response) => {
+    if (isDev) {
+      console.error('[API] Error:', response);
+    }
+    // Log to error tracking service in production
+    if (!isDev) {
+      errorTracker.log(response);
     }
   }
 });
 ```
 
-## API Reference
+## Important Notes
 
-### Functions
+1. **Error Handling**: In `createAxiosInstance`, error handlers (on400, on401, etc.) suppress errors by default. If you need to propagate errors, you must throw them explicitly in your handler.
 
-#### `axiosInstanceFactory<TData>(params)`
+2. **Retry Configuration**: When using `axiosInstanceFactory`, retry configuration should be passed in `axiosConfigOverride`. The retry counter decrements with each attempt.
 
-Creates a fully configured Axios instance with interceptors, retry logic, and error handling.
+3. **Header Functions**: Header setter functions receive the request configuration object, allowing dynamic header generation based on request context.
 
-**Parameters:**
-- `headerSetters`: Object mapping header names to functions that return header values
-- `errorHandlers`: Object mapping HTTP status codes to error handling functions
-- `beforeRetryHandlers`: Object mapping status codes to functions called before retries
-- `axiosConfigOverride`: Optional Axios configuration overrides
-
-**Returns:** Configured Axios instance
-
-#### `createApi<TApi>(DefaultApi, config)`
-
-Creates an API client instance from a generated OpenAPI client class.
-
-**Parameters:**
-- `DefaultApi`: Constructor function for the generated API client
-- `config`: API configuration object with `apiUrl` and optional `accessToken`
-
-**Returns:** Configured API client instance
-
-#### `createAxiosInstance(config)`
-
-Creates a simple Axios instance with basic authentication and URL configuration.
-
-**Parameters:**
-- `config`: Configuration object with `apiUrl` and optional `accessToken`
-
-**Returns:** Configured Axios instance
-
-#### `retryAxiosCall<TData>(error, instance)`
-
-Manually retry a failed Axios request with exponential backoff.
-
-**Parameters:**
-- `error`: The error object from the failed request
-- `instance`: The Axios instance to use for the retry
-
-**Returns:** Promise resolving to the retry response
-
-### Types
-
-#### `TApiConfig`
-
-Configuration interface for API clients:
-```typescript
-interface TApiConfig {
-  apiUrl: string;
-  accessToken?: string;
-}
-```
-
-#### `THeaderSetterMap<TData>`
-
-Map of header names to functions that set header values:
-```typescript
-type THeaderSetterMap<TData> = {
-  [headerName: string]: (request: AxiosRequestConfig) => string;
-};
-```
-
-#### `TErrorHandlerMap<TData>`
-
-Map of HTTP status codes to error handling functions:
-```typescript
-type TErrorHandlerMap<TData> = {
-  [statusCode: number]: TErrorHandler<TData>;
-};
-```
-
-### Constants
-
-#### `defaultAxiosConfig`
-
-Default Axios configuration with sensible defaults:
-```typescript
-{
-  timeout: 30000,
-  retry: 2,
-  retryDelay: 1000
-}
-```
-
-## Advanced Configuration
-
-### Custom Error Recovery
-
-```typescript
-import { axiosInstanceFactory } from '@onivoro/isomorphic-axios';
-
-const resilientClient = axiosInstanceFactory({
-  errorHandlers: {
-    // Implement circuit breaker pattern
-    0: async (error) => {
-      if (circuitBreaker.isOpen()) {
-        throw new Error('Circuit breaker is open');
-      }
-      circuitBreaker.recordFailure();
-      throw error;
-    }
-  },
-  beforeRetryHandlers: {
-    // Implement exponential backoff with jitter
-    0: async (error) => {
-      const attempt = error.config.__retryCount || 0;
-      const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
-      const jitter = Math.random() * 1000;
-      await new Promise(resolve => setTimeout(resolve, delay + jitter));
-    }
-  }
-});
-```
-
-### Request/Response Logging
-
-```typescript
-const debugClient = axiosInstanceFactory({
-  headerSetters: {
-    'X-Debug-Mode': () => process.env.NODE_ENV === 'development' ? 'true' : 'false'
-  },
-  errorHandlers: {
-    0: async (error) => {
-      console.error('Request failed:', {
-        url: error.config?.url,
-        method: error.config?.method,
-        status: error.response?.status,
-        data: error.response?.data
-      });
-      throw error;
-    }
-  }
-});
-```
+4. **OpenAPI Integration**: The `createApi` function expects generated API classes that follow the pattern of accepting configuration, basePath, and axios instance as constructor parameters.
 
 ## License
 

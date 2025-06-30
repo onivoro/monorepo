@@ -92,20 +92,21 @@ export class User {
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { TypeOrmRepository, TypeOrmPagingRepository } from '@onivoro/server-typeorm-mysql';
+import { EntityManager } from 'typeorm';
 import { User } from './user.entity';
 
 @Injectable()
 export class UserRepository extends TypeOrmPagingRepository<User> {
-  constructor() {
-    super(User);
+  constructor(entityManager: EntityManager) {
+    super(User, entityManager);
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return this.findOne({ where: { email } });
+    return this.getOne({ where: { email } });
   }
 
   async findActiveUsers(): Promise<User[]> {
-    return this.find({ where: { isActive: true } });
+    return this.getMany({ where: { isActive: true } });
   }
 
   async findUsersWithPagination(page: number, limit: number) {
@@ -168,33 +169,98 @@ export class DatabaseModule {}
 
 ## Usage Examples
 
-### Advanced Repository Usage
+### Basic Repository Operations
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { TypeOrmRepository } from '@onivoro/server-typeorm-mysql';
+import { EntityManager } from 'typeorm';
+import { User } from './user.entity';
+
+@Injectable()
+export class UserRepository extends TypeOrmRepository<User> {
+  constructor(entityManager: EntityManager) {
+    super(User, entityManager);
+  }
+
+  // Create a single user
+  async createUser(userData: Partial<User>): Promise<User> {
+    return this.postOne(userData);
+  }
+
+  // Create multiple users
+  async createUsers(usersData: Partial<User>[]): Promise<User[]> {
+    return this.postMany(usersData);
+  }
+
+  // Find users with filters
+  async findUsers(filters: { isActive?: boolean; email?: string }): Promise<User[]> {
+    return this.getMany({ where: filters });
+  }
+
+  // Find users with count
+  async findUsersWithCount(filters: { isActive?: boolean }): Promise<[User[], number]> {
+    return this.getManyAndCount({ where: filters });
+  }
+
+  // Find a single user
+  async findUserById(id: number): Promise<User> {
+    return this.getOne({ where: { id } });
+  }
+
+  // Update user
+  async updateUser(id: number, updateData: Partial<User>): Promise<void> {
+    await this.patch({ id }, updateData);
+  }
+
+  // Replace user data
+  async replaceUser(id: number, userData: Partial<User>): Promise<void> {
+    await this.put({ id }, userData);
+  }
+
+  // Delete user permanently
+  async deleteUser(id: number): Promise<void> {
+    await this.delete({ id });
+  }
+
+  // Soft delete user
+  async softDeleteUser(id: number): Promise<void> {
+    await this.softDelete({ id });
+  }
+}
+```
+
+### Advanced Repository Usage with Pagination
 
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { TypeOrmPagingRepository, PageParams, PagedData } from '@onivoro/server-typeorm-mysql';
+import { EntityManager, Like, Between } from 'typeorm';
 import { User } from './user.entity';
-import { FindOptionsWhere, Like, Between } from 'typeorm';
 
 @Injectable()
 export class AdvancedUserRepository extends TypeOrmPagingRepository<User> {
-  constructor() {
-    super(User);
+  constructor(entityManager: EntityManager) {
+    super(User, entityManager);
   }
 
   async searchUsers(
     searchTerm: string,
     pageParams: PageParams
   ): Promise<PagedData<User>> {
-    const where: FindOptionsWhere<User> = [
-      { firstName: Like(`%${searchTerm}%`) },
-      { lastName: Like(`%${searchTerm}%`) },
-      { email: Like(`%${searchTerm}%`) }
-    ];
+    const whereConditions = this.buildWhereILike({
+      firstName: searchTerm,
+      lastName: searchTerm,
+      email: searchTerm
+    });
 
     return this.findWithPaging(
       { 
-        where,
+        where: [
+          { firstName: Like(`%${searchTerm}%`) },
+          { lastName: Like(`%${searchTerm}%`) },
+          { email: Like(`%${searchTerm}%`) }
+        ],
         order: { createdAt: 'DESC' }
       },
       pageParams
@@ -221,7 +287,7 @@ export class AdvancedUserRepository extends TypeOrmPagingRepository<User> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    return this.find({
+    return this.getMany({
       where: {
         lastLoginAt: Between(cutoffDate, new Date())
       },
@@ -235,24 +301,24 @@ export class AdvancedUserRepository extends TypeOrmPagingRepository<User> {
     inactive: number;
     recentlyRegistered: number;
   }> {
-    const [total, active, recentlyRegistered] = await Promise.all([
-      this.count(),
-      this.count({ where: { isActive: true } }),
-      this.count({
-        where: {
-          createdAt: Between(
-            new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
-            new Date()
-          )
-        }
-      })
-    ]);
+    const [allUsers, totalCount] = await this.getManyAndCount({});
+    const [activeUsers, activeCount] = await this.getManyAndCount({ 
+      where: { isActive: true } 
+    });
+    const [recentUsers, recentCount] = await this.getManyAndCount({
+      where: {
+        createdAt: Between(
+          new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+          new Date()
+        )
+      }
+    });
 
     return {
-      total,
-      active,
-      inactive: total - active,
-      recentlyRegistered
+      total: totalCount,
+      active: activeCount,
+      inactive: totalCount - activeCount,
+      recentlyRegistered: recentCount
     };
   }
 
@@ -260,11 +326,15 @@ export class AdvancedUserRepository extends TypeOrmPagingRepository<User> {
     userIds: number[],
     updateData: Partial<User>
   ): Promise<void> {
-    await this.update(userIds, updateData);
+    for (const id of userIds) {
+      await this.patch({ id }, updateData);
+    }
   }
 
   async softDeleteUsers(userIds: number[]): Promise<void> {
-    await this.update(userIds, { isActive: false });
+    for (const id of userIds) {
+      await this.softDelete({ id });
+    }
   }
 }
 ```
@@ -352,7 +422,6 @@ export class OrderItem {
 
 ```typescript
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { AdvancedUserRepository } from './user.repository';
 import { User } from './user.entity';
 import { PageParams, PagedData } from '@onivoro/server-typeorm-mysql';
@@ -360,32 +429,29 @@ import { PageParams, PagedData } from '@onivoro/server-typeorm-mysql';
 @Injectable()
 export class UserService {
   constructor(
-    @InjectRepository(User)
     private userRepository: AdvancedUserRepository
   ) {}
 
   async createUser(userData: Partial<User>): Promise<User> {
-    const user = this.userRepository.create(userData);
-    return this.userRepository.save(user);
+    return this.userRepository.postOne(userData);
   }
 
   async findUserById(id: number): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.userRepository.getOne({ where: { id } });
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
     return user;
   }
 
-  async updateUser(id: number, updateData: Partial<User>): Promise<User> {
+  async updateUser(id: number, updateData: Partial<User>): Promise<void> {
     const user = await this.findUserById(id);
-    Object.assign(user, updateData);
-    return this.userRepository.save(user);
+    await this.userRepository.patch({ id }, updateData);
   }
 
   async deleteUser(id: number): Promise<void> {
     const user = await this.findUserById(id);
-    await this.userRepository.softDeleteUsers([id]);
+    await this.userRepository.softDelete({ id });
   }
 
   async searchUsers(
@@ -417,18 +483,17 @@ import {
   generateDateQuery, 
   removeFalseyKeys,
   getSkip,
-  getPagingKey 
+  getPagingKey,
+  TypeOrmRepository
 } from '@onivoro/server-typeorm-mysql';
-import { Repository } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
+import { EntityManager } from 'typeorm';
 import { Order } from './order.entity';
 
 @Injectable()
-export class OrderService {
-  constructor(
-    @InjectRepository(Order)
-    private orderRepository: Repository<Order>
-  ) {}
+export class OrderService extends TypeOrmRepository<Order> {
+  constructor(entityManager: EntityManager) {
+    super(Order, entityManager);
+  }
 
   async findOrdersByDateRange(
     startDate?: Date,
@@ -444,7 +509,7 @@ export class OrderService {
 
     const skip = getSkip(page, limit);
 
-    const [orders, total] = await this.orderRepository.findAndCount({
+    const [orders, total] = await this.getManyAndCount({
       where: whereConditions,
       skip,
       take: limit,
@@ -467,7 +532,7 @@ export class OrderService {
   async getOrderAnalytics(startDate: Date, endDate: Date) {
     const dateQuery = generateDateQuery('createdAt', startDate, endDate);
     
-    const queryBuilder = this.orderRepository.createQueryBuilder('order')
+    const queryBuilder = this.repo.createQueryBuilder('order')
       .where(dateQuery);
 
     const [
@@ -509,29 +574,32 @@ export class OrderService {
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { EntityManager } from 'typeorm';
+import { TypeOrmRepository } from '@onivoro/server-typeorm-mysql';
 import { User } from './user.entity';
 import { Order } from './order.entity';
 import { OrderItem } from './order-item.entity';
 
 @Injectable()
 export class OrderTransactionService {
-  constructor(private dataSource: DataSource) {}
+  constructor(private entityManager: EntityManager) {}
 
   async createOrderWithItems(
     userId: number,
     orderData: Partial<Order>,
     items: Array<{productId: number, quantity: number, unitPrice: number}>
   ): Promise<Order> {
-    return this.dataSource.transaction(async manager => {
+    return this.entityManager.transaction(async transactionalEntityManager => {
+      const orderRepo = new TypeOrmRepository<Order>(Order, transactionalEntityManager);
+      const orderItemRepo = new TypeOrmRepository<OrderItem>(OrderItem, transactionalEntityManager);
+      const userRepo = new TypeOrmRepository<User>(User, transactionalEntityManager);
+
       // Create the order
-      const order = manager.create(Order, {
+      const order = await orderRepo.postOne({
         ...orderData,
         userId,
         totalAmount: 0 // Will be calculated
       });
-      
-      const savedOrder = await manager.save(order);
 
       // Create order items
       let totalAmount = 0;
@@ -541,27 +609,26 @@ export class OrderTransactionService {
         const totalPrice = itemData.quantity * itemData.unitPrice;
         totalAmount += totalPrice;
 
-        const orderItem = manager.create(OrderItem, {
-          orderId: savedOrder.id,
+        const orderItem = await orderItemRepo.postOne({
+          orderId: order.id,
           productId: itemData.productId,
           quantity: itemData.quantity,
           unitPrice: itemData.unitPrice,
           totalPrice
         });
 
-        orderItems.push(await manager.save(orderItem));
+        orderItems.push(orderItem);
       }
 
       // Update order total
-      savedOrder.totalAmount = totalAmount;
-      await manager.save(savedOrder);
+      await orderRepo.patch({ id: order.id }, { totalAmount });
 
       // Update user's last order date
-      await manager.update(User, userId, { 
+      await userRepo.patch({ id: userId }, { 
         updatedAt: new Date() 
       });
 
-      return savedOrder;
+      return order;
     });
   }
 
@@ -569,15 +636,17 @@ export class OrderTransactionService {
     orderId: number,
     newUserId: number
   ): Promise<void> {
-    await this.dataSource.transaction(async manager => {
+    await this.entityManager.transaction(async transactionalEntityManager => {
+      const orderRepo = new TypeOrmRepository<Order>(Order, transactionalEntityManager);
+
       // Update order
-      await manager.update(Order, orderId, { 
+      await orderRepo.patch({ id: orderId }, { 
         userId: newUserId,
         updatedAt: new Date()
       });
 
-      // Log the transfer
-      await manager.query(
+      // Log the transfer using raw query
+      await transactionalEntityManager.query(
         'INSERT INTO order_transfers (order_id, new_user_id, transferred_at) VALUES (?, ?, ?)',
         [orderId, newUserId, new Date()]
       );
@@ -586,122 +655,95 @@ export class OrderTransactionService {
 }
 ```
 
-### Custom Query Builder
+### Query Streaming
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { Repository, SelectQueryBuilder } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Order } from './order.entity';
+import { TypeOrmRepository } from '@onivoro/server-typeorm-mysql';
+import { EntityManager, QueryRunner } from 'typeorm';
+import { User } from './user.entity';
+import { createWriteStream } from 'fs';
 
 @Injectable()
-export class OrderQueryService {
-  constructor(
-    @InjectRepository(Order)
-    private orderRepository: Repository<Order>
-  ) {}
-
-  createBaseQuery(): SelectQueryBuilder<Order> {
-    return this.orderRepository
-      .createQueryBuilder('order')
-      .leftJoinAndSelect('order.user', 'user')
-      .leftJoinAndSelect('order.items', 'items')
-      .leftJoinAndSelect('items.product', 'product');
+export class UserStreamingService extends TypeOrmRepository<User> {
+  constructor(entityManager: EntityManager) {
+    super(User, entityManager);
   }
 
-  async findOrdersWithFilters(filters: {
-    status?: string[];
-    userIds?: number[];
-    minAmount?: number;
-    maxAmount?: number;
-    startDate?: Date;
-    endDate?: Date;
-    limit?: number;
-    offset?: number;
-  }) {
-    let query = this.createBaseQuery();
+  async exportUsersToFile(filePath: string): Promise<void> {
+    const writeStream = createWriteStream(filePath);
+    
+    writeStream.write('id,email,firstName,lastName,createdAt\n');
 
-    if (filters.status?.length) {
-      query = query.andWhere('order.status IN (:...statuses)', { 
-        statuses: filters.status 
-      });
+    const { stream, error } = await this.queryStream({
+      query: 'SELECT id, email, firstName, lastName, createdAt FROM users WHERE isActive = 1',
+      onData: async (stream, record: User, count) => {
+        const csvLine = `${record.id},"${record.email}","${record.firstName}","${record.lastName}","${record.createdAt}"\n`;
+        writeStream.write(csvLine);
+        
+        if (count % 1000 === 0) {
+          console.log(`Processed ${count} records`);
+        }
+      },
+      onError: async (stream, error) => {
+        console.error('Stream error:', error);
+        writeStream.end();
+      },
+      onEnd: async (stream, count) => {
+        console.log(`Export completed. Total records: ${count}`);
+        writeStream.end();
+      }
+    });
+
+    if (error) {
+      throw new Error(`Failed to start streaming: ${error.message}`);
     }
-
-    if (filters.userIds?.length) {
-      query = query.andWhere('order.userId IN (:...userIds)', { 
-        userIds: filters.userIds 
-      });
-    }
-
-    if (filters.minAmount !== undefined) {
-      query = query.andWhere('order.totalAmount >= :minAmount', { 
-        minAmount: filters.minAmount 
-      });
-    }
-
-    if (filters.maxAmount !== undefined) {
-      query = query.andWhere('order.totalAmount <= :maxAmount', { 
-        maxAmount: filters.maxAmount 
-      });
-    }
-
-    if (filters.startDate) {
-      query = query.andWhere('order.createdAt >= :startDate', { 
-        startDate: filters.startDate 
-      });
-    }
-
-    if (filters.endDate) {
-      query = query.andWhere('order.createdAt <= :endDate', { 
-        endDate: filters.endDate 
-      });
-    }
-
-    query = query.orderBy('order.createdAt', 'DESC');
-
-    if (filters.limit) {
-      query = query.take(filters.limit);
-    }
-
-    if (filters.offset) {
-      query = query.skip(filters.offset);
-    }
-
-    return query.getManyAndCount();
   }
 
-  async getOrderSummaryByUser(userId: number) {
-    return this.orderRepository
-      .createQueryBuilder('order')
-      .select([
-        'COUNT(order.id) as orderCount',
-        'SUM(order.totalAmount) as totalSpent',
-        'AVG(order.totalAmount) as averageOrderValue',
-        'MAX(order.createdAt) as lastOrderDate',
-        'MIN(order.createdAt) as firstOrderDate'
-      ])
-      .where('order.userId = :userId', { userId })
-      .andWhere('order.status != :cancelledStatus', { cancelledStatus: 'cancelled' })
-      .getRawOne();
+  async processLargeDataset(): Promise<void> {
+    const { stream, error } = await this.queryStream({
+      query: 'SELECT * FROM users WHERE createdAt > DATE_SUB(NOW(), INTERVAL 1 YEAR)',
+      onData: async (stream, record: User, count) => {
+        // Process each record individually
+        // This is memory efficient for large datasets
+        await this.processUserRecord(record);
+      },
+      onError: async (stream, error) => {
+        console.error('Processing error:', error);
+      },
+      onEnd: async (stream, count) => {
+        console.log(`Processed ${count} user records`);
+      }
+    });
+
+    if (error) {
+      throw new Error(`Failed to process dataset: ${error.message}`);
+    }
   }
 
-  async getTopCustomers(limit: number = 10) {
-    return this.orderRepository
-      .createQueryBuilder('order')
-      .leftJoin('order.user', 'user')
-      .select([
-        'user.id as userId',
-        'user.firstName as firstName',
-        'user.lastName as lastName',
-        'user.email as email',
-        'COUNT(order.id) as orderCount',
-        'SUM(order.totalAmount) as totalSpent'
-      ])
-      .where('order.status != :cancelledStatus', { cancelledStatus: 'cancelled' })
-      .groupBy('user.id')
-      .orderBy('totalSpent', 'DESC')
-      .limit(limit)
-      .getRawMany();
+  private async processUserRecord(user: User): Promise<void> {
+    // Your custom processing logic here
+    console.log(`Processing user: ${user.email}`);
+  }
+
+  // Static method usage for custom query runners
+  static async streamWithCustomQueryRunner(
+    queryRunner: QueryRunner,
+    query: string
+  ): Promise<void> {
+    const { stream, error } = await TypeOrmRepository.queryStream(queryRunner, {
+      query,
+      onData: async (stream, record, count) => {
+        console.log(`Record ${count}:`, record);
+      },
+      onEnd: async (stream, count) => {
+        console.log(`Stream completed with ${count} records`);
+      }
+    });
+
+    if (error) {
+      console.error('Stream failed:', error);
+    }
   }
 }
 ```
@@ -715,10 +757,32 @@ export class OrderQueryService {
 Base repository class with enhanced functionality:
 
 ```typescript
-export class TypeOrmRepository<T> extends Repository<T> {
-  constructor(entity: EntityTarget<T>)
+export class TypeOrmRepository<T> {
+  constructor(entityType: any, entityManager: EntityManager)
   
-  // Enhanced methods with better error handling and utilities
+  // Core CRUD methods
+  async getMany(options: FindManyOptions<T>): Promise<T[]>
+  async getManyAndCount(options: FindManyOptions<T>): Promise<[T[], number]>
+  async getOne(options: FindOneOptions<T>): Promise<T>
+  async postOne(body: Partial<T>): Promise<T>
+  async postMany(body: Partial<T>[]): Promise<T[]>
+  async delete(options: FindOptionsWhere<T>): Promise<void>
+  async softDelete(options: FindOptionsWhere<T>): Promise<void>
+  async put(options: FindOptionsWhere<T>, body: QueryDeepPartialEntity<T>): Promise<void>
+  async patch(options: FindOptionsWhere<T>, body: QueryDeepPartialEntity<T>): Promise<void>
+  
+  // Transaction support
+  forTransaction(entityManager: EntityManager): TypeOrmRepository<T>
+  
+  // Streaming support
+  async queryStream<TRecord = any>(params: TQueryStreamParams): Promise<{stream: any, error: any}>
+  static async queryStream<TRecord = any>(queryRunner: QueryRunner, params: TQueryStreamParams): Promise<{stream: any, error: any}>
+  
+  // Utility methods
+  buildWhereILike(filters?: Record<string, any>): FindOptionsWhere<T>
+  
+  // Internal properties
+  get repo(): Repository<T>
 }
 ```
 
@@ -832,14 +896,27 @@ interface PagedData<T> {
 }
 ```
 
+#### TQueryStreamParams
+
+Query streaming parameters:
+
+```typescript
+type TQueryStreamParams<TRecord = any> = {
+  query: string;
+  onData?: (stream: ReadStream, record: TRecord, count: number) => Promise<any | void>;
+  onError?: (stream: ReadStream, error: any) => Promise<any | void>;
+  onEnd?: (stream: ReadStream, count: number) => Promise<any | void>;
+};
+```
+
 ## Best Practices
 
-1. **Repository Pattern**: Use custom repositories for complex queries
-2. **Transactions**: Use transactions for multi-table operations
+1. **Repository Pattern**: Use custom repositories extending TypeOrmRepository for domain-specific operations
+2. **Transactions**: Use `forTransaction()` method for multi-table operations
 3. **Indexing**: Add proper indexes for frequently queried columns
-4. **Pagination**: Always implement pagination for list endpoints
-5. **Query Optimization**: Use query builders for complex queries
-6. **Error Handling**: Implement proper error handling in repositories
+4. **Pagination**: Always implement pagination using TypeOrmPagingRepository for list operations
+5. **Streaming**: Use `queryStream()` for processing large datasets efficiently
+6. **Error Handling**: Implement proper error handling in repositories and services
 7. **Type Safety**: Leverage TypeScript for type-safe database operations
 8. **Connection Pooling**: Configure appropriate connection pool settings
 
@@ -847,28 +924,53 @@ interface PagedData<T> {
 
 ```typescript
 import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { User } from './user.entity';
 import { UserService } from './user.service';
+import { AdvancedUserRepository } from './user.repository';
 
 describe('UserService', () => {
   let service: UserService;
-  let repository: Repository<User>;
+  let repository: AdvancedUserRepository;
+  let entityManager: EntityManager;
 
   beforeEach(async () => {
+    const mockEntityManager = {
+      getRepository: jest.fn().mockReturnValue({
+        find: jest.fn(),
+        findAndCount: jest.fn(),
+        findOne: jest.fn(),
+        save: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+        softDelete: jest.fn(),
+        createQueryBuilder: jest.fn().mockReturnValue({
+          insert: jest.fn().mockReturnThis(),
+          values: jest.fn().mockReturnThis(),
+          returning: jest.fn().mockReturnThis(),
+          execute: jest.fn()
+        })
+      })
+    };
+
     const module = await Test.createTestingModule({
       providers: [
         UserService,
         {
-          provide: getRepositoryToken(User),
-          useClass: Repository,
+          provide: AdvancedUserRepository,
+          useFactory: () => new AdvancedUserRepository(mockEntityManager as any)
         },
+        {
+          provide: EntityManager,
+          useValue: mockEntityManager
+        }
       ],
     }).compile();
 
     service = module.get<UserService>(UserService);
-    repository = module.get<Repository<User>>(getRepositoryToken(User));
+    repository = module.get<AdvancedUserRepository>(AdvancedUserRepository);
+    entityManager = module.get<EntityManager>(EntityManager);
   });
 
   it('should create a user', async () => {
@@ -878,11 +980,19 @@ describe('UserService', () => {
       lastName: 'Doe'
     };
 
-    jest.spyOn(repository, 'create').mockReturnValue(userData as User);
-    jest.spyOn(repository, 'save').mockResolvedValue(userData as User);
+    const createdUser = { id: 1, ...userData };
+    jest.spyOn(repository, 'postOne').mockResolvedValue(createdUser as User);
 
     const result = await service.createUser(userData);
-    expect(result).toEqual(userData);
+    expect(result).toEqual(createdUser);
+  });
+
+  it('should find user by id', async () => {
+    const user = { id: 1, email: 'test@example.com', firstName: 'John', lastName: 'Doe' };
+    jest.spyOn(repository, 'getOne').mockResolvedValue(user as User);
+
+    const result = await service.findUserById(1);
+    expect(result).toEqual(user);
   });
 });
 ```
