@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { moduleFactory } from '@onivoro/server-common';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { SqsService } from './services/sqs.service';
+import { SqsConsumerFactoryService } from './services/sqs-consumer-factory.service';
 import { ServerAwsSqsConfig } from './classes/server-aws-sqs-config.class';
 import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
 
@@ -27,7 +28,8 @@ export class ServerAwsSqsModule {
             inject: [AwsCredentials]
         },
         { provide: ServerAwsSqsConfig, useValue: config },
-        SqsService
+        SqsService,
+        SqsConsumerFactoryService
       ],
     })
   }

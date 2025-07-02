@@ -54,9 +54,24 @@ export class MessageService {
   async checkQueueHealth() {
     const isHealthy = await this.sqsService.verifyQueue();
     const messageCount = await this.sqsService.getApproximateNumberOfMessages();
-    
+
     return { isHealthy, messageCount };
   }
+}
+```
+
+```typescript
+@Injectable()
+export class MessageProcessingService implements MessageHandler<T> {
+
+    async handleMessage(messageBody: T, messageAttributes?: Record<string, any>): Promise<void> {
+
+        const source = messageAttributes?.source || messageBody.source;
+        const type = messageAttributes?.type || messageBody.type;
+        const data = messageBody.data;
+
+        // things and stuff...
+    }
 }
 ```
 
@@ -254,7 +269,7 @@ export class QueueMonitoringService {
     setInterval(async () => {
       const health = await this.getQueueHealth();
       console.log('Queue Health:', health);
-      
+
       if (health.status === 'OVERLOADED') {
         console.warn('⚠️ Queue is overloaded! Consider scaling processing.');
       }
@@ -272,31 +287,31 @@ export class MessageProcessorService {
 
   async startProcessing(maxBatches: number = 50) {
     console.log(`Starting message processing (max ${maxBatches} batches)...`);
-    
+
     const startTime = Date.now();
     await this.sqsService.processMessageBatches(maxBatches);
     const duration = Date.now() - startTime;
-    
+
     console.log(`Processing completed in ${duration}ms`);
   }
 
   async processUntilEmpty(maxIterations: number = 100) {
     let iteration = 0;
     let messageCount = await this.sqsService.getApproximateNumberOfMessages();
-    
+
     console.log(`Starting processing: ${messageCount} messages in queue`);
-    
+
     while (messageCount > 0 && iteration < maxIterations) {
       await this.sqsService.processMessageBatches(1);
       messageCount = await this.sqsService.getApproximateNumberOfMessages();
       iteration++;
-      
+
       console.log(`Iteration ${iteration}: ${messageCount} messages remaining`);
-      
+
       // Brief pause between iterations
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    
+
     console.log(`Processing complete. Final count: ${messageCount} messages`);
   }
 }
@@ -308,7 +323,7 @@ export class MessageProcessorService {
 @Injectable()
 export class ScheduledProcessorService {
   private isProcessing = false;
-  
+
   constructor(private sqsService: SqsService) {}
 
   @Cron('*/30 * * * * *') // Every 30 seconds
@@ -319,10 +334,10 @@ export class ScheduledProcessorService {
     }
 
     this.isProcessing = true;
-    
+
     try {
       const messageCount = await this.sqsService.getApproximateNumberOfMessages();
-      
+
       if (messageCount > 0) {
         console.log(`Processing ${messageCount} messages...`);
         await this.sqsService.processMessageBatches(5); // Process up to 5 batches
@@ -460,7 +475,7 @@ describe('SqsService', () => {
 ### Configuration Classes
 - `ServerAwsSqsConfig`: Configuration class requiring AWS_REGION and AWS_SQS_URL
 
-### Modules  
+### Modules
 - `ServerAwsSqsModule`: NestJS module with `configure()` method for setup
 
 ### Services
