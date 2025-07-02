@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "emitDecoratorMetadata": true,
-    "outDir": ""
+    "outDir": "../../../dist/storybook/browser/react-components"
   },
   "exclude": [
     "src/**/*.spec.ts",

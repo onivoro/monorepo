@@ -4,5 +4,13 @@
   "sourceRoot": "libs/browser/monaco/src",
   "projectType": "library",
   "tags": [],
-  "targets": {}
+  "targets": {
+    "build": {
+      "executor": "@nx/vite:build",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/browser/monaco"
+      }
+    }
+  }
 }
