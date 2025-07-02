@@ -39,6 +39,7 @@
     "@aws-sdk/client-redshift-data": "~3.782.0",
     "@aws-sdk/client-redshift-serverless": "~3.782.0",
     "@aws-sdk/client-s3": "~3.782.0",
+    "@aws-sdk/client-sns": "~3.782.0",
     "@aws-sdk/client-sqs": "~3.782.0",
     "@aws-sdk/client-sts": "~3.782.0",
     "@aws-sdk/credential-providers": "~3.782.0",

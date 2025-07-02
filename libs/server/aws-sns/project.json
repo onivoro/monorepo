@@ -1,0 +1,23 @@
+{
+  "name": "lib-server-aws-sns",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/aws-sns/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/aws-sns",
+        "main": "libs/server/aws-sns/src/index.ts",
+        "tsConfig": "libs/server/aws-sns/tsconfig.lib.json",
+        "assets": [
+          "libs/server/aws-sns/README.md",
+          "libs/server/aws-sns/package.json"
+        ],
+        "declaration": true
+      }
+    }
+  },
+  "tags": []
+}
