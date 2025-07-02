@@ -7,5 +7,10 @@
   "dependencies": {
     "@onivoro/server-common": "24.0.1",
     "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "~10.4.6",
+    "nestjs-pino": "~4.1.0",
+    "pino-http": "~10.3.0"
   }
 }

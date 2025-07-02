@@ -8,5 +8,11 @@
     "@onivoro/server-aws-credential-providers": "24.0.1",
     "@onivoro/server-common": "24.0.1",
     "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-redshift": "^3.782.0",
+    "@aws-sdk/client-redshift-data": "~3.782.0",
+    "@aws-sdk/client-redshift-serverless": "~3.782.0",
+    "@nestjs/common": "~10.4.6"
   }
 }
