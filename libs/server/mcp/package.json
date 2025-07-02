@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-mcp",
-  "version": "24.0.1",
+  "version": "24.0.2",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
