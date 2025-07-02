@@ -9,7 +9,7 @@ import {
 
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { IEntityProvider } from '../types/entity-provider.interface';
-import { TKeysOf } from '@onivoro/isomorphic/common';
+import { TKeysOf } from '@onivoro/isomorphic-common';
 import { TTableMeta } from '../types/table-meta.type';
 
 export class TypeOrmRepository<TEntity> implements IEntityProvider<

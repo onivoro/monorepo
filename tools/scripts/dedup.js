@@ -1,5 +1,5 @@
-const { saveFileAsJson } = require("@onivoro/server/common");
-const { toUniqueArray } = require('@onivoro/isomorphic/common');
+const { saveFileAsJson } = require("@onivoro/server-common");
+const { toUniqueArray } = require('@onivoro/isomorphic-common');
 const policy = [
     "redshift:CreateTags",
     "redshift:DescribeHsmConfigurations",

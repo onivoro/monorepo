@@ -2,7 +2,7 @@ import { Injectable, Logger, Inject, OnModuleInit } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import { apiKeyHeader } from '@onivoro/isomorphic/common';
+import { apiKeyHeader } from '@onivoro/isomorphic-common';
 import * as http from 'http';
 import { McpServerConfig, McpToolInfo } from '../interfaces/mcp-config.interface';
 import { MCP_CONFIG_TOKEN } from '../providers/mcp-config.provider';

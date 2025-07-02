@@ -3,7 +3,7 @@ import { DataSource, EntityManager, FindManyOptions, FindOneOptions, FindOptions
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { TypeOrmRepository } from './type-orm-repository.class';
 import { TTableMeta } from '../types/table-meta.type';
-import { TKeysOf } from '@onivoro/isomorphic/common';
+import { TKeysOf } from '@onivoro/isomorphic-common';
 
 @Injectable()
 export class RedshiftRepository<TEntity> extends TypeOrmRepository<TEntity> {

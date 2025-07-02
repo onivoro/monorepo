@@ -4,7 +4,7 @@ import { Response, Request } from "express";
 import { extractOrigin } from "../functions/extract-origin.function";
 import { ServerAwsCognitoOidcConfig } from "../server-aws-cognito-oidc-config.class";
 import jwt from 'jsonwebtoken';
-import { TKeysOf } from "@onivoro/isomorphic/common";
+import { TKeysOf } from "@onivoro/isomorphic-common";
 
 const isLocalhost = (origin: string) => /^localhost(:\d+)?$/.test(origin) || /^127\.0\.0\.1(:\d+)?$/.test(origin);
 

@@ -1,6 +1,6 @@
 
 
-const { saveFileAsJson } = require('@onivoro/server/common');
+const { saveFileAsJson } = require('@onivoro/server-common');
 const { writeFile } = require('fs/promises');
 const { Client } = require('pg');
 
