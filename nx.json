@@ -119,7 +119,35 @@
     }
   },
   "release": {
-    "projects": ["lib-server-*", "lib-isomorphic-*"],
-    "projectsRelationship": "fixed"
+    "projectsRelationship": "fixed",
+    "version": {
+      "preVersionCommand": "nx run-many -t build --projects=lib-server-*,lib-isomorphic-*"
+    },
+    "changelog": {
+      "workspaceChangelog": {
+        "createRelease": "github"
+      }
+    },
+    "publishRegistry": "https://registry.npmjs.org/",
+    "groups": {
+      "server-libs": {
+        "projects": ["lib-server-*"],
+        "version": {
+          "generator": "@nx/js:release-version"
+        },
+        "changelog": {
+          "renderer": "nx/changelog-renderer"
+        }
+      },
+      "isomorphic-libs": {
+        "projects": ["lib-isomorphic-*"],
+        "version": {
+          "generator": "@nx/js:release-version"
+        },
+        "changelog": {
+          "renderer": "nx/changelog-renderer"
+        }
+      }
+    }
   }
 }

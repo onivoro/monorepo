@@ -25,6 +25,13 @@
         "jestConfig": "libs/server/resilience/jest.config.ts",
         "passWithNoTests": true
       }
+    },
+    "publish": {
+      "executor": "@nx/js:npm",
+      "outputs": [],
+      "options": {
+        "packageRoot": "dist/libs/server/resilience"
+      }
     }
   },
   "tags": []

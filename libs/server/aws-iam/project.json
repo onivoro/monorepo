@@ -17,6 +17,13 @@
         ],
         "declaration": true
       }
+    },
+    "publish": {
+      "executor": "@nx/js:npm",
+      "outputs": [],
+      "options": {
+        "packageRoot": "dist/libs/server/aws-iam"
+      }
     }
   },
   "tags": []
