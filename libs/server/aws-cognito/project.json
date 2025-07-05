@@ -13,7 +13,8 @@
         "tsConfig": "libs/server/aws-cognito/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-cognito/README.md",
-          "libs/server/aws-cognito/package.json"
+          "libs/server/aws-cognito/package.json",
+          "libs/server/aws-cognito/.npmignore"
         ],
         "declaration": true,
         "updateBuildableProjectPackageJsonDependencies": true,
@@ -24,7 +25,7 @@
       "executor": "nx:run-commands",
       "dependsOn": ["build"],
       "options": {
-        "command": "cd dist/libs/server/aws-cognito && npm publish"
+        "command": "cd dist/libs/server/aws-cognito && npm publish --access public"
       }
     }
   },

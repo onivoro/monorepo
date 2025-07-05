@@ -13,7 +13,8 @@
         "tsConfig": "libs/server/aws-sqs/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-sqs/README.md",
-          "libs/server/aws-sqs/package.json"
+          "libs/server/aws-sqs/package.json",
+          "libs/server/aws-sqs/.npmignore"
         ],
         "declaration": true,
         "updateBuildableProjectPackageJsonDependencies": true,

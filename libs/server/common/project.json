@@ -13,7 +13,8 @@
         "tsConfig": "libs/server/common/tsconfig.lib.json",
         "assets": [
           "libs/server/common/README.md",
-          "libs/server/common/package.json"
+          "libs/server/common/package.json",
+          "libs/server/common/.npmignore"
         ],
         "declaration": true,
         "updateBuildableProjectPackageJsonDependencies": true,

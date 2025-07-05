@@ -13,7 +13,8 @@
         "tsConfig": "libs/isomorphic/axios/tsconfig.lib.json",
         "assets": [
           "libs/isomorphic/axios/README.md",
-          "libs/isomorphic/axios/package.json"
+          "libs/isomorphic/axios/package.json",
+          "libs/isomorphic/axios/.npmignore"
         ],
         "declaration": true,
         "updateBuildableProjectPackageJsonDependencies": true,

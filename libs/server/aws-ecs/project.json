@@ -13,7 +13,8 @@
         "tsConfig": "libs/server/aws-ecs/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-ecs/README.md",
-          "libs/server/aws-ecs/package.json"
+          "libs/server/aws-ecs/package.json",
+          "libs/server/aws-ecs/.npmignore"
         ],
         "declaration": true,
         "updateBuildableProjectPackageJsonDependencies": true,
