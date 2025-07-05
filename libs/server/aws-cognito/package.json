@@ -2,8 +2,8 @@
   "name": "@onivoro/server-aws-cognito",
   "version": "24.16.0",
   "type": "commonjs",
-  "main": "./index.js",
-  "types": "./index.d.ts",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "repository": {
     "type": "git",
     "url": "https://github.com/onivoro/monorepo.git"
