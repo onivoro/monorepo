@@ -9,6 +9,7 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/isomorphic/common",
+        "main": "libs/isomorphic/common/src/index.ts",
         "tsConfig": "libs/isomorphic/common/tsconfig.lib.json",
         "assets": [
           "libs/isomorphic/common/README.md",

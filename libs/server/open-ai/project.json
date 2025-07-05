@@ -9,6 +9,7 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/open-ai",
+        "main": "libs/server/open-ai/src/index.ts",
         "tsConfig": "libs/server/open-ai/tsconfig.lib.json",
         "assets": [
           "libs/server/open-ai/README.md",

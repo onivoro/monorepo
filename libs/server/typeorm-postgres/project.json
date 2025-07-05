@@ -9,6 +9,7 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/typeorm-postgres",
+        "main": "libs/server/typeorm-postgres/src/index.ts",
         "tsConfig": "libs/server/typeorm-postgres/tsconfig.lib.json",
         "assets": [
           "libs/server/typeorm-postgres/README.md",

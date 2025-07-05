@@ -9,6 +9,7 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/aws-kinesis",
+        "main": "libs/server/aws-kinesis/src/index.ts",
         "tsConfig": "libs/server/aws-kinesis/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-kinesis/README.md",

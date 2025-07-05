@@ -9,6 +9,7 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/aws-cloudwatch",
+        "main": "libs/server/aws-cloudwatch/src/index.ts",
         "tsConfig": "libs/server/aws-cloudwatch/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-cloudwatch/README.md",

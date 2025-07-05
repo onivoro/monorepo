@@ -9,14 +9,14 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/aws-cognito",
+        "main": "libs/server/aws-cognito/src/index.ts",
         "tsConfig": "libs/server/aws-cognito/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-cognito/README.md",
           "libs/server/aws-cognito/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/aws-cognito/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {
