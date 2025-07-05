@@ -123,6 +123,13 @@
     "version": {
       "preVersionCommand": "nx run-many -t build --projects=\"lib-server-*,lib-isomorphic-*\""
     },
+    "publish": {
+      "executor": "nx:run-many",
+      "options": {
+        "targets": ["publish"],
+        "projects": ["lib-server-*", "lib-isomorphic-*"]
+      }
+    },
     "git": {
       "tag": true,
       "tagTemplate": "v{version}"
