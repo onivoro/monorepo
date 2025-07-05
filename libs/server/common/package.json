@@ -4,6 +4,10 @@
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
   "dependencies": {
     "@onivoro/isomorphic-common": "24.0.2",
     "tslib": "^2.3.0"

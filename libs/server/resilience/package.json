@@ -5,6 +5,10 @@
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
   "dependencies": {
     "@onivoro/server-common": "23.0.0",
     "tslib": "^2.3.0"
