@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-twilio",
-  "version": "24.7.0",
+  "version": "24.8.0",
   "type": "commonjs",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -9,7 +9,7 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/server-common": "24.7.0",
+    "@onivoro/server-common": "24.8.0",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
