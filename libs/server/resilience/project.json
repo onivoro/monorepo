@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/resilience/tsconfig.lib.json",
         "assets": [
           "libs/server/resilience/README.md",
-          "libs/server/resilience/package.json",
-          "libs/server/resilience/.npmignore"
+          "libs/server/resilience/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/resilience/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "test": {

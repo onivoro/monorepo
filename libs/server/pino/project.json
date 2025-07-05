@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/pino/tsconfig.lib.json",
         "assets": [
           "libs/server/pino/README.md",
-          "libs/server/pino/package.json",
-          "libs/server/pino/.npmignore"
+          "libs/server/pino/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/pino/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

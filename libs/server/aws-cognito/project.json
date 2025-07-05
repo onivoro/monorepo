@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/aws-cognito/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-cognito/README.md",
-          "libs/server/aws-cognito/package.json",
-          "libs/server/aws-cognito/.npmignore"
+          "libs/server/aws-cognito/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/aws-cognito/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

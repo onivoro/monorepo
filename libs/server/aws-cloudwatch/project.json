@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/aws-cloudwatch/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-cloudwatch/README.md",
-          "libs/server/aws-cloudwatch/package.json",
-          "libs/server/aws-cloudwatch/.npmignore"
+          "libs/server/aws-cloudwatch/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/aws-cloudwatch/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

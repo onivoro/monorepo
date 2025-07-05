@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/aws-credential-providers/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-credential-providers/README.md",
-          "libs/server/aws-credential-providers/package.json",
-          "libs/server/aws-credential-providers/.npmignore"
+          "libs/server/aws-credential-providers/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/aws-credential-providers/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

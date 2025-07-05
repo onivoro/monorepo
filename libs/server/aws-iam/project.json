@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/aws-iam/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-iam/README.md",
-          "libs/server/aws-iam/package.json",
-          "libs/server/aws-iam/.npmignore"
+          "libs/server/aws-iam/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/aws-iam/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

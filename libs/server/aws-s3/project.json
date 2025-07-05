@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/aws-s3/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-s3/README.md",
-          "libs/server/aws-s3/package.json",
-          "libs/server/aws-s3/.npmignore"
+          "libs/server/aws-s3/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/aws-s3/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

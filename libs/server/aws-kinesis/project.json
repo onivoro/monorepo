@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/aws-kinesis/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-kinesis/README.md",
-          "libs/server/aws-kinesis/package.json",
-          "libs/server/aws-kinesis/.npmignore"
+          "libs/server/aws-kinesis/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/aws-kinesis/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

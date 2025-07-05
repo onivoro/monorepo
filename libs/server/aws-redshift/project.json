@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/aws-redshift/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-redshift/README.md",
-          "libs/server/aws-redshift/package.json",
-          "libs/server/aws-redshift/.npmignore"
+          "libs/server/aws-redshift/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/aws-redshift/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

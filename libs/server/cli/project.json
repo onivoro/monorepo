@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/cli/tsconfig.lib.json",
         "assets": [
           "libs/server/cli/README.md",
-          "libs/server/cli/package.json",
-          "libs/server/cli/.npmignore"
+          "libs/server/cli/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/cli/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

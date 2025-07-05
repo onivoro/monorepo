@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/sendgrid/tsconfig.lib.json",
         "assets": [
           "libs/server/sendgrid/README.md",
-          "libs/server/sendgrid/package.json",
-          "libs/server/sendgrid/.npmignore"
+          "libs/server/sendgrid/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/sendgrid/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

@@ -13,12 +13,9 @@
         "tsConfig": "libs/isomorphic/common/tsconfig.lib.json",
         "assets": [
           "libs/isomorphic/common/README.md",
-          "libs/isomorphic/common/package.json",
-          "libs/isomorphic/common/.npmignore"
+          "libs/isomorphic/common/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/isomorphic/common/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

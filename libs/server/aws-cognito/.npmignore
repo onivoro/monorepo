@@ -1,8 +1,7 @@
-*.ts
-!*.d.ts
-src/
-**/*.spec.ts
-**/*.test.ts
+src/**/*.ts
+!src/**/*.d.ts
 tsconfig*.json
 jest.config.ts
 .eslintrc.json
+**/*.spec.ts
+**/*.test.ts

@@ -6,8 +6,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "rootDir": "./src",
-    "outDir": "../../../dist/libs/server/aws-cognito",
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true

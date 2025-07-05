@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/typeorm-postgres/tsconfig.lib.json",
         "assets": [
           "libs/server/typeorm-postgres/README.md",
-          "libs/server/typeorm-postgres/package.json",
-          "libs/server/typeorm-postgres/.npmignore"
+          "libs/server/typeorm-postgres/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/typeorm-postgres/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

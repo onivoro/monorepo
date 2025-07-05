@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/mcp/tsconfig.lib.json",
         "assets": [
           "libs/server/mcp/README.md",
-          "libs/server/mcp/package.json",
-          "libs/server/mcp/.npmignore"
+          "libs/server/mcp/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/mcp/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

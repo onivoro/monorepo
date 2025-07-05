@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/twilio/tsconfig.lib.json",
         "assets": [
           "libs/server/twilio/README.md",
-          "libs/server/twilio/package.json",
-          "libs/server/twilio/.npmignore"
+          "libs/server/twilio/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/twilio/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

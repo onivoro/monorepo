@@ -13,12 +13,9 @@
         "tsConfig": "libs/server/typeorm-mysql/tsconfig.lib.json",
         "assets": [
           "libs/server/typeorm-mysql/README.md",
-          "libs/server/typeorm-mysql/package.json",
-          "libs/server/typeorm-mysql/.npmignore"
+          "libs/server/typeorm-mysql/package.json"
         ],
-        "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true,
-        "rootDir": "libs/server/typeorm-mysql/src"
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {
