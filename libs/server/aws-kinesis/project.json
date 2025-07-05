@@ -16,7 +16,8 @@
           "libs/server/aws-kinesis/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/server/aws-kinesis/src"
       }
     },
     "publish": {

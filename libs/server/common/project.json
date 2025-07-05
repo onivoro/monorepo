@@ -16,7 +16,8 @@
           "libs/server/common/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/server/common/src"
       }
     },
     "publish": {

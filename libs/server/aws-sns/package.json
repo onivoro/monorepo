@@ -2,8 +2,8 @@
   "name": "@onivoro/server-aws-sns",
   "version": "24.5.0",
   "type": "commonjs",
-  "main": "./src/index.js",
-  "types": "./src/index.d.ts",
+  "main": "./index.js",
+  "types": "./index.d.ts",
   "repository": {
     "type": "git",
     "url": "https://github.com/onivoro/monorepo.git"

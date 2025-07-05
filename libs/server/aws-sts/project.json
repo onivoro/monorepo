@@ -16,7 +16,8 @@
           "libs/server/aws-sts/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/server/aws-sts/src"
       }
     },
     "publish": {

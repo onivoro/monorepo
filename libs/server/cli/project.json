@@ -16,7 +16,8 @@
           "libs/server/cli/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/server/cli/src"
       }
     },
     "publish": {

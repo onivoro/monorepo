@@ -16,7 +16,8 @@
           "libs/isomorphic/axios/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/isomorphic/axios/src"
       }
     },
     "publish": {

@@ -16,7 +16,8 @@
           "libs/server/aws-s3/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/server/aws-s3/src"
       }
     },
     "publish": {

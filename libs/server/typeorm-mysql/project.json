@@ -16,7 +16,8 @@
           "libs/server/typeorm-mysql/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/server/typeorm-mysql/src"
       }
     },
     "publish": {

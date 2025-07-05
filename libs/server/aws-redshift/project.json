@@ -16,7 +16,8 @@
           "libs/server/aws-redshift/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/server/aws-redshift/src"
       }
     },
     "publish": {

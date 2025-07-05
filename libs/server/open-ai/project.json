@@ -16,7 +16,8 @@
           "libs/server/open-ai/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/server/open-ai/src"
       }
     },
     "publish": {

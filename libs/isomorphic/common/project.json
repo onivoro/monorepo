@@ -16,7 +16,8 @@
           "libs/isomorphic/common/package.json"
         ],
         "declaration": true,
-        "updateBuildableProjectPackageJsonDependencies": true
+        "updateBuildableProjectPackageJsonDependencies": true,
+        "rootDir": "libs/isomorphic/common/src"
       }
     },
     "publish": {
