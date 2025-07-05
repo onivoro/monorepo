@@ -23,6 +23,7 @@
     "publish": {
       "executor": "@nx/js:npm",
       "outputs": [],
+      "dependsOn": ["build"],
       "options": {
         "packageRoot": "dist/libs/server/aws-iam"
       }
