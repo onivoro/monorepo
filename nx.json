@@ -121,19 +121,11 @@
   "release": {
     "projectsRelationship": "fixed",
     "version": {
-      "preVersionCommand": "nx run-many -t build --projects=\"lib-server-*,lib-isomorphic-*\"",
-      "git": {
-        "tag": true,
-        "tagTemplate": "v{version}"
-      }
+      "preVersionCommand": "nx run-many -t build --projects=\"lib-server-*,lib-isomorphic-*\""
     },
-    "groups": {
-      "server-libs": {
-        "projects": ["lib-server-*"]
-      },
-      "isomorphic-libs": {
-        "projects": ["lib-isomorphic-*"]
-      }
+    "git": {
+      "tag": true,
+      "tagTemplate": "v{version}"
     }
   }
 }

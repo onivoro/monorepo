@@ -1,3 +1,15 @@
+## 24.3.0 (2025-07-05)
+
+### 🩹 Fixes
+
+- add publish configs ([8e51d9e](https://github.com/onivoro/monorepo/commit/8e51d9e))
+- rm index files that were in wrong place ([ef07f36](https://github.com/onivoro/monorepo/commit/ef07f36))
+- duplicate git tags for release ([a1ea9fb](https://github.com/onivoro/monorepo/commit/a1ea9fb))
+
+### ❤️ Thank You
+
+- icedlee337
+
 ## 24.0.2 (2025-07-02)
 
 This was a version bump only, there were no code changes.
