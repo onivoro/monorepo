@@ -15,7 +15,8 @@
           "libs/server/sendgrid/README.md",
           "libs/server/sendgrid/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

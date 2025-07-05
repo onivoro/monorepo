@@ -15,7 +15,8 @@
           "libs/isomorphic/axios/README.md",
           "libs/isomorphic/axios/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

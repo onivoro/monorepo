@@ -15,7 +15,8 @@
           "libs/server/aws-redshift/README.md",
           "libs/server/aws-redshift/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

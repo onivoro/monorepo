@@ -15,7 +15,8 @@
           "libs/server/aws-ecs/README.md",
           "libs/server/aws-ecs/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

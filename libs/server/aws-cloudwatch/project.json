@@ -15,7 +15,8 @@
           "libs/server/aws-cloudwatch/README.md",
           "libs/server/aws-cloudwatch/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

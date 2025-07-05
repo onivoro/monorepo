@@ -15,7 +15,8 @@
           "libs/server/typeorm-mysql/README.md",
           "libs/server/typeorm-mysql/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

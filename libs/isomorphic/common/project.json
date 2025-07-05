@@ -15,7 +15,8 @@
           "libs/isomorphic/common/README.md",
           "libs/isomorphic/common/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

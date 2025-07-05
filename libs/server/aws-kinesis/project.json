@@ -15,7 +15,8 @@
           "libs/server/aws-kinesis/README.md",
           "libs/server/aws-kinesis/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

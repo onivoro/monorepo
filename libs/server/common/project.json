@@ -15,7 +15,8 @@
           "libs/server/common/README.md",
           "libs/server/common/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

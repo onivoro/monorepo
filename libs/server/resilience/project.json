@@ -15,7 +15,8 @@
           "libs/server/resilience/README.md",
           "libs/server/resilience/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "test": {

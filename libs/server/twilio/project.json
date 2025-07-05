@@ -15,7 +15,8 @@
           "libs/server/twilio/README.md",
           "libs/server/twilio/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

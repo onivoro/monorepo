@@ -15,7 +15,8 @@
           "libs/server/pino/README.md",
           "libs/server/pino/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {

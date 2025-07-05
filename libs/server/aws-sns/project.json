@@ -15,7 +15,8 @@
           "libs/server/aws-sns/README.md",
           "libs/server/aws-sns/package.json"
         ],
-        "declaration": true
+        "declaration": true,
+        "updateBuildableProjectPackageJsonDependencies": true
       }
     },
     "publish": {
