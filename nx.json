@@ -121,7 +121,7 @@
   "release": {
     "projectsRelationship": "fixed",
     "version": {
-      "preVersionCommand": "nx run-many -t build --projects=lib-server-*,lib-isomorphic-*"
+      "preVersionCommand": "nx run-many -t build --projects=\"lib-server-*,lib-isomorphic-*\""
     },
     "groups": {
       "server-libs": {
