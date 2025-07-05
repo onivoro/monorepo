@@ -1,8 +1,10 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "declaration": true
+    "declaration": true,
+    "rootDir": "./src",
+    "outDir": "../../dist/libs/server/aws-cognito"
   },
   "exclude": ["jest.config.ts", "**/*.spec.ts", "**/*.test.ts"],
-  "include": ["**/*.ts", "../../../apps/server/rx/src/app/services/rx-user-hydrater.service.ts"]
+  "include": ["src/**/*.ts"]
 }
