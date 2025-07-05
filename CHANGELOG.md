@@ -1,3 +1,13 @@
+## 24.6.0 (2025-07-05)
+
+### 🩹 Fixes
+
+- configs ([2180793](https://github.com/onivoro/monorepo/commit/2180793))
+
+### ❤️ Thank You
+
+- icedlee337
+
 ## 24.5.0 (2025-07-05)
 
 This was a version bump only, there were no code changes.

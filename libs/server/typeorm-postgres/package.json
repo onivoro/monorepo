@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-typeorm-postgres",
-  "version": "24.5.0",
+  "version": "24.6.0",
   "type": "commonjs",
   "main": "./index.js",
   "types": "./index.d.ts",
