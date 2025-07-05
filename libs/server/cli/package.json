@@ -14,5 +14,11 @@
   "peerDependencies": {
     "@nestjs/common": "~10.4.6",
     "nest-commander": "~3.15.0"
-  }
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
 }

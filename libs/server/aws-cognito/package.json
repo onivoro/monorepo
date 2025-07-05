@@ -21,5 +21,11 @@
     "jwk-to-pem": "~2.0.6",
     "jsonwebtoken": "~9.0.2",
     "jwks-rsa": "^3.2.0"
-  }
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
 }
