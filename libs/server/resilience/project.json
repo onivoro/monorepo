@@ -29,11 +29,10 @@
       }
     },
     "publish": {
-      "executor": "@nx/js:npm",
-      "outputs": [],
+      "executor": "nx:run-commands",
       "dependsOn": ["build"],
       "options": {
-        "packageRoot": "dist/libs/server/resilience"
+        "command": "cd dist/libs/server/resilience && npm publish"
       }
     }
   },

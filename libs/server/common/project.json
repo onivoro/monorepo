@@ -21,11 +21,10 @@
       }
     },
     "publish": {
-      "executor": "@nx/js:npm",
-      "outputs": [],
+      "executor": "nx:run-commands",
       "dependsOn": ["build"],
       "options": {
-        "packageRoot": "dist/libs/server/common"
+        "command": "cd dist/libs/server/common && npm publish"
       }
     }
   },

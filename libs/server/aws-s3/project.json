@@ -21,11 +21,10 @@
       }
     },
     "publish": {
-      "executor": "@nx/js:npm",
-      "outputs": [],
+      "executor": "nx:run-commands",
       "dependsOn": ["build"],
       "options": {
-        "packageRoot": "dist/libs/server/aws-s3"
+        "command": "cd dist/libs/server/aws-s3 && npm publish"
       }
     }
   },
