@@ -9,7 +9,6 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/typeorm-mysql",
-        "main": "libs/server/typeorm-mysql/src/index.ts",
         "tsConfig": "libs/server/typeorm-mysql/tsconfig.lib.json",
         "assets": [
           "libs/server/typeorm-mysql/README.md",

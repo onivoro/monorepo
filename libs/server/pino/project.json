@@ -9,7 +9,6 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/pino",
-        "main": "libs/server/pino/src/index.ts",
         "tsConfig": "libs/server/pino/tsconfig.lib.json",
         "assets": [
           "libs/server/pino/README.md",

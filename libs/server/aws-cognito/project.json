@@ -9,7 +9,6 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/aws-cognito",
-        "main": "libs/server/aws-cognito/src/index.ts",
         "tsConfig": "libs/server/aws-cognito/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-cognito/README.md",

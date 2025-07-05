@@ -9,7 +9,6 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/common",
-        "main": "libs/server/common/src/index.ts",
         "tsConfig": "libs/server/common/tsconfig.lib.json",
         "assets": [
           "libs/server/common/README.md",

@@ -9,7 +9,6 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/mcp",
-        "main": "libs/server/mcp/src/index.ts",
         "tsConfig": "libs/server/mcp/tsconfig.lib.json",
         "assets": [
           "libs/server/mcp/README.md",

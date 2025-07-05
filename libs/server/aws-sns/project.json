@@ -9,7 +9,6 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/aws-sns",
-        "main": "libs/server/aws-sns/src/index.ts",
         "tsConfig": "libs/server/aws-sns/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-sns/README.md",

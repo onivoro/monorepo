@@ -9,7 +9,6 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/aws-credential-providers",
-        "main": "libs/server/aws-credential-providers/src/index.ts",
         "tsConfig": "libs/server/aws-credential-providers/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-credential-providers/README.md",

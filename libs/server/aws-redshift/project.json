@@ -9,7 +9,6 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/aws-redshift",
-        "main": "libs/server/aws-redshift/src/index.ts",
         "tsConfig": "libs/server/aws-redshift/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-redshift/README.md",

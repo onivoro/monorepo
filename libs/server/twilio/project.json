@@ -9,7 +9,6 @@
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/libs/server/twilio",
-        "main": "libs/server/twilio/src/index.ts",
         "tsConfig": "libs/server/twilio/tsconfig.lib.json",
         "assets": [
           "libs/server/twilio/README.md",
