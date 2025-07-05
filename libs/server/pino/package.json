@@ -16,5 +16,11 @@
     "@nestjs/common": "~10.4.6",
     "nestjs-pino": "~4.1.0",
     "pino-http": "~10.3.0"
-  }
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
 }
