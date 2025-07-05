@@ -13,11 +13,5 @@
   },
   "peerDependencies": {
     "axios": "~1.7.7"
-  },
-  "files": [
-    "**/*.js",
-    "**/*.d.ts",
-    "**/*.js.map",
-    "README.md"
-  ]
+  }
 }

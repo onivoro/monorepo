@@ -10,11 +10,5 @@
   },
   "dependencies": {
     "tslib": "^2.3.0"
-  },
-  "files": [
-    "**/*.js",
-    "**/*.d.ts",
-    "**/*.js.map",
-    "README.md"
-  ]
+  }
 }

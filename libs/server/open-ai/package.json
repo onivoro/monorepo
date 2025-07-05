@@ -17,11 +17,5 @@
     "any-text": "^1.2.0",
     "compute-cosine-similarity": "^1.1.0",
     "openai": "^4.95.0"
-  },
-  "files": [
-    "**/*.js",
-    "**/*.d.ts",
-    "**/*.js.map",
-    "README.md"
-  ]
+  }
 }

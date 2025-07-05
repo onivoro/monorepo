@@ -18,11 +18,5 @@
     "reflect-metadata": "~0.2.2",
     "typeorm": "^0.3.22",
     "typeorm-naming-strategies": "~4.1.0"
-  },
-  "files": [
-    "**/*.js",
-    "**/*.d.ts",
-    "**/*.js.map",
-    "README.md"
-  ]
+  }
 }

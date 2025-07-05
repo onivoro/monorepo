@@ -18,11 +18,5 @@
     "@aws-sdk/client-redshift-data": "~3.782.0",
     "@aws-sdk/client-redshift-serverless": "~3.782.0",
     "@nestjs/common": "~10.4.6"
-  },
-  "files": [
-    "**/*.js",
-    "**/*.d.ts",
-    "**/*.js.map",
-    "README.md"
-  ]
+  }
 }

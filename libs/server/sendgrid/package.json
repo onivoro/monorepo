@@ -15,11 +15,5 @@
   "peerDependencies": {
     "@nestjs/common": "~10.4.6",
     "@sendgrid/mail": "^8.1.4"
-  },
-  "files": [
-    "**/*.js",
-    "**/*.d.ts",
-    "**/*.js.map",
-    "README.md"
-  ]
+  }
 }

@@ -14,11 +14,5 @@
   "peerDependencies": {
     "@aws-sdk/credential-providers": "~3.782.0",
     "@nestjs/common": "~10.4.6"
-  },
-  "files": [
-    "**/*.js",
-    "**/*.d.ts",
-    "**/*.js.map",
-    "README.md"
-  ]
+  }
 }

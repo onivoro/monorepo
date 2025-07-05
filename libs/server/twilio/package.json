@@ -15,11 +15,5 @@
   "peerDependencies": {
     "@nestjs/common": "~10.4.6",
     "twilio": "~5.3.5"
-  },
-  "files": [
-    "**/*.js",
-    "**/*.d.ts",
-    "**/*.js.map",
-    "README.md"
-  ]
+  }
 }
