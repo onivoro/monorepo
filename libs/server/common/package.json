@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-common",
-  "version": "24.12.0",
+  "version": "24.13.0",
   "type": "commonjs",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -9,7 +9,7 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/isomorphic-common": "24.12.0",
+    "@onivoro/isomorphic-common": "24.13.0",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
