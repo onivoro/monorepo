@@ -13,11 +13,5 @@
       "vite/client",
     ],
   },
-  "references": [
-    { "path": "./libs/browser/amplify/tsconfig.json" },
-    { "path": "./libs/browser/common/tsconfig.json" },
-    { "path": "./libs/browser/components/tsconfig.json" },
-    { "path": "./libs/browser/forms/tsconfig.json" },
-    { "path": "./libs/browser/monaco/tsconfig.json" },
-  ]
+  "references": []
 }

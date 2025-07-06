@@ -35,6 +35,11 @@
     },
     "test": {
       "inputs": ["default", "^production"]
+    },
+    "nx-release-publish": {
+      "options": {
+        "packageRoot": "dist/{projectRoot}"
+      }
     }
   },
   "plugins": [
