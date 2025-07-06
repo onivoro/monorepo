@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-aws-credential-providers",
-  "version": "24.20.0",
+  "version": "24.21.0",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
