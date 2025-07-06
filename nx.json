@@ -44,12 +44,6 @@
   },
   "plugins": [
     {
-      "plugin": "@nxlv/python",
-      "options": {
-        "packageManager": "uv"
-      }
-    },
-    {
       "plugin": "@nx/vite/plugin",
       "options": {
         "buildTargetName": "build",
@@ -125,6 +119,9 @@
   },
   "release": {
     "projectsRelationship": "fixed",
+    "version": {
+      "preVersionCommand": "nx run-many -t build --projects=\"lib-server-*,lib-isomorphic-*\""
+    },
     "git": {
       "tag": true,
       "tagTemplate": "v{version}"
