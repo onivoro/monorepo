@@ -2,13 +2,6 @@
   "name": "onivoro",
   "version": "0.0.1",
   "license": "MIT",
-  "bin": {
-    "b2b": "dist/apps/cli/b2b/main.js",
-    "ivinesis": "dist/apps/cli/ivinesis/main.js",
-    "ods": "dist/apps/cli/ods/main.js",
-    "rx": "dist/apps/cli/rx/main.js",
-    "warevim": "dist/apps/cli/warevim/main.js"
-  },
   "scripts": {
     "nx": "nx",
     "storybook": "npx nx storybook lib-browser-react-components",
@@ -32,6 +25,7 @@
     "@aws-sdk/client-ecs": "~3.782.0",
     "@aws-sdk/client-iam": "~3.782.0",
     "@aws-sdk/client-kinesis": "~3.782.0",
+    "@aws-sdk/client-location": "~3.782.0",
     "@aws-sdk/client-redshift": "^3.782.0",
     "@aws-sdk/client-redshift-data": "~3.782.0",
     "@aws-sdk/client-redshift-serverless": "~3.782.0",

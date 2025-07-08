@@ -1,0 +1,30 @@
+{
+  "name": "lib-server-aws-location",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/aws-location/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/aws-location",
+        "main": "libs/server/aws-location/src/index.ts",
+        "tsConfig": "libs/server/aws-location/tsconfig.lib.json",
+        "assets": [
+          "libs/server/aws-location/README.md",
+          "libs/server/aws-location/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "publish": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "cd dist/libs/server/aws-location && npm publish"
+      }
+    }
+  },
+  "tags": []
+}
