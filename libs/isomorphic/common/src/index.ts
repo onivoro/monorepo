@@ -18,6 +18,8 @@ export * from './lib/functions/map-enum-to-lookup-array.function';
 export * from './lib/functions/map-enum-to-options.function';
 export * from './lib/functions/remove-element-at-index.function';
 export * from './lib/functions/round.function';
+export * from './lib/functions/sort-by-number-factory.function';
+export * from './lib/functions/sort-by-string-factory.function';
 export * from './lib/functions/sort-by-created-at.function';
 export * from './lib/functions/sort-by-full-name.function';
 export * from './lib/functions/sort-by-id.function';
