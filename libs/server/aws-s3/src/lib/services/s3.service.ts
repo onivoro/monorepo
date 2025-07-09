@@ -77,7 +77,7 @@ export class S3Service {
     const command = new ListObjectsV2Command(this.addDefaultBucket(params));
     const data = await this.s3.send(command);
 
-    const Objects = data.Contents.map(({ Key }) => ({ Key }));
+    const Objects: {Key: string}[] = (data.Contents || []).map(({ Key }) => ({ Key })) as any;
 
     await this.deleteObjects(this.addDefaultBucket({ ...params, Objects }));
   }
@@ -124,11 +124,11 @@ export class S3Service {
     })
   }
 
-  private addDefaultBucket<TParams extends { Bucket?: string } & Record<string, any>>(params: TParams): TParams & { Bucket: string } {
+  private addDefaultBucket<TParams extends { Bucket?: string | null } & Record<string, any>>(params: TParams): TParams & { Bucket: string } {
     return { ...params, Bucket: this.getBucket(params?.Bucket) } as TParams & { Bucket: string };
   }
 
-  private getBucket(Bucket?: string): string {
+  private getBucket(Bucket?: string | null): string {
     return Bucket || this.config.AWS_BUCKET;
   }
 }
