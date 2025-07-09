@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-typeorm-mysql",
-  "version": "24.22.1",
+  "version": "24.23.0",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",

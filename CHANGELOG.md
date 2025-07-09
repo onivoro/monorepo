@@ -1,3 +1,13 @@
+## 24.23.0 (2025-07-09)
+
+### 🩹 Fixes
+
+- **server-aws-s3:** compilation ([6ccd5d7](https://github.com/onivoro/monorepo/commit/6ccd5d7))
+
+### ❤️ Thank You
+
+- icedlee337
+
 ## 24.22.1 (2025-07-09)
 
 This was a version bump only, there were no code changes.
