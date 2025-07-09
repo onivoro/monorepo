@@ -1,0 +1,26 @@
+{
+  "name": "@onivoro/server-aws-kinesis",
+  "version": "24.22.1",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "dependencies": {
+    "@onivoro/server-aws-credential-providers": "24.22.1",
+    "@onivoro/server-common": "24.22.1",
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-kinesis": "~3.782.0",
+    "@nestjs/common": "~10.4.6"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}
