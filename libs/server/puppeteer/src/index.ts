@@ -1,5 +1,8 @@
-export * from './lib/classes/server-aws-kinesis-config.class';
+export * from './lib/server-puppeteer-mock.module';
+export * from './lib/server-puppeteer.module';
 
-export * from './lib/services/kinesis.service';
+export * from './lib/classes/server-puppeteer-config.class';
 
-export * from './lib/server-aws-kinesis.module';
+export * from './lib/functions/launch-browser.function';
+
+export * from './lib/services/puppeteer.service';

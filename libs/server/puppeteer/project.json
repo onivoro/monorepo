@@ -1,19 +1,19 @@
 {
-  "name": "lib-server-aws-kinesis",
+  "name": "lib-server-puppeteer",
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "libs/server/aws-kinesis/src",
+  "sourceRoot": "libs/server/puppeteer/src",
   "projectType": "library",
   "targets": {
     "build": {
       "executor": "@nx/js:tsc",
       "outputs": ["{options.outputPath}"],
       "options": {
-        "outputPath": "dist/libs/server/aws-kinesis",
-        "main": "libs/server/aws-kinesis/src/index.ts",
-        "tsConfig": "libs/server/aws-kinesis/tsconfig.lib.json",
+        "outputPath": "dist/libs/server/puppeteer",
+        "main": "libs/server/puppeteer/src/index.ts",
+        "tsConfig": "libs/server/puppeteer/tsconfig.lib.json",
         "assets": [
-          "libs/server/aws-kinesis/README.md",
-          "libs/server/aws-kinesis/package.json"
+          "libs/server/puppeteer/README.md",
+          "libs/server/puppeteer/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true
       }
@@ -22,7 +22,7 @@
       "executor": "nx:run-commands",
       "dependsOn": ["build"],
       "options": {
-        "command": "cd dist/libs/server/aws-kinesis && npm publish"
+        "command": "cd dist/libs/server/puppeteer && npm publish"
       }
     }
   },
