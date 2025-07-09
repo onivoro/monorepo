@@ -1,8 +1,0 @@
-*.ts
-!*.d.ts
-src/
-**/*.spec.ts
-**/*.test.ts
-tsconfig*.json
-jest.config.ts
-.eslintrc.json
