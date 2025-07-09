@@ -1,0 +1,5 @@
+// Bun Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`resolveUrl  1`] = `"https://with-slash.s3.us-east-2.amazonaws.com/item.pdf"`;
+
+exports[`resolveUrl  2`] = `"https://s3.us-east-2.amazonaws.com/with.dot/item.pdf"`;

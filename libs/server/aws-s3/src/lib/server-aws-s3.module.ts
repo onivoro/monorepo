@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { S3, S3Client } from '@aws-sdk/client-s3';
+import { S3Client } from '@aws-sdk/client-s3';
 import { moduleFactory } from '@onivoro/server-common';
 import { ServerAwsS3Config } from './server-aws-s3-config.class';
 import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
@@ -21,6 +21,7 @@ export class ServerAwsS3Module {
               region: config.AWS_REGION,
               credentials
             })),
+          inject: [AwsCredentials]
         },
       ]
     });
