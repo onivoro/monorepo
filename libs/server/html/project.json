@@ -1,0 +1,30 @@
+{
+  "name": "lib-server-html",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/html/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/html",
+        "main": "libs/server/html/src/index.ts",
+        "tsConfig": "libs/server/html/tsconfig.lib.json",
+        "assets": [
+          "libs/server/html/README.md",
+          "libs/server/html/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "publish": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "cd dist/libs/server/html && npm publish"
+      }
+    }
+  },
+  "tags": []
+}

@@ -1,0 +1,5 @@
+// Bun Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`tags renders an HTML string 1`] = `"<div class="css-class-goes-here" data-blah="blahblah" style="width: 100%; height: 30px;">content goes here</div>"`;
+
+exports[`tags renders an HTML string 2`] = `"<img height="64" width="auto" src="https://blah.blah.com/blah.jpg"/>"`;
