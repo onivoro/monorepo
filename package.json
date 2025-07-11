@@ -25,6 +25,7 @@
     "@aws-sdk/client-ecs": "~3.782.0",
     "@aws-sdk/client-iam": "~3.782.0",
     "@aws-sdk/client-kinesis": "~3.782.0",
+    "@aws-sdk/client-lambda": "~3.782.0",
     "@aws-sdk/client-location": "~3.782.0",
     "@aws-sdk/client-redshift": "^3.782.0",
     "@aws-sdk/client-redshift-data": "~3.782.0",

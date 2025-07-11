@@ -1,0 +1,30 @@
+{
+  "name": "lib-server-aws-lambda",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/aws-lambda/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/aws-lambda",
+        "main": "libs/server/aws-lambda/src/index.ts",
+        "tsConfig": "libs/server/aws-lambda/tsconfig.lib.json",
+        "assets": [
+          "libs/server/aws-lambda/README.md",
+          "libs/server/aws-lambda/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "publish": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "cd dist/libs/server/aws-lambda && npm publish"
+      }
+    }
+  },
+  "tags": []
+}
