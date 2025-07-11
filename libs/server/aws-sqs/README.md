@@ -491,4 +491,4 @@ describe('SqsService', () => {
 
 ## License
 
-This package is part of the Onivoro monorepo and follows the same licensing terms.
+This library is licensed under the MIT License. See the LICENSE file in this package for details.

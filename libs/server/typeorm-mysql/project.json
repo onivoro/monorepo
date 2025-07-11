@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/typeorm-mysql/tsconfig.lib.json",
         "assets": [
           "libs/server/typeorm-mysql/README.md",
+          "libs/server/typeorm-mysql/LICENSE",
           "libs/server/typeorm-mysql/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

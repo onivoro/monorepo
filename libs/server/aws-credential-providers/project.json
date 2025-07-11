@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/aws-credential-providers/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-credential-providers/README.md",
+          "libs/server/aws-credential-providers/LICENSE",
           "libs/server/aws-credential-providers/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

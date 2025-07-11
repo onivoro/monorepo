@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/aws-iam/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-iam/README.md",
+          "libs/server/aws-iam/LICENSE",
           "libs/server/aws-iam/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

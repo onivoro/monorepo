@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/puppeteer/tsconfig.lib.json",
         "assets": [
           "libs/server/puppeteer/README.md",
+          "libs/server/puppeteer/LICENSE",
           "libs/server/puppeteer/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

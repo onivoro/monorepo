@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/html/tsconfig.lib.json",
         "assets": [
           "libs/server/html/README.md",
+          "libs/server/html/LICENSE",
           "libs/server/html/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

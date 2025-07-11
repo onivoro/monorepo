@@ -418,4 +418,4 @@ describe('UserService', () => {
 
 ## License
 
-This library is part of the @onivoro monorepo.
+This library is licensed under the MIT License. See the LICENSE file in this package for details.

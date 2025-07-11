@@ -1,6 +1,7 @@
 {
   "name": "@onivoro/server-puppeteer",
   "version": "24.22.1",
+  "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",

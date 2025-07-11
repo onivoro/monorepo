@@ -13,6 +13,7 @@
         "tsConfig": "libs/isomorphic/common/tsconfig.lib.json",
         "assets": [
           "libs/isomorphic/common/README.md",
+          "libs/isomorphic/common/LICENSE",
           "libs/isomorphic/common/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

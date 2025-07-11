@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/aws-redshift/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-redshift/README.md",
+          "libs/server/aws-redshift/LICENSE",
           "libs/server/aws-redshift/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

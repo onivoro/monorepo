@@ -482,4 +482,4 @@ describe('MCP Tools', () => {
 
 ## License
 
-This library is part of the Onivoro monorepo ecosystem.
+This library is licensed under the MIT License. See the LICENSE file in this package for details.

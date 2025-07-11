@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/aws-cognito/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-cognito/README.md",
+          "libs/server/aws-cognito/LICENSE",
           "libs/server/aws-cognito/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

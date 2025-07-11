@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/twilio/tsconfig.lib.json",
         "assets": [
           "libs/server/twilio/README.md",
+          "libs/server/twilio/LICENSE",
           "libs/server/twilio/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

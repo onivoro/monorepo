@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/sendgrid/tsconfig.lib.json",
         "assets": [
           "libs/server/sendgrid/README.md",
+          "libs/server/sendgrid/LICENSE",
           "libs/server/sendgrid/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/open-ai/tsconfig.lib.json",
         "assets": [
           "libs/server/open-ai/README.md",
+          "libs/server/open-ai/LICENSE",
           "libs/server/open-ai/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

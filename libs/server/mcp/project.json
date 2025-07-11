@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/mcp/tsconfig.lib.json",
         "assets": [
           "libs/server/mcp/README.md",
+          "libs/server/mcp/LICENSE",
           "libs/server/mcp/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

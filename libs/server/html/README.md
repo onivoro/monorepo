@@ -260,4 +260,4 @@ This package is part of the Onivoro monorepo. Please refer to the main repositor
 
 ## License
 
-[License information from main repository]
+This library is licensed under the MIT License. See the LICENSE file in this package for details.

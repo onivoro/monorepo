@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/typeorm-postgres/tsconfig.lib.json",
         "assets": [
           "libs/server/typeorm-postgres/README.md",
+          "libs/server/typeorm-postgres/LICENSE",
           "libs/server/typeorm-postgres/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

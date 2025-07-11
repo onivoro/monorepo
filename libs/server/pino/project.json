@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/pino/tsconfig.lib.json",
         "assets": [
           "libs/server/pino/README.md",
+          "libs/server/pino/LICENSE",
           "libs/server/pino/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

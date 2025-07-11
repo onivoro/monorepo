@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/aws-kinesis/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-kinesis/README.md",
+          "libs/server/aws-kinesis/LICENSE",
           "libs/server/aws-kinesis/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

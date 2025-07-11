@@ -1,6 +1,7 @@
 {
   "name": "@onivoro/server-aws-ecs",
   "version": "24.23.0",
+  "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",

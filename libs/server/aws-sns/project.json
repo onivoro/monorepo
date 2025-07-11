@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/aws-sns/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-sns/README.md",
+          "libs/server/aws-sns/LICENSE",
           "libs/server/aws-sns/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true

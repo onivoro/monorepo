@@ -13,6 +13,7 @@
         "tsConfig": "libs/server/aws-cloudwatch/tsconfig.lib.json",
         "assets": [
           "libs/server/aws-cloudwatch/README.md",
+          "libs/server/aws-cloudwatch/LICENSE",
           "libs/server/aws-cloudwatch/package.json"
         ],
         "updateBuildableProjectPackageJsonDependencies": true
