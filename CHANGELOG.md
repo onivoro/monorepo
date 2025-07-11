@@ -1,3 +1,13 @@
+## 24.24.0 (2025-07-11)
+
+### 🩹 Fixes
+
+- libs/server/puppeteer ([91e3818](https://github.com/onivoro/monorepo/commit/91e3818))
+
+### ❤️ Thank You
+
+- icedlee337
+
 ## 24.23.0 (2025-07-09)
 
 ### 🩹 Fixes
