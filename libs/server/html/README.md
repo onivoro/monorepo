@@ -42,7 +42,25 @@ const actionButton = button(['Click Me'], {
   href: '/action',
   style: { 'background-color': '#007bff', color: 'white' }
 });
+
+## DOM API Compatibility
+
+Use the familiar $-prefixed element factories from @vanilla-mint/dom for server-side rendering:
+
+```typescript
+import { $div, $h1, $p, styled } from '@onivoro/server-html';
+
+const html = $div({
+  className: 'container',
+  style: { display: 'flex', flexDirection: 'column' },
+  children: [
+    $h1({ textContent: 'Server-Side Rendering', style: { fontWeight: 700 }}),
+    $p({ textContent: 'This markup was generated on the server.' })
+  ]
+});
 ```
+
+## Core Concepts
 
 ## Core Concepts
 

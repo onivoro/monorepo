@@ -22,3 +22,4 @@ export * from './lib/types/self-closing-element-renderer.type';
 
 export * from './lib/email-body.function';
 export * from './lib/table.function';
+export * from './lib/dom';

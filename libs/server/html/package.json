@@ -12,7 +12,12 @@
   "dependencies": {
     "tslib": "^2.3.0"
   },
-  "peerDependencies": {},
+  "peerDependencies": {
+    "csstype": "^3.1.3"
+  },
+  "devDependencies": {
+    "csstype": "^3.1.3"
+  },
   "files": [
     "**/*.js",
     "**/*.d.ts",

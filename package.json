@@ -124,7 +124,7 @@
     "@module-federation/enhanced": "^0.9.0",
     "@nestjs/schematics": "11.0.5",
     "@nestjs/testing": "^10.4.17",
-    "@nx/jest": "21.2.1",
+    "@nx/jest": "^21.2.1",
     "@nx/js": "21.2.1",
     "@nx/nest": "21.2.1",
     "@nx/next": "21.2.1",
