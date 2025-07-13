@@ -1,3 +1,13 @@
+## 24.25.0 (2025-07-13)
+
+### 🚀 Features
+
+- **server-html:** better api for server html ([ce9302b](https://github.com/onivoro/monorepo/commit/ce9302b))
+
+### ❤️ Thank You
+
+- icedlee337
+
 ## 24.24.0 (2025-07-11)
 
 ### 🩹 Fixes
