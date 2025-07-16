@@ -1,3 +1,13 @@
+## 24.25.1 (2025-07-16)
+
+### 🩹 Fixes
+
+- **server-typeorm-mysql:** avoid use of "returning" ([c470739](https://github.com/onivoro/monorepo/commit/c470739))
+
+### ❤️ Thank You
+
+- icedlee337
+
 ## 24.25.0 (2025-07-13)
 
 ### 🚀 Features
