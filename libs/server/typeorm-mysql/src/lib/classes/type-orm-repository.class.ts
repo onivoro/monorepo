@@ -51,11 +51,11 @@ export class TypeOrmRepository<TEntity> implements IEntityProvider<
   }
 
   async postOne(body: Partial<TEntity>): Promise<TEntity> {
-    return await this.insertAndReturn(body as TEntity);
+    return await this.repo.save(body) as TEntity;
   }
 
   async postMany(body: Partial<TEntity | undefined>[]): Promise<TEntity[]> {
-    return await this.insertAndReturnMany(body as TEntity[]);
+    return await this.repo.save(body) as TEntity[];
   }
 
   async delete(options: FindOptionsWhere<TEntity>): Promise<void> {
@@ -76,24 +76,6 @@ export class TypeOrmRepository<TEntity> implements IEntityProvider<
 
   get repo() {
     return this.entityManager.getRepository(this.entityType as any);
-  }
-
-  protected async insertAndReturn(entityToInsert: TEntity): Promise<TEntity> {
-    return (await this.insertAndReturnMany([entityToInsert]))[0];
-  }
-
-  protected async insertAndReturnMany(entitiesToInsert: TEntity[]): Promise<TEntity[]> {
-    const insertionResult = await this.repo
-      .createQueryBuilder()
-      .insert()
-      .values(entitiesToInsert)
-      .returning('*')
-      .execute();
-
-    const insertedEntity: TEntity[] =
-      insertionResult.generatedMaps as TEntity[];
-
-    return insertedEntity;
   }
 
   static async queryStream<TRecord = any>(queryRunner: QueryRunner, _: TQueryStreamParams) {
