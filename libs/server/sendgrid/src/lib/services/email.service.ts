@@ -6,7 +6,7 @@ import { MailService } from '@sendgrid/mail';
 export class EmailService {
   constructor(public config: ServerSendgridConfig, private sgMail: MailService) { }
 
-  async sendEmail(to: string, subject: string, html: string, text: string) {
+  async sendEmail(to: string, subject: string, html: string, text: string, attachments?: { content: string; filename: string; type: string }[]) {
     return await this.sgMail
       .send({
         to,
@@ -14,6 +14,7 @@ export class EmailService {
         subject,
         text,
         html,
+        attachments,
       });
   }
 }

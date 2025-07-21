@@ -12,19 +12,9 @@ export class ServerPinoModule {
       patchConsole(new PinoLogger(config));
     }
 
-    if (process.env.NODE_ENV === 'production') {
-console.log('prod')
-      return moduleFactory({
-        module: ServerPinoModule,
-        imports: [LoggerModule.forRoot(config)],
-        providers: [
-          { provide: ServerPinoConfig, useValue: config },
-        ]
-      });
-    }
-
     return moduleFactory({
       module: ServerPinoModule,
+      imports: [LoggerModule.forRoot(config)],
       providers: [
         { provide: ServerPinoConfig, useValue: config },
       ]
