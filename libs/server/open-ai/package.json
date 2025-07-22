@@ -13,11 +13,11 @@
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
-    "@dqbd/tiktoken": "^1.0.20",
-    "@nestjs/common": "~10.4.6",
-    "any-text": "^1.2.0",
-    "compute-cosine-similarity": "^1.1.0",
-    "openai": "^4.95.0"
+    "@dqbd/tiktoken": "*",
+    "@nestjs/common": "*",
+    "any-text": "*",
+    "compute-cosine-similarity": "*",
+    "openai": "*"
   },
   "files": [
     "**/*.js",

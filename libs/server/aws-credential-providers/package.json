@@ -13,8 +13,8 @@
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
-    "@aws-sdk/credential-providers": "~3.782.0",
-    "@nestjs/common": "~10.4.6"
+    "@aws-sdk/credential-providers": "*",
+    "@nestjs/common": "*"
   },
   "files": [
     "**/*.js",
