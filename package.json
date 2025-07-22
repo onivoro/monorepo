@@ -5,9 +5,9 @@
   "scripts": {
     "nx": "nx",
     "datavore:build": "npx nx run app-server-datavore:build:production",
-    "datavore:containerize:amd": "docker build --build-arg=\"APP_DIST=dist/apps/server/datavore\" -f docker/prod/server/Dockerfile --platform linux/amd64 -t icedlee337/datavore:amd64-$(git rev-parse --short=12 HEAD) . && echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin && docker push icedlee337/datavore:amd64-$(git rev-parse --short=12 HEAD)",
-    "datavore:containerize:arm": "docker build --build-arg=\"APP_DIST=dist/apps/server/datavore\" -f docker/prod/server/Dockerfile --platform linux/arm64/v8 -t icedlee337/datavore:arm64v8-$(git rev-parse --short=12 HEAD) . && echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin && docker push icedlee337/datavore:arm64v8-$(git rev-parse --short=12 HEAD)",
-    "datavore:deploy": "npm run datavore:build && npm run datavore:containerize:arm",
+    "datavore:containerize:amd": "docker build --build-arg=\"APP_DIST=dist/apps/server/datavore\" -f docker/prod/server/Dockerfile --platform linux/amd64 -t icedlee337/datavore:amd64 . && echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin && docker push icedlee337/datavore:amd64",
+    "datavore:containerize:arm": "docker build --build-arg=\"APP_DIST=dist/apps/server/datavore\" -f docker/prod/server/Dockerfile --platform linux/arm64/v8 -t icedlee337/datavore:arm64v8 . && echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin && docker push icedlee337/datavore:arm64v8",
+    "datavore:deploy": "npm run datavore:build && npm run datavore:containerize:arm && npm run datavore:containerize:amd",
     "storybook": "npx nx storybook lib-browser-react-components",
     "random": "echo 'pass a numeric arg to change the default length of 16' & bun tools/scripts/rando.ts",
     "db:up:local": "cd docker/dev && docker compose up -d --remove-orphans",
