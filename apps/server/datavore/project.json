@@ -1,0 +1,40 @@
+{
+  "name": "app-server-datavore",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/server/datavore/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "webpack-cli build --config apps/server/datavore/webpack.config.js --mode production"
+      },
+      "configurations": {
+        "development": {
+          "command": "webpack-cli build --config apps/server/datavore/webpack.config.js --mode development"
+        }
+      }
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": [
+        "build"
+      ],
+      "options": {
+        "buildTarget": "app-server-datavore:build",
+        "runBuildTargetDependencies": false
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "app-server-datavore:build:development"
+        },
+        "production": {
+          "buildTarget": "app-server-datavore:build:production"
+        }
+      }
+    }
+  },
+  "tags": []
+}

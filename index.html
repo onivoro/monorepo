@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Class-less demo</title>
+    <!-- <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css"> -->
+          <style>
+            /* material-semantic.css  – class-less Material Design with overridable semantic colors */
+
+/* ─── Light (default) ─────────────────────────────────────────────── */
+:root {
+  /* Semantic palette */
+  --md-primary: #6200ee;
+  --md-primary-variant: #3700b3;
+  --md-secondary: #03dac6;
+  --md-error: #b00020;
+
+  --md-background: #ffffff;
+  --md-surface: #fafafa;
+  --md-outline: rgba(0,0,0,.12);
+
+  /* “On-*” text/icon colors */
+  --md-on-primary: #ffffff;
+  --md-on-secondary: #000000;
+  --md-on-error: #ffffff;
+  --md-on-background: #000000;
+  --md-on-surface: #000000;
+
+  /* Shape + motion */
+  --radius: 4px;
+  --elev-1: 0 1px 3px rgba(0,0,0,.2),0 1px 2px rgba(0,0,0,.14),0 1px 1px rgba(0,0,0,.12);
+  --elev-2: 0 2px 4px rgba(0,0,0,.2),0 3px 4px rgba(0,0,0,.14),0 1px 5px rgba(0,0,0,.12);
+  --font-stack: system-ui,sans-serif;
+}
+
+/* ─── Dark overrides (auto via prefers-color-scheme) ─────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-primary: #bb86fc;
+    --md-primary-variant: #3700b3;
+    --md-secondary: #03dac6;
+    --md-error: #cf6679;
+
+    --md-background: #121212;
+    --md-surface: #1e1e1e;
+    --md-outline: rgba(255,255,255,.12);
+
+    --md-on-primary: #000000;
+    --md-on-secondary: #000000;
+    --md-on-error: #000000;
+    --md-on-background: #ffffff;
+    --md-on-surface: #ffffff;
+  }
+}
+
+/* ─── Global reset & base ────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:var(--font-stack);
+  background:var(--md-background);
+  color:var(--md-on-background);
+  line-height:1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+/* Typography */
+h1,h2,h3,h4,h5,h6{
+  margin:1rem 0 .5rem;
+  font-weight:500;
+}
+p,ul,ol,pre,blockquote,table,figure{margin:.5rem 0}
+
+/* Links */
+a{
+  color:var(--md-primary);
+  text-decoration:none;
+}
+a:hover,a:focus{text-decoration:underline}
+
+/* Buttons */
+button,
+input[type=button],
+input[type=submit],
+input[type=reset]{
+  appearance:none;
+  border:none;
+  border-radius:var(--radius);
+  padding:.5rem 1rem;
+  background:var(--md-primary);
+  color:var(--md-on-primary);
+  cursor:pointer;
+  font-size:1rem;
+  box-shadow:var(--elev-1);
+  transition:box-shadow .2s ease;
+}
+button:hover,button:focus,
+input[type=button]:hover,input[type=button]:focus,
+input[type=submit]:hover,input[type=submit]:focus{box-shadow:var(--elev-2)}
+button:disabled{opacity:.38;cursor:default;box-shadow:none}
+
+/* Form fields */
+input,select,textarea{
+  width:100%;
+  padding:.5rem;
+  border:1px solid var(--md-outline);
+  border-radius:var(--radius);
+  background:var(--md-surface);
+  color:var(--md-on-surface);
+}
+label{display:block;margin-bottom:.25rem}
+input:focus,select:focus,textarea:focus{
+  outline:none;
+  border-color:var(--md-primary);
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--md-primary) 50%,transparent);
+}
+
+/* Containers / “cards” */
+section {
+  border-radius:var(--radius);
+  box-shadow:var(--elev-1);
+}
+
+article,section,header,footer,nav,main,aside{
+  background:var(--md-surface);
+  padding:1rem;
+  /* margin-top:1rem; */
+  /* margin-bottom:1rem; */
+}
+
+/* Tables */
+table{width:100%;border-collapse:collapse}
+th,td{padding:.75rem;border-bottom:1px solid var(--md-outline)}
+th{background:color-mix(in srgb,var(--md-primary) 10%,transparent);text-align:left}
+
+/* Accessibility */
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+          </style>
+  </head>
+  <body>
+    <header>
+      <h1>Hello, world!</h1>
+      <nav>
+        <a href="#one">One</a>
+        <a href="#two">Two</a>
+      </nav>
+    </header>
+
+    <main>
+      <h2 id="one">Section One</h2>
+      <p>Write plain semantic HTML—headings, paragraphs, lists, forms, tables— and the stylesheet handles the look.</p>
+
+      <h2 id="two">Section Two</h2>
+      <form style="display: flex; flex-direction: row; gap: 1rem; width: 100%;">
+        <label>Name <input required></label>
+        <label>Email <input type="email"></label>
+        <button>Submit</button>
+      </form>
+    </main>
+    <footer>copyright blah blah 2025</footer>
+  </body>
+</html>

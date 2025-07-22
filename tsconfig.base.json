@@ -38,6 +38,7 @@
       "@onivoro/server-aws-sts": ["libs/server/aws-sts/src/index.ts"],
       "@onivoro/server-cli": ["libs/server/cli/src/index.ts"],
       "@onivoro/server-common": ["libs/server/common/src/index.ts"],
+      "@onivoro/server-html": ["libs/server/html/src/index.ts"],
       "@onivoro/server-mcp": ["libs/server/mcp/src/index.ts"],
       "@onivoro/server-open-ai": ["libs/server/open-ai/src/index.ts"],
       "@onivoro/server-pino": ["libs/server/pino/src/index.ts"],
