@@ -185,8 +185,8 @@
     "yargs-parser": "~21.1.1"
   },
   "engines": {
-    "node": "22.10.0",
-    "npm": "10.9.0"
+    "node": "^22.16.0",
+    "npm": "^10.9.0"
   },
   "nx": {
     "includedScripts": []
