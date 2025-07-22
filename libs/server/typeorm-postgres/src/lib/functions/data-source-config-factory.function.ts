@@ -12,6 +12,8 @@ export function dataSourceConfigFactory(
     ca, database, host, password, port, username, synchronize = false, logging = false, schema,
   } = options;
 
+  console.info({ detail: `${ca ? '' : 'NOT '}using SSL certificate for database connection ${username}@${host}:${port}/${database}`, ca });
+
   const config: PostgresConnectionOptions = {
     name,
     type: 'postgres',
@@ -21,7 +23,7 @@ export function dataSourceConfigFactory(
     password,
     ssl: ca ? { ca } : undefined,
     database,
-    synchronize,
+    synchronize: synchronize && (process.env.NODE_ENV !== 'production'),
     logging,
     entities,
     schema,
