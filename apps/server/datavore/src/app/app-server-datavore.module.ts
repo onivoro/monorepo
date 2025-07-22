@@ -70,7 +70,7 @@ let dataSource: DataSource | null = null;
     }
   ]
 })
-export class AppModule implements OnModuleDestroy {
+export class AppServerDatavoreModule implements OnModuleDestroy {
   async onModuleDestroy() {
     if (dataSource && dataSource.isInitialized) {
       await dataSource.destroy();

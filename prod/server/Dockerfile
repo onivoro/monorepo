@@ -1,12 +1,12 @@
 FROM node:22.16
 
 ARG APP_DIST=""
-ARG TZ="America/New_York"
 
 ENV NODE_ENV=production
 ENV NODE_OPTIONS=--enable-source-maps
 
-ENV TZ=${TZ}
+# Set timezone to US/Eastern for consistent cron scheduling
+ENV TZ=America/New_York
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 USER node
