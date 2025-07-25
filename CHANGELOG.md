@@ -1,3 +1,13 @@
+## 24.27.1 (2025-07-25)
+
+### 🩹 Fixes
+
+- app-server-datavore not trying to load .env file ([6dbfd57](https://github.com/onivoro/monorepo/commit/6dbfd57))
+
+### ❤️ Thank You
+
+- icedlee337
+
 ## 24.27.0 (2025-07-25)
 
 This was a version bump only, there were no code changes.
