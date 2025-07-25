@@ -40,6 +40,12 @@
       "options": {
         "packageRoot": "dist/apps/server/datavore"
       }
+    },
+    "local": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "./tools/scripts/serve-datavore.sh"
+      }
     }
   },
   "tags": []

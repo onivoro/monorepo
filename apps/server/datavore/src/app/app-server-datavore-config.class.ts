@@ -7,8 +7,4 @@ export class AppServerDatavoreConfig {
     password: string = process.env['DV_PASSWORD']!;
     database: string = process.env['DV_DB']!;
     type: any = process.env['DV_TYPE']!;
-
-    constructor() {
-        loadEnvFile('.env');
-    }
 }
