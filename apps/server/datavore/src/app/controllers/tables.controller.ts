@@ -13,4 +13,9 @@ export class TablesController {
   async get() {
     return await this.tableService.getTables(this.dataSource);
   }
+
+  @Get('debug/info')
+  async getDatabaseInfo() {
+    return await this.tableService.getDatabaseInfo(this.dataSource);
+  }
 }

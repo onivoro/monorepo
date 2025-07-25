@@ -6,26 +6,229 @@ import { DataSource } from 'typeorm';
 export class TableService {
   constructor(private readonly dataSource: DataSource) { }
 
+  /**
+   * Get database information for debugging
+   */
+  async getDatabaseInfo(dataSource: DataSource): Promise<{ type: string, isConnected: boolean, databaseName?: string }> {
+    try {
+      const dbType = dataSource.options.type;
+      const isConnected = dataSource.isInitialized;
+      const databaseName = (dataSource.options as any).database;
+
+      return {
+        type: dbType,
+        isConnected,
+        databaseName
+      };
+    } catch (error) {
+      return {
+        type: 'unknown',
+        isConnected: false
+      };
+    }
+  }
+
+  private getTableListQuery(dbType: string): string {
+    switch (dbType) {
+      case 'postgres':
+        return `
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+          ORDER BY table_name
+        `;
+      case 'mysql':
+        return `
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = DATABASE()
+          ORDER BY table_name
+        `;
+      case 'sqlite':
+        return `
+          SELECT name AS table_name
+          FROM sqlite_master
+          WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+          ORDER BY name
+        `;
+      default:
+        // Fallback for other database types
+        return `
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+          ORDER BY table_name
+        `;
+    }
+  }
+
+  private getTableDataQuery(dbType: string, tableName: string): string {
+    switch (dbType) {
+      case 'postgres':
+        return `SELECT * FROM "${tableName}" LIMIT 100`;
+      case 'mysql':
+        return `SELECT * FROM \`${tableName}\` LIMIT 100`;
+      case 'sqlite':
+        return `SELECT * FROM "${tableName}" LIMIT 100`;
+      default:
+        return `SELECT * FROM ${tableName} LIMIT 100`;
+    }
+  }
+
+  private getColumnsQuery(dbType: string): string {
+    switch (dbType) {
+      case 'postgres':
+        return `
+          SELECT column_name, data_type, is_nullable, column_default
+          FROM information_schema.columns
+          WHERE table_name = $1
+          ORDER BY ordinal_position
+        `;
+      case 'mysql':
+        return `
+          SELECT column_name, data_type, is_nullable, column_default
+          FROM information_schema.columns
+          WHERE table_name = ? AND table_schema = DATABASE()
+          ORDER BY ordinal_position
+        `;
+      default:
+        return `
+          SELECT column_name, data_type, is_nullable, column_default
+          FROM information_schema.columns
+          WHERE table_name = ?
+          ORDER BY ordinal_position
+        `;
+    }
+  }
+
+  private getPrimaryKeysQuery(dbType: string): string {
+    switch (dbType) {
+      case 'postgres':
+        return `
+          SELECT kcu.column_name
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+          WHERE tc.constraint_type = 'PRIMARY KEY'
+            AND tc.table_name = $1
+            AND tc.table_schema = 'public'
+          ORDER BY kcu.ordinal_position
+        `;
+      case 'mysql':
+        return `
+          SELECT column_name
+          FROM information_schema.key_column_usage
+          WHERE table_name = ?
+            AND table_schema = DATABASE()
+            AND constraint_name = 'PRIMARY'
+          ORDER BY ordinal_position
+        `;
+      default:
+        return `SELECT column_name FROM information_schema.key_column_usage WHERE table_name = ? AND constraint_name = 'PRIMARY'`;
+    }
+  }
+
+  private getForeignKeysQuery(dbType: string): string {
+    switch (dbType) {
+      case 'postgres':
+        return `
+          SELECT
+            kcu.column_name,
+            ccu.table_name AS foreign_table_name,
+            ccu.column_name AS foreign_column_name,
+            tc.constraint_name
+          FROM information_schema.table_constraints AS tc
+          JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+          JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_schema = tc.table_schema
+          WHERE tc.constraint_type = 'FOREIGN KEY'
+            AND tc.table_name = $1
+            AND tc.table_schema = 'public'
+        `;
+      case 'mysql':
+        return `
+          SELECT
+            kcu.column_name,
+            kcu.referenced_table_name AS foreign_table_name,
+            kcu.referenced_column_name AS foreign_column_name,
+            kcu.constraint_name
+          FROM information_schema.key_column_usage kcu
+          WHERE kcu.table_name = ?
+            AND kcu.table_schema = DATABASE()
+            AND kcu.referenced_table_name IS NOT NULL
+        `;
+      default:
+        return `SELECT '' AS column_name, '' AS foreign_table_name, '' AS foreign_column_name, '' AS constraint_name WHERE 1=0`;
+    }
+  }
+
+  private getIndicesQuery(dbType: string): string {
+    switch (dbType) {
+      case 'postgres':
+        return `
+          SELECT
+            i.relname AS index_name,
+            a.attname AS column_name,
+            ix.indisunique AS is_unique,
+            ix.indisprimary AS is_primary
+          FROM pg_class t
+          JOIN pg_index ix ON t.oid = ix.indrelid
+          JOIN pg_class i ON i.oid = ix.indexrelid
+          JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+          WHERE t.relname = $1
+            AND t.relkind = 'r'
+            AND NOT ix.indisprimary
+          ORDER BY i.relname, a.attname
+        `;
+      case 'mysql':
+        return `
+          SELECT
+            index_name,
+            column_name,
+            CASE WHEN non_unique = 0 THEN true ELSE false END AS is_unique
+          FROM information_schema.statistics
+          WHERE table_name = ?
+            AND table_schema = DATABASE()
+            AND index_name != 'PRIMARY'
+          ORDER BY index_name, seq_in_index
+        `;
+      default:
+        return `SELECT '' AS index_name, '' AS column_name, false AS is_unique WHERE 1=0`;
+    }
+  }
+
   async getTables(dataSource: DataSource): Promise<string> {
     try {
-      const tables = await dataSource.query(`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-      ORDER BY table_name
-    `);
+      const dbType = dataSource.options.type;
+      console.info(`Getting tables for database type: ${dbType}`);
+
+      const query = this.getTableListQuery(dbType);
+      const tables = await dataSource.query(query);
+
+      if (!tables || tables.length === 0) {
+        return $div({
+          className: 'info',
+          style: { padding: '2rem', textAlign: 'center', color: '#666' },
+          textContent: 'No tables found in the database.'
+        });
+      }
 
       const tableElements = tables.map(table =>
         $div({
           className: 'table-item',
-          'data-table': table.table_name,
-          '@click': `selectTable('${table.table_name}')`,
-          textContent: table.table_name
+          'data-table': table.table_name || table.name, // Handle both standard and SQLite formats
+          '@click': `selectTable('${table.table_name || table.name}')`,
+          textContent: table.table_name || table.name
         })
       );
 
       return tableElements.join('');
     } catch (error) {
+      console.error('Error getting tables:', error);
       return $div({
         className: 'error',
         textContent: `Error loading tables: ${error.message}`
@@ -36,7 +239,11 @@ export class TableService {
 
   async getTableData(dataSource: DataSource, tableName: string): Promise<string> {
     try {
-      const data = await dataSource.query(`SELECT * FROM "${tableName}" LIMIT 100`);
+      const dbType = dataSource.options.type;
+      console.info(`Getting table data for: ${tableName} (database type: ${dbType})`);
+
+      const query = this.getTableDataQuery(dbType, tableName);
+      const data = await dataSource.query(query);
 
       if (data.length === 0) {
         const tabs = $div({
@@ -145,64 +352,16 @@ export class TableService {
 
   async getTableStructure(dataSource: DataSource, tableName: string): Promise<string> {
     try {
-      // Get column information
-      const columns = await dataSource.query(`
-        SELECT column_name, data_type, is_nullable, column_default
-        FROM information_schema.columns
-        WHERE table_name = $1
-        ORDER BY ordinal_position
-      `, [tableName]);
+      const dbType = dataSource.options.type;
+      console.info(`Getting table structure for: ${tableName} (database type: ${dbType})`);
 
-      // Get primary key information
-      const primaryKeys = await dataSource.query(`
-        SELECT kcu.column_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu
-          ON tc.constraint_name = kcu.constraint_name
-          AND tc.table_schema = kcu.table_schema
-        WHERE tc.constraint_type = 'PRIMARY KEY'
-          AND tc.table_name = $1
-          AND tc.table_schema = 'public'
-        ORDER BY kcu.ordinal_position
-      `, [tableName]);
-
-      // Get foreign key information
-      const foreignKeys = await dataSource.query(`
-        SELECT
-          kcu.column_name,
-          ccu.table_name AS foreign_table_name,
-          ccu.column_name AS foreign_column_name,
-          tc.constraint_name
-        FROM information_schema.table_constraints AS tc
-        JOIN information_schema.key_column_usage AS kcu
-          ON tc.constraint_name = kcu.constraint_name
-          AND tc.table_schema = kcu.table_schema
-        JOIN information_schema.constraint_column_usage AS ccu
-          ON ccu.constraint_name = tc.constraint_name
-          AND ccu.table_schema = tc.table_schema
-        WHERE tc.constraint_type = 'FOREIGN KEY'
-          AND tc.table_name = $1
-          AND tc.table_schema = 'public'
-      `, [tableName]);
-
-      // Get index information
-      const indices = await dataSource.query(`
-        SELECT
-          i.relname AS index_name,
-          a.attname AS column_name,
-          ix.indisunique AS is_unique,
-          ix.indisprimary AS is_primary
-        FROM pg_class t
-        JOIN pg_index ix ON t.oid = ix.indrelid
-        JOIN pg_class i ON i.oid = ix.indexrelid
-        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
-        WHERE t.relname = $1
-          AND t.relkind = 'r'
-          AND NOT ix.indisprimary
-        ORDER BY i.relname, a.attname
-      `, [tableName]);
-
-      const pkSet = new Set(primaryKeys.map(pk => pk.column_name));
+      // Get all metadata using the helper methods
+      const [columns, primaryKeys, foreignKeys, indices] = await Promise.all([
+        dataSource.query(this.getColumnsQuery(dbType), [tableName]),
+        dataSource.query(this.getPrimaryKeysQuery(dbType), [tableName]),
+        dataSource.query(this.getForeignKeysQuery(dbType), [tableName]),
+        dataSource.query(this.getIndicesQuery(dbType), [tableName])
+      ]);      const pkSet = new Set(primaryKeys.map(pk => pk.column_name));
 
       // Columns table
       const columnsHeaderRow = $tr({
