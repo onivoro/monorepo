@@ -34,6 +34,12 @@
           "buildTarget": "app-server-datavore:build:production"
         }
       }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish",
+      "options": {
+        "packageRoot": "dist/apps/server/datavore"
+      }
     }
   },
   "tags": []
