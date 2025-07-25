@@ -1,5 +1,3 @@
-import { loadEnvFile } from "process";
-
 export class AppServerDatavoreConfig {
     host: string = process.env['DV_HOST']!;
     port: string = process.env['DV_PORT']!;
