@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-open-ai",
-  "version": "24.27.1",
+  "version": "24.27.2",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",

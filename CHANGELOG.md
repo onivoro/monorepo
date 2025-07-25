@@ -1,3 +1,7 @@
+## 24.27.2 (2025-07-25)
+
+This was a version bump only, there were no code changes.
+
 ## 24.27.1 (2025-07-25)
 
 ### 🩹 Fixes
