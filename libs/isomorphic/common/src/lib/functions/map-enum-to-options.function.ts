@@ -1,4 +1,4 @@
-export function mapEnumToOptions<TEntity extends object>(enumeration: TEntity, includeBlank = true) {
+export function mapEnumToOptions<TEntity extends object>(enumeration: TEntity, includeBlank = true): ILookup<string, string> {
     const enumArray = Object.entries(enumeration).map(([key, value]) => ({ value, display: key.replace(/_/g, ' ') }))
 
     return includeBlank
