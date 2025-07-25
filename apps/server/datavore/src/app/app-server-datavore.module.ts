@@ -3,6 +3,8 @@ import { AppController } from './controllers/app.controller';
 import { AppServerDatavoreConfig } from './app-server-datavore-config.class';
 import { DataSource } from 'typeorm';
 import { TableService } from './services/table.service';
+import { DatabaseSchemaService } from './services/database-schema.service';
+import { HtmlGeneratorService } from './services/html-generator.service';
 import { TablesController } from './controllers/tables.controller';
 import { TableController } from './controllers/table.controller';
 import { QueryController } from './controllers/query.controller';
@@ -19,6 +21,8 @@ let dataSource: DataSource | null = null;
   ],
   providers: [
     TableService,
+    DatabaseSchemaService,
+    HtmlGeneratorService,
     { provide: AppServerDatavoreConfig, useValue: dbConfig },
     {
       provide: DataSource,
