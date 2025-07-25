@@ -1,3 +1,13 @@
+## 24.28.0 (2025-07-25)
+
+### 🩹 Fixes
+
+- release ([e6339ca](https://github.com/onivoro/monorepo/commit/e6339ca))
+
+### ❤️ Thank You
+
+- icedlee337
+
 ## 24.27.2 (2025-07-25)
 
 This was a version bump only, there were no code changes.
