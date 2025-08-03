@@ -18,9 +18,6 @@ npx nx build {project-name}
 
 # Format code (required before commits)
 npm run fmt
-
-# Run Storybook for component development
-npm run storybook
 ```
 
 ### Testing
@@ -35,14 +32,6 @@ nx test {project-name}
 
 # Test with coverage and watch mode
 nx test {project-name} --coverage --watch
-
-# Run E2E tests
-nx playwright test-playwright-b2b
-nx playwright test-playwright-rx
-
-# Python tests
-nx test pyvim
-```
 
 ### Local Development
 ```bash
@@ -71,7 +60,7 @@ npx nx run-many -t {executor}
 npx nx run-many -t {executor} --dry-run
 
 # Run with specific project pattern
-npx nx run-many -t test --projects="*b2b*"
+npx nx run-many -t test --projects="whatever"
 ```
 
 ## Architecture Overview
@@ -95,19 +84,13 @@ npx nx run-many -t test --projects="*b2b*"
 - **TypeScript Configuration**: Layered configs with `tsconfig.base.json`, `tsconfig.server.json`, `tsconfig.web.json`
 - **Path Mapping**: Comprehensive barrel exports using `@onivoro/*` namespace
 
-### Database Architecture
-- **Per-Domain ORMs**: Each business domain has its own ORM library (e.g., `@onivoro/server-b2b-orm`)
-- **TypeORM Foundation**: Uses TypeORM with custom naming strategies
-- **Multi-Database Support**: PostgreSQL and MySQL configurations
-- **Migration Management**: Domain-specific migrations with `npm run typeorm`
-
 ### Authentication Patterns
 - **Server Apps**: JWT + TOTP with abstract base classes (`AbstractAuthGuard`)
 - **Browser Apps**: OIDC integration with Cognito/Entra ID
 - **Role-Based Access**: Custom decorators for user context (`@UserId()`, `@CompanyId()`)
 
 ### API Architecture
-- **Domain-Driven APIs**: Separate API servers per domain (b2b, warevim, rx, etc.)
+- **Domain-Driven APIs**: Separate API servers per domain
 - **OpenAPI Integration**: Auto-generated clients and documentation
 - **Consistent Bootstrap**: All APIs use `configureApiApp()` helper
 - **Global Patterns**: `/api` prefix, structured error handling, CORS configuration
@@ -125,12 +108,11 @@ Custom Nx plugin providing specialized executors:
 ### Code Generation
 - **API Clients**: Generated from OpenAPI specs, stored in `libs/axios/`
 - **Documentation**: Auto-generated API docs in `api-dox/`
-- **CLI Binaries**: Built CLIs available as `b2b`, `ivinesis`, `ods`, `rx`, `warevim`
 
 ## Development Patterns
 
 ### Adding New Features
-1. Identify the appropriate domain (b2b, rx, warevim, etc.)
+1. Identify the appropriate domain
 2. Add business logic to the corresponding server library
 3. Create API endpoints in the server app
 4. Generate API client: `nx gen {domain-api-app-name}`
@@ -207,7 +189,6 @@ Custom Nx plugin providing specialized executors:
 ### Development Tools
 - **Jest**: Unit testing
 - **Playwright**: E2E testing
-- **Storybook**: Component development
 - **ESLint/Prettier**: Code formatting
 - **Docker**: Local development environment
 
