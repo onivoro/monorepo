@@ -20,6 +20,7 @@
     "paths": {
       "@onivoro/isomorphic-axios": ["libs/isomorphic/axios/src/index.ts"],
       "@onivoro/isomorphic-common": ["libs/isomorphic/common/src/index.ts"],
+      "@onivoro/isomorphic-fhir": ["libs/isomorphic/fhir/src/index.ts"],
       "@onivoro/server-auth": ["libs/server/auth/src/index.ts"],
       "@onivoro/server-aws-cloudwatch": [
         "libs/server/aws-cloudwatch/src/index.ts"

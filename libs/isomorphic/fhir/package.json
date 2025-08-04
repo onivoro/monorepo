@@ -1,0 +1,23 @@
+{
+  "name": "@onivoro/isomorphic-fhir",
+  "version": "24.28.1",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "dependencies": {
+    "@nestjs/swagger": "*",
+    "tslib": "^2.3.0",
+    "uuid": "*"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}
