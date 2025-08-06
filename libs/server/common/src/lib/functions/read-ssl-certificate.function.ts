@@ -6,7 +6,12 @@ export function readSslCertificate(
     { PG_HOST }: { PG_HOST: string },
     CERTIFICATE_PATH = 'assets/us-east-2-bundle.pem',
 ): string | undefined {
-    const isDnsResolvingToLocalhost = PG_HOST === 'localhost';
+    const isDnsResolvingToLocalhost =
+        (PG_HOST === 'localhost') ||
+        (PG_HOST === '127.0.0.1') ||
+        (PG_HOST === '0000:0000:0000:0000:0000:0000:0000:0001') ||
+        (PG_HOST === '::1');
+
 
     if (isDnsResolvingToLocalhost) {
         return undefined;
