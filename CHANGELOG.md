@@ -1,3 +1,13 @@
+## 24.29.0 (2025-08-23)
+
+### 🩹 Fixes
+
+- missing import ([549c9b9](https://github.com/onivoro/monorepo/commit/549c9b9))
+
+### ❤️ Thank You
+
+- icedlee337
+
 ## 24.28.1 (2025-07-25)
 
 This was a version bump only, there were no code changes.
