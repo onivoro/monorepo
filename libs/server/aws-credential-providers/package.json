@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-aws-credential-providers",
-  "version": "24.30.0",
+  "version": "24.30.1",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",

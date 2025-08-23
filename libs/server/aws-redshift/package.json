@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-aws-redshift",
-  "version": "24.30.0",
+  "version": "24.30.1",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -10,8 +10,8 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/server-aws-credential-providers": "24.30.0",
-    "@onivoro/server-common": "24.30.0",
+    "@onivoro/server-aws-credential-providers": "24.30.1",
+    "@onivoro/server-common": "24.30.1",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
