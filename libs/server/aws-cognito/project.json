@@ -19,12 +19,8 @@
         "updateBuildableProjectPackageJsonDependencies": true
       }
     },
-    "publish": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["build"],
-      "options": {
-        "command": "cd dist/libs/server/aws-cognito && npm publish --access public"
-      }
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
     }
   },
   "tags": []

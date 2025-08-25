@@ -19,13 +19,7 @@
         "updateBuildableProjectPackageJsonDependencies": true
       }
     },
-    "publish": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["build"],
-      "options": {
-        "command": "cd dist/libs/server/mcp && npm publish"
-      }
-    }
+  "nx-release-publish": {"executor": "@nx/js:release-publish"}
   },
   "tags": []
 }
