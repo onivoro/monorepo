@@ -115,10 +115,13 @@
   },
   "release": {
     "projectsRelationship": "fixed",
-  "version": {},
-    "git": {
-      "tag": true,
-      "tagTemplate": "v{version}"
+    "version": {
+      "git": {
+        "commit": true,
+        "tag": true,
+        "tagTemplate": "v{version}",
+        "commitMessage": "chore(release): v{version}"
+      }
     },
     "projects": ["lib-server-*", "lib-isomorphic-*", "app-server-datavore"]
   }
