@@ -6,7 +6,7 @@ export function asElementFactory(
   renderer: TElementRenderer
 ): (props?: TElementProps) => string {
   return (props = {}) => {
-    const { style, className, children, textContent, innerHTML, ...attrs } = props;
+    const { style, className, children, textContent, innerHTML, $$, ...attrs } = props;
     const attributes: TAttributes = {
       cssClass: className,
       style,
@@ -14,6 +14,7 @@ export function asElementFactory(
     };
     let content: Array<string | number> = [];
     if (children && children.length) content = children;
+    if ($$ && $$.length) content = $$;
     if (textContent != null) content = [textContent];
     if (innerHTML != null) content = [innerHTML];
     return renderer(content, attributes);

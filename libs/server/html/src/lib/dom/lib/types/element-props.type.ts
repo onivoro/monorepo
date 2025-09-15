@@ -4,6 +4,7 @@ export interface TElementProps {
   style?: CSSProperties;
   className?: string;
   children?: Array<string | number>;
+  $$?: Array<string | number>;
   textContent?: string;
   innerHTML?: string;
   [key: string]: any;
