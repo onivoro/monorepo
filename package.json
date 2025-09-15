@@ -15,7 +15,12 @@
     "setup:mcp": "node scripts/setup-mcp-config.js",
     "setup:mcp:dry-run": "node scripts/setup-mcp-config.js --dry-run",
     "test": "npm run test:unit",
-    "test:unit": "nx run-many -t test --passWithNoTests"
+    "test:unit": "nx run-many -t test --passWithNoTests",
+    "release": "nx release",
+    "release:dry-run": "nx release --dry-run",
+    "release:patch": "nx release version patch",
+    "release:minor": "nx release version minor",
+    "release:major": "nx release version major"
   },
   "private": true,
   "dependencies": {
