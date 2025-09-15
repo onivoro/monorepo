@@ -16,11 +16,11 @@
     "setup:mcp:dry-run": "node scripts/setup-mcp-config.js --dry-run",
     "test": "npm run test:unit",
     "test:unit": "nx run-many -t test --passWithNoTests",
-    "release": "nx release",
-    "release:dry-run": "nx release --dry-run",
-    "release:patch": "nx release version patch",
-    "release:minor": "nx release version minor",
-    "release:major": "nx release version major"
+    "release:patch": "nx release version patch && npm run release:build-and-publish",
+    "release:minor": "nx release version minor && npm run release:build-and-publish",
+    "release:major": "nx release version major && npm run release:build-and-publish",
+    "release:build-and-publish": "nx run-many -t build --projects='lib-server-*,lib-isomorphic-*,app-server-datavore' && git add . && git commit -m \"chore(release): v$(node -p \"require('./libs/server/common/package.json').version\")\" && git tag \"v$(node -p \"require('./libs/server/common/package.json').version\")\" && nx release publish",
+    "release:dry-run": "nx release version patch --dry-run"
   },
   "private": true,
   "dependencies": {

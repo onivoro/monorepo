@@ -131,21 +131,16 @@
     "projectsRelationship": "fixed",
     "version": {
       "generatorOptions": {
-        "specifierSource": "conventional-commits"
+        "specifierSource": "prompt",
+        "currentVersionResolver": "disk"
       },
-      "git": {
-        "commit": true,
-        "tag": true,
-        "tagTemplate": "v{version}",
-        "commitMessage": "chore(release): v{version}"
-      }
-    },
-    "changelog": {
-      "projectChangelogs": false,
       "git": {
         "commit": false,
         "tag": false
       }
+    },
+    "changelog": {
+      "projectChangelogs": false
     },
     "projects": ["lib-server-*", "lib-isomorphic-*", "app-server-datavore"]
   }
