@@ -14,7 +14,7 @@ export class ServerAwsS3Module {
       imports: [ServerAwsCredentialProvidersModule.configure(config)],
       module: ServerAwsS3Module,
       providers: [
-        { provide: config, useValue: ServerAwsS3Config },
+        { provide: ServerAwsS3Config, useValue: config },
         S3Service,
         {
           provide: S3Client,
