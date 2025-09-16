@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-cli",
-  "version": "24.30.6",
+  "version": "24.30.7",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
