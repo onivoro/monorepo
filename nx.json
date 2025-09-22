@@ -69,8 +69,7 @@
           "targetName": "tsc:build",
           "configName": "tsconfig.lib.json"
         }
-      },
-      "exclude": ["libs/server/metrics/*"]
+      }
     },
     {
       "plugin": "@nx/webpack/plugin",
@@ -80,19 +79,6 @@
         "previewTargetName": "preview",
         "buildDepsTargetName": "build-deps",
         "watchDepsTargetName": "watch-deps"
-      }
-    },
-    {
-      "plugin": "@nx/js/typescript",
-      "include": ["libs/server/metrics/*"],
-      "options": {
-        "typecheck": {
-          "targetName": "typecheck"
-        },
-        "build": {
-          "targetName": "build",
-          "configName": "tsconfig.lib.json"
-        }
       }
     }
   ],
@@ -130,17 +116,12 @@
   "release": {
     "projectsRelationship": "fixed",
     "version": {
-      "generatorOptions": {
-        "specifierSource": "prompt",
-        "currentVersionResolver": "disk"
-      },
       "git": {
-        "commit": false,
-        "tag": false
+        "commit": true,
+        "tag": true,
+        "tagTemplate": "v{version}",
+        "commitMessage": "chore(release): v{version}"
       }
-    },
-    "changelog": {
-      "projectChangelogs": false
     },
     "projects": ["lib-server-*", "lib-isomorphic-*", "app-server-datavore"]
   }
