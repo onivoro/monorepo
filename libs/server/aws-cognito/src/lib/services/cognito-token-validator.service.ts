@@ -43,6 +43,7 @@ export class CognitoTokenValidatorService implements OnModuleInit {
 
             const verifiedToken = verify(token, pem, {
                 issuer: this.issuer,
+                audience: this.config.COGNITO_USER_POOL_CLIENT_ID,
                 algorithms: ['RS256']
             });
 

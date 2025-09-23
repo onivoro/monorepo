@@ -1,7 +1,5 @@
 export * from './lib/server-aws-cognito-config.class';
 export * from './lib/server-aws-cognito.module';
-export * from './lib/server-aws-cognito-saml-config.class';
-export * from './lib/server-aws-cognito-saml.module';
 export * from './lib/server-aws-cognito-oidc-config.class';
 export * from './lib/server-aws-cognito-oidc.module';
 
@@ -39,8 +37,6 @@ export * from './lib/services/cognito-refresh-token.service';
 export * from './lib/services/cognito-token-validator.service';
 export * from './lib/services/cognito-user.service';
 export * from './lib/services/cookie.service';
-export * from './lib/services/token-retrieval.service';
-export * from './lib/services/token-validation.service';
 export * from './lib/services/user-hydrater.service';
 
 export * from './lib/types/cognito-attribute.type';
