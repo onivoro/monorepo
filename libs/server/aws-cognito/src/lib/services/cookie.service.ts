@@ -41,6 +41,7 @@ export class CookieService {
                 httpOnly: true,
                 secure: !isLocal,
                 sameSite: !isLocal ? 'strict' : false,
+                path: '/api'
             };
 
             if (domain) {
