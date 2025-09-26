@@ -18,6 +18,7 @@ export * from './lib/dtos/oidc-client-config-metadata.dto';
 export * from './lib/dtos/oidc-client-config.dto';
 export * from './lib/dtos/cognito-saml-client-config.dto';
 export * from './lib/dtos/cognito-saml-idp-config.dto';
+export * from './lib/dtos/tokens.dto';
 
 export * from './lib/functions/authorize-request.function';
 export * from './lib/functions/extract-origin.function';

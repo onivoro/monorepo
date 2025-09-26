@@ -64,7 +64,7 @@ export class OidcAuthMiddleware {
         console.debug('Starting user authorization and hydration process', logContext);
 
         try {
-            const id_token = this.cookieService.get(req, 'id_token');
+            const id_token = this.get(req, 'id_token');
 
             if (id_token) {
                 console.debug('ID token found in cookies, validating token', {
@@ -108,7 +108,7 @@ export class OidcAuthMiddleware {
                 });
 
                 try {
-                    const refreshToken = this.cookieService.get(req, 'refresh_token');
+                    const refreshToken = this.get(req, 'refresh_token');
 
                     if (refreshToken) {
                         console.debug('Refresh token found, initiating token refresh', {
@@ -166,7 +166,7 @@ export class OidcAuthMiddleware {
                                         email: (req as any)[idTokenKey]?.email,
                                     });
 
-                                    this.cookieService.setCookies(res, tokens);
+                                    this.setCookies(res, tokens);
                                 } else {
                                     console.error('New ID token validation failed after refresh', {
                                         ...logContext,
@@ -266,5 +266,13 @@ export class OidcAuthMiddleware {
         };
 
         console.log('Authorization and hydration process completed', finalState);
+    }
+
+    setCookies(res: Response<any, Record<string, any>>, tokens: { id_token: string | undefined; refresh_token: string | undefined; access_token: string | undefined; }) {
+        this.cookieService.setCookies(res, tokens);
+    }
+
+    get(req: Request, key: 'id_token' | 'refresh_token') {
+        return this.cookieService.get(req, key);
     }
 }
