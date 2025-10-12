@@ -11,7 +11,7 @@ npm install @onivoro/isomorphic-common
 ## Features
 
 - **Isomorphic Design**: Works identically in browser and Node.js environments
-- **String Manipulation**: Case conversion, formatting, and validation utilities
+- **String Manipulation**: Case conversion, formatting, sanitization, and validation utilities
 - **Array Operations**: Chunking, sorting, deduplication, and transformation functions
 - **Date/Time Utilities**: Calendar operations, offset calculations, and time constants
 - **Financial Functions**: Currency formatting and money calculations
@@ -19,17 +19,23 @@ npm install @onivoro/isomorphic-common
 - **Validation Functions**: Data validation and parsing utilities
 - **Testing Helpers**: Mock functions and test arrangement utilities
 - **Constants**: Authentication headers, regex patterns, and time constants
+- **Object Utilities**: Property extraction and conversion functions
+- **JSON Utilities**: Safe parsing and stringifying operations
 
 ## Constants
 
 ### Authentication Headers
 ```typescript
-import { apiKeyHeader } from '@onivoro/isomorphic-common';
+import { apiKeyHeader, apiIdHeader, authCookieName } from '@onivoro/isomorphic-common';
 
 // Use in HTTP requests
 const headers = {
-  [apiKeyHeader]: 'your-api-key' // 'x-api-key'
+  [apiKeyHeader]: 'your-api-key', // 'x-api-key'
+  [apiIdHeader]: 'api-identifier' // 'x-api-id'
 };
+
+// Cookie name for authentication
+document.cookie = `${authCookieName}=your-token`; // 'token'
 ```
 
 ### Time Constants
@@ -71,6 +77,15 @@ const isValidUuid = v4.test('550e8400-e29b-41d4-a716-446655440000'); // true
 
 // Validate ISO date (YYYY-MM-DD)
 const isValidDate = dateIso8601.test('2023-12-31'); // true
+
+// Validate numeric values
+const isNumeric = numeric.test('12345'); // true
+
+// Validate SSN (format: XXX-XX-XXXX)
+const isValidSSN = ssn.test('123-45-6789'); // true
+
+// Validate EIN (format: XX-XXXXXXX)
+const isValidEIN = ein.test('12-3456789'); // true
 ```
 
 ## String Functions
@@ -93,6 +108,38 @@ snakeCase('Hello World'); // 'hello_world'
 snakeCase('fooBar'); // 'foo_bar'
 ```
 
+### String Utilities
+```typescript
+import { 
+  toString, 
+  getTag, 
+  sanitizeFilename,
+  fromBooleanString,
+  toBooleanString
+} from '@onivoro/isomorphic-common';
+
+// toString(value: any): string
+toString(null); // 'null'
+toString([1, 2, 3]); // '1,2,3'
+toString({foo: 'bar'}); // '[object Object]'
+
+// getTag(value: any): string
+getTag([]); // '[object Array]'
+getTag(new Date()); // '[object Date]'
+
+// sanitizeFilename(filename: string): string
+sanitizeFilename('file:name?.txt'); // 'filename.txt'
+sanitizeFilename('invalid/file\\name'); // 'invalidfilename'
+
+// fromBooleanString(value: string): boolean
+fromBooleanString('true'); // true
+fromBooleanString('false'); // false
+
+// toBooleanString(value: boolean): string
+toBooleanString(true); // 'true'
+toBooleanString(false); // 'false'
+```
+
 ## Array Functions
 
 ### Array Manipulation
@@ -100,7 +147,10 @@ snakeCase('fooBar'); // 'foo_bar'
 import { 
   chunk, 
   removeElementAtIndex, 
-  toUniqueArray 
+  toUniqueArray,
+  mapEnumToOptions,
+  mapEnumToLookupArray,
+  mapEnumToArrayOfValues
 } from '@onivoro/isomorphic-common';
 
 // chunk<T>(array: T[], numDivisions: number): T[][]
@@ -120,7 +170,9 @@ toUniqueArray([1, 2, 2, 3, 3, 4]); // [1, 2, 3, 4]
 import { 
   sortByName, 
   sortById, 
-  sortNumbers 
+  sortNumbers,
+  sortByPropertyFactory,
+  sortByNumericPropertyFactory 
 } from '@onivoro/isomorphic-common';
 
 // sortByName<TEntity extends { name: string }>(a: TEntity, b: TEntity): number
@@ -134,6 +186,14 @@ items.sort(sortById); // [{ id: '1' }, { id: '2' }, { id: '3' }]
 // sortNumbers(a: number, b: number): number
 const numbers = [3, 1, 4, 1, 5];
 numbers.sort(sortNumbers); // [1, 1, 3, 4, 5]
+
+// sortByPropertyFactory<TEntity>(property: keyof TEntity): (a: TEntity, b: TEntity) => number
+const sortByAge = sortByPropertyFactory<{age: number}>('age');
+const people = [{age: 30}, {age: 20}, {age: 25}];
+people.sort(sortByAge); // [{age: 20}, {age: 25}, {age: 30}]
+
+// sortByNumericPropertyFactory<TEntity>(property: keyof TEntity): (a: TEntity, b: TEntity) => number
+const sortByScore = sortByNumericPropertyFactory<{score: number}>('score');
 ```
 
 ## Date/Time Functions
@@ -143,7 +203,10 @@ numbers.sort(sortNumbers); // [1, 1, 3, 4, 5]
 import { 
   addOffset, 
   subtractOffset, 
-  getDateRangeForMonth
+  getDateRangeForMonth,
+  getDateLastMonth,
+  tryParseDate,
+  useDate
 } from '@onivoro/isomorphic-common';
 
 // addOffset(input: string | Date | undefined | null): Date | undefined
@@ -155,6 +218,16 @@ const withoutOffset = subtractOffset(date); // Subtracts timezone offset
 
 // getDateRangeForMonth(year: number, month: number): {startDate: Date, endDate: Date}
 const { startDate, endDate } = getDateRangeForMonth(2023, 0); // January 2023 (month 0-indexed)
+
+// getDateLastMonth(): string
+const lastMonth = getDateLastMonth(); // Returns date string for last month
+
+// tryParseDate(value: any): Date | null
+const parsedDate = tryParseDate('2023-01-15'); // Date object
+const failedParse = tryParseDate('invalid'); // null
+
+// useDate(dateString: string | Date): Date
+const ensuredDate = useDate('2023-01-15'); // Always returns Date object
 ```
 
 ### Date Utilities
@@ -203,12 +276,36 @@ round(19.999, 100); // 20.00 (rounds to nearest cent)
 round(19.994, 100); // 19.99
 ```
 
+## Object Utilities
+
+```typescript
+import { 
+  propertiesToArray,
+  convertObjectToLiteral,
+  toDecimalBase
+} from '@onivoro/isomorphic-common';
+
+// propertiesToArray(obj: any, parentKey?: string): string[]
+const obj = { a: { b: { c: 1 } }, d: 2 };
+propertiesToArray(obj); // ['a.b.c', 'd']
+
+// convertObjectToLiteral(obj: any): string
+const literal = convertObjectToLiteral({ foo: 'bar', num: 42 });
+// Returns string representation of object
+
+// toDecimalBase(num: string | number, base: number): number
+toDecimalBase('FF', 16); // 255
+toDecimalBase('101', 2); // 5
+```
+
 ## Data Transformation
 
 ### Enum Utilities
 ```typescript
 import { 
-  mapEnumToOptions
+  mapEnumToOptions,
+  mapEnumToLookupArray,
+  mapEnumToArrayOfValues
 } from '@onivoro/isomorphic-common';
 
 enum Status {
@@ -223,6 +320,14 @@ const options = mapEnumToOptions(Status);
 
 const optionsNoBlank = mapEnumToOptions(Status, false);
 // [{ display: 'ACTIVE', value: 'active' }, ...]
+
+// mapEnumToLookupArray<TEntity extends object>(enumeration: TEntity)
+const lookupArray = mapEnumToLookupArray(Status);
+// Array of lookup objects with display/value pairs
+
+// mapEnumToArrayOfValues<TEntity extends object>(enumeration: TEntity)
+const values = mapEnumToArrayOfValues(Status);
+// ['active', 'inactive', 'pending']
 ```
 
 ### Entity Utilities
@@ -252,6 +357,28 @@ const json = tryJsonStringify({name: 'John'}); // '{"name":"John"}'
 const formatted = tryJsonStringify({name: 'John'}, null, 2); // Pretty formatted JSON
 ```
 
+## Testing Utilities
+
+```typescript
+import { 
+  arrangeActAssert,
+  mockCalls
+} from '@onivoro/isomorphic-common';
+
+// arrangeActAssert<T>(arrange: () => T, act: (arranged: T) => any, assert: (arranged: T, acted: any) => any)
+arrangeActAssert(
+  () => ({ value: 5 }), // arrange
+  (arranged) => arranged.value * 2, // act
+  (arranged, result) => expect(result).toBe(10) // assert
+);
+
+// mockCalls(mockFn: jest.Mock): any[]
+const mock = jest.fn();
+mock('first');
+mock('second');
+const calls = mockCalls(mock); // ['first', 'second']
+```
+
 ## Utility Functions
 
 ```typescript
@@ -264,11 +391,16 @@ await sleep(); // Wait 0 milliseconds (next tick)
 
 ## Type Definitions
 
-### Interfaces
+### Core Interfaces
 ```typescript
 import { 
   ILookup, 
-  TNameable 
+  TNameable,
+  IAccessToken,
+  TCreateable,
+  TKeysOf,
+  IEntityProvider,
+  IAxiosWrappedNestException
 } from '@onivoro/isomorphic-common';
 
 // Lookup interface for key-value pairs
@@ -281,6 +413,30 @@ const lookup: ILookup<string, number> = {
 const user: TNameable = {
   firstName: 'John',
   lastName: 'Doe'
+};
+
+// Access token interface
+const token: IAccessToken = {
+  token: 'jwt-token-here',
+  expires: 1234567890
+};
+
+// Createable type with timestamp
+const entity: TCreateable = {
+  createdAt: new Date()
+};
+
+// Type utility for extracting keys with specific value types
+type StringKeys = TKeysOf<{a: string, b: number, c: string}, string>; // 'a' | 'c'
+
+// Entity provider interface
+const provider: IEntityProvider = {
+  // Implementation details depend on usage
+};
+
+// Axios error wrapper for NestJS
+const error: IAxiosWrappedNestException = {
+  // Error structure for HTTP exception handling
 };
 ```
 

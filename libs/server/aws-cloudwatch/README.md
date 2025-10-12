@@ -1,6 +1,6 @@
 # @onivoro/server-aws-cloudwatch
 
-A NestJS module for integrating with AWS CloudWatch and CloudWatch Logs services, providing structured logging, metrics collection, and log management capabilities for your server applications.
+AWS CloudWatch integration for NestJS applications, providing services for CloudWatch metrics and CloudWatch Logs operations.
 
 ## Installation
 
@@ -8,500 +8,267 @@ A NestJS module for integrating with AWS CloudWatch and CloudWatch Logs services
 npm install @onivoro/server-aws-cloudwatch
 ```
 
-## Features
+## Overview
 
-- **CloudWatch Integration**: Direct integration with AWS CloudWatch services
-- **CloudWatch Logs**: Stream logs to AWS CloudWatch Logs
-- **Structured Logging**: Support for structured log data
-- **Configurable Log Groups**: Flexible log group and stream management
-- **Metrics Collection**: CloudWatch metrics and custom metrics support
-- **Auto-Configuration**: Environment-based configuration with sensible defaults
+This library provides NestJS services for interacting with AWS CloudWatch and CloudWatch Logs. It includes:
+- **CloudwatchService**: For CloudWatch metrics and dashboards
+- **CloudwatchLogsService**: For CloudWatch Logs operations
 
-## Quick Start
+## Configuration
 
-### 1. Module Configuration
+The module uses environment-based configuration with the following options:
+
+```typescript
+export class ServerAwsCloudwatchConfig {
+  AWS_PROFILE?: string;  // AWS profile to use (optional)
+  AWS_REGION: string;    // AWS region for CloudWatch
+}
+```
+
+## Usage
+
+### Module Setup
+
+Import and configure the module in your NestJS application:
 
 ```typescript
 import { ServerAwsCloudwatchModule } from '@onivoro/server-aws-cloudwatch';
 
 @Module({
   imports: [
-    ServerAwsCloudwatchModule.forRoot({
-      region: 'us-east-1',
-      logGroupName: '/aws/lambda/my-app',
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    }),
-  ],
+    ServerAwsCloudwatchModule.configure()
+  ]
 })
 export class AppModule {}
 ```
 
-### 2. Basic Usage
+### CloudWatch Service
 
-```typescript
-import { CloudwatchService, CloudwatchLogsService } from '@onivoro/server-aws-cloudwatch';
-
-@Injectable()
-export class LoggingService {
-  constructor(
-    private cloudwatchService: CloudwatchService,
-    private cloudwatchLogsService: CloudwatchLogsService
-  ) {}
-
-  async logMessage(message: string, metadata?: any) {
-    await this.cloudwatchLogsService.putLogEvents([{
-      message,
-      timestamp: Date.now(),
-      metadata
-    }]);
-  }
-
-  async putMetric(metricName: string, value: number, unit: string = 'Count') {
-    await this.cloudwatchService.putMetricData({
-      Namespace: 'MyApp',
-      MetricData: [{
-        MetricName: metricName,
-        Value: value,
-        Unit: unit,
-        Timestamp: new Date()
-      }]
-    });
-  }
-}
-```
-
-## Configuration
-
-### ServerAwsCloudwatchConfig
-
-```typescript
-import { ServerAwsCloudwatchConfig } from '@onivoro/server-aws-cloudwatch';
-
-export class AppCloudwatchConfig extends ServerAwsCloudwatchConfig {
-  region = process.env.AWS_REGION || 'us-east-1';
-  accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  logGroupName = process.env.CLOUDWATCH_LOG_GROUP || '/aws/lambda/default';
-  logStreamName = process.env.CLOUDWATCH_LOG_STREAM || 'default-stream';
-  retentionInDays = parseInt(process.env.LOG_RETENTION_DAYS) || 14;
-}
-```
-
-### Environment Variables
-
-```bash
-# AWS Credentials
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-access-key-id
-AWS_SECRET_ACCESS_KEY=your-secret-access-key
-
-# CloudWatch Configuration
-CLOUDWATCH_LOG_GROUP=/aws/lambda/my-app
-CLOUDWATCH_LOG_STREAM=my-stream
-LOG_RETENTION_DAYS=30
-```
-
-## Services
-
-### CloudwatchService
-
-The main service for interacting with CloudWatch metrics:
+The `CloudwatchService` provides methods for working with CloudWatch metrics and dashboards:
 
 ```typescript
 import { CloudwatchService } from '@onivoro/server-aws-cloudwatch';
+import { 
+  PutMetricDataCommand,
+  GetMetricStatisticsCommand,
+  ListMetricsCommand,
+  PutDashboardCommand,
+  GetDashboardCommand,
+  DeleteDashboardsCommand 
+} from '@aws-sdk/client-cloudwatch';
 
 @Injectable()
 export class MetricsService {
-  constructor(private cloudwatchService: CloudwatchService) {}
+  constructor(private readonly cloudwatchService: CloudwatchService) {}
 
-  async recordCustomMetric(name: string, value: number, dimensions?: any[]) {
-    await this.cloudwatchService.putMetricData({
-      Namespace: 'MyApplication',
+  // Put custom metrics
+  async recordMetric() {
+    const command = new PutMetricDataCommand({
+      Namespace: 'MyApp',
       MetricData: [{
-        MetricName: name,
-        Value: value,
-        Unit: 'Count',
-        Dimensions: dimensions,
-        Timestamp: new Date()
+        MetricName: 'PageViews',
+        Value: 1,
+        Timestamp: new Date(),
+        Dimensions: [{
+          Name: 'PageName',
+          Value: 'HomePage'
+        }]
       }]
     });
+    
+    return await this.cloudwatchService.putMetricData(command);
   }
 
-  async getMetricStatistics(metricName: string, startTime: Date, endTime: Date) {
-    return this.cloudwatchService.getMetricStatistics({
-      Namespace: 'MyApplication',
-      MetricName: metricName,
-      StartTime: startTime,
-      EndTime: endTime,
+  // Get metric statistics
+  async getMetrics() {
+    const command = new GetMetricStatisticsCommand({
+      Namespace: 'MyApp',
+      MetricName: 'PageViews',
+      StartTime: new Date(Date.now() - 3600000), // 1 hour ago
+      EndTime: new Date(),
       Period: 300, // 5 minutes
-      Statistics: ['Average', 'Sum', 'Maximum', 'Minimum']
+      Statistics: ['Average', 'Sum']
     });
+    
+    return await this.cloudwatchService.getMetricStatistics(command);
   }
 
-  async createAlarm(alarmName: string, metricName: string, threshold: number) {
-    await this.cloudwatchService.putMetricAlarm({
-      AlarmName: alarmName,
-      ComparisonOperator: 'GreaterThanThreshold',
-      EvaluationPeriods: 2,
-      MetricName: metricName,
-      Namespace: 'MyApplication',
-      Period: 300,
-      Statistic: 'Average',
-      Threshold: threshold,
-      ActionsEnabled: true,
-      AlarmDescription: `Alarm for ${metricName}`,
-      Unit: 'Count'
+  // List available metrics
+  async listAvailableMetrics() {
+    const command = new ListMetricsCommand({
+      Namespace: 'MyApp'
     });
+    
+    return await this.cloudwatchService.listMetrics(command);
+  }
+
+  // Create or update dashboard
+  async createDashboard() {
+    const command = new PutDashboardCommand({
+      DashboardName: 'MyAppDashboard',
+      DashboardBody: JSON.stringify({
+        widgets: [
+          {
+            type: 'metric',
+            properties: {
+              metrics: [['MyApp', 'PageViews']],
+              period: 300,
+              stat: 'Average',
+              region: 'us-east-1',
+              title: 'Page Views'
+            }
+          }
+        ]
+      })
+    });
+    
+    return await this.cloudwatchService.putDashboard(command);
   }
 }
 ```
 
-### CloudwatchLogsService
+### CloudWatch Logs Service
 
-Service for managing CloudWatch Logs:
+The `CloudwatchLogsService` provides methods for working with CloudWatch Logs:
 
 ```typescript
 import { CloudwatchLogsService } from '@onivoro/server-aws-cloudwatch';
+import {
+  FilterLogEventsCommand,
+  DescribeLogGroupsCommand,
+  DescribeLogStreamsCommand,
+  GetLogEventsCommand,
+  StartQueryCommand,
+  GetQueryResultsCommand,
+  StopQueryCommand
+} from '@aws-sdk/client-cloudwatch-logs';
 
 @Injectable()
-export class ApplicationLogsService {
-  constructor(private logsService: CloudwatchLogsService) {}
+export class LoggingService {
+  constructor(private readonly logsService: CloudwatchLogsService) {}
 
-  async logError(error: Error, context?: string) {
-    await this.logsService.putLogEvents([{
-      message: JSON.stringify({
-        level: 'error',
-        message: error.message,
-        stack: error.stack,
-        context,
-        timestamp: new Date().toISOString()
-      }),
-      timestamp: Date.now()
-    }]);
-  }
-
-  async logInfo(message: string, data?: any) {
-    await this.logsService.putLogEvents([{
-      message: JSON.stringify({
-        level: 'info',
-        message,
-        data,
-        timestamp: new Date().toISOString()
-      }),
-      timestamp: Date.now()
-    }]);
-  }
-
-  async logWarning(message: string, details?: any) {
-    await this.logsService.putLogEvents([{
-      message: JSON.stringify({
-        level: 'warning',
-        message,
-        details,
-        timestamp: new Date().toISOString()
-      }),
-      timestamp: Date.now()
-    }]);
-  }
-
-  async createLogGroup(logGroupName: string, retentionInDays?: number) {
-    await this.logsService.createLogGroup({
+  // Filter log events
+  async searchLogs(logGroupName: string, filterPattern?: string) {
+    const command = new FilterLogEventsCommand({
       logGroupName,
-      ...(retentionInDays && { retentionInDays })
+      filterPattern, // e.g., '[timestamp, request_id, event_type = ERROR*, ...]'
+      startTime: Date.now() - 3600000, // 1 hour ago
+      endTime: Date.now()
     });
+    
+    return await this.logsService.filterLogEvents(command);
   }
 
-  async createLogStream(logGroupName: string, logStreamName: string) {
-    await this.logsService.createLogStream({
+  // List log groups
+  async listLogGroups() {
+    const command = new DescribeLogGroupsCommand({
+      limit: 50
+    });
+    
+    return await this.logsService.describeLogGroups(command);
+  }
+
+  // List log streams in a group
+  async listLogStreams(logGroupName: string) {
+    const command = new DescribeLogStreamsCommand({
       logGroupName,
-      logStreamName
+      orderBy: 'LastEventTime',
+      descending: true,
+      limit: 50
     });
+    
+    return await this.logsService.describeLogStreams(command);
   }
 
-  async getLogEvents(logGroupName: string, logStreamName: string, startTime?: number, endTime?: number) {
-    return this.logsService.getLogEvents({
+  // Get log events from a specific stream
+  async getLogEvents(logGroupName: string, logStreamName: string) {
+    const command = new GetLogEventsCommand({
       logGroupName,
       logStreamName,
-      startTime,
-      endTime,
+      startFromHead: false,
       limit: 100
     });
-  }
-}
-```
-
-## Advanced Usage
-
-### Custom Log Formatting
-
-```typescript
-interface LogEntry {
-  level: 'info' | 'warn' | 'error' | 'debug';
-  message: string;
-  timestamp: string;
-  requestId?: string;
-  userId?: string;
-  metadata?: any;
-}
-
-@Injectable()
-export class StructuredLoggingService {
-  constructor(private logsService: CloudwatchLogsService) {}
-
-  async log(entry: LogEntry) {
-    await this.logsService.putLogEvents([{
-      message: JSON.stringify(entry),
-      timestamp: Date.now()
-    }]);
+    
+    return await this.logsService.getLogEvents(command);
   }
 
-  async logWithContext(level: LogEntry['level'], message: string, context: any) {
-    await this.log({
-      level,
-      message,
-      timestamp: new Date().toISOString(),
-      requestId: context.requestId,
-      userId: context.userId,
-      metadata: context.metadata
+  // Start a CloudWatch Insights query
+  async startInsightsQuery(logGroupName: string, queryString: string) {
+    const command = new StartQueryCommand({
+      logGroupName,
+      startTime: Math.floor((Date.now() - 3600000) / 1000), // 1 hour ago
+      endTime: Math.floor(Date.now() / 1000),
+      queryString // e.g., 'fields @timestamp, @message | sort @timestamp desc | limit 20'
     });
+    
+    return await this.logsService.startQuery(command);
+  }
+
+  // Get query results
+  async getQueryResults(queryId: string) {
+    const command = new GetQueryResultsCommand({ queryId });
+    return await this.logsService.getQueryResults(command);
+  }
+
+  // Stop a running query
+  async stopQuery(queryId: string) {
+    const command = new StopQueryCommand({ queryId });
+    return await this.logsService.stopQuery(command);
   }
 }
 ```
 
-### Batch Log Processing
+## Available Methods
+
+### CloudwatchService Methods
+- `putMetricData(command)` - Send custom metrics to CloudWatch
+- `getMetricStatistics(command)` - Retrieve metric statistics
+- `listMetrics(command)` - List available metrics
+- `putDashboard(command)` - Create or update dashboards
+- `getDashboard(command)` - Retrieve dashboard configuration
+- `deleteDashboards(command)` - Delete dashboards
+
+### CloudwatchLogsService Methods
+- `filterLogEvents(command)` - Search and filter log events
+- `describeLogGroups(command)` - List log groups
+- `describeLogStreams(command)` - List log streams in a group
+- `getLogEvents(command)` - Retrieve events from a log stream
+- `startQuery(command)` - Start a CloudWatch Insights query
+- `getQueryResults(command)` - Get results of an Insights query
+- `stopQuery(command)` - Stop a running query
+
+## Direct Client Access
+
+Both services expose their underlying AWS SDK clients for advanced use cases:
 
 ```typescript
-@Injectable()
-export class BatchLoggingService {
-  private logBuffer: Array<{ message: string; timestamp: number }> = [];
-  private readonly bufferSize = 100;
-  private flushInterval: NodeJS.Timeout;
+// Access the raw CloudWatch client
+const client = this.cloudwatchService.cloudwatchClient;
 
-  constructor(private logsService: CloudwatchLogsService) {
-    // Auto-flush every 30 seconds
-    this.flushInterval = setInterval(() => {
-      this.flush();
-    }, 30000);
-  }
-
-  addLog(message: string, data?: any) {
-    this.logBuffer.push({
-      message: JSON.stringify({ message, data, timestamp: new Date().toISOString() }),
-      timestamp: Date.now()
-    });
-
-    if (this.logBuffer.length >= this.bufferSize) {
-      this.flush();
-    }
-  }
-
-  async flush() {
-    if (this.logBuffer.length === 0) return;
-
-    const logsToSend = [...this.logBuffer];
-    this.logBuffer = [];
-
-    try {
-      await this.logsService.putLogEvents(logsToSend);
-    } catch (error) {
-      // Return logs to buffer if send fails
-      this.logBuffer.unshift(...logsToSend);
-      throw error;
-    }
-  }
-
-  onModuleDestroy() {
-    if (this.flushInterval) {
-      clearInterval(this.flushInterval);
-    }
-    // Final flush on shutdown
-    this.flush();
-  }
-}
+// Access the raw CloudWatch Logs client  
+const logsClient = this.logsService.cloudwatchLogsClient;
 ```
 
-### Metrics Dashboard Service
+## Environment Variables
 
-```typescript
-@Injectable()
-export class MetricsDashboardService {
-  constructor(private cloudwatchService: CloudwatchService) {}
+Configure the module using these environment variables:
 
-  async getApplicationMetrics(timeRange: { start: Date; end: Date }) {
-    const metrics = await Promise.all([
-      this.getRequestCount(timeRange),
-      this.getErrorRate(timeRange),
-      this.getResponseTime(timeRange)
-    ]);
+```bash
+# Optional: AWS profile to use
+AWS_PROFILE=my-profile
 
-    return {
-      requestCount: metrics[0],
-      errorRate: metrics[1],
-      responseTime: metrics[2]
-    };
-  }
-
-  private async getRequestCount(timeRange: { start: Date; end: Date }) {
-    return this.cloudwatchService.getMetricStatistics({
-      Namespace: 'MyApp',
-      MetricName: 'RequestCount',
-      StartTime: timeRange.start,
-      EndTime: timeRange.end,
-      Period: 300,
-      Statistics: ['Sum']
-    });
-  }
-
-  private async getErrorRate(timeRange: { start: Date; end: Date }) {
-    return this.cloudwatchService.getMetricStatistics({
-      Namespace: 'MyApp',
-      MetricName: 'ErrorRate',
-      StartTime: timeRange.start,
-      EndTime: timeRange.end,
-      Period: 300,
-      Statistics: ['Average']
-    });
-  }
-
-  private async getResponseTime(timeRange: { start: Date; end: Date }) {
-    return this.cloudwatchService.getMetricStatistics({
-      Namespace: 'MyApp',
-      MetricName: 'ResponseTime',
-      StartTime: timeRange.start,
-      EndTime: timeRange.end,
-      Period: 300,
-      Statistics: ['Average', 'Maximum']
-    });
-  }
-}
+# Required: AWS region
+AWS_REGION=us-east-1
 ```
 
-## Integration with NestJS Logger
+## AWS Credentials
 
-```typescript
-import { Logger } from '@nestjs/common';
-import { CloudwatchLogsService } from '@onivoro/server-aws-cloudwatch';
-
-@Injectable()
-export class CloudwatchLogger extends Logger {
-  constructor(private logsService: CloudwatchLogsService) {
-    super();
-  }
-
-  log(message: string, context?: string) {
-    super.log(message, context);
-    this.logsService.putLogEvents([{
-      message: JSON.stringify({ level: 'log', message, context, timestamp: new Date().toISOString() }),
-      timestamp: Date.now()
-    }]);
-  }
-
-  error(message: string, trace?: string, context?: string) {
-    super.error(message, trace, context);
-    this.logsService.putLogEvents([{
-      message: JSON.stringify({ level: 'error', message, trace, context, timestamp: new Date().toISOString() }),
-      timestamp: Date.now()
-    }]);
-  }
-
-  warn(message: string, context?: string) {
-    super.warn(message, context);
-    this.logsService.putLogEvents([{
-      message: JSON.stringify({ level: 'warn', message, context, timestamp: new Date().toISOString() }),
-      timestamp: Date.now()
-    }]);
-  }
-}
-```
-
-## Best Practices
-
-### 1. Log Structure
-
-Use consistent log structure for better searchability:
-
-```typescript
-interface StandardLogEntry {
-  timestamp: string;
-  level: string;
-  message: string;
-  requestId?: string;
-  userId?: string;
-  service: string;
-  version: string;
-  environment: string;
-}
-```
-
-### 2. Metric Naming
-
-Follow AWS CloudWatch metric naming conventions:
-
-```typescript
-const MetricNames = {
-  REQUEST_COUNT: 'RequestCount',
-  ERROR_RATE: 'ErrorRate',
-  RESPONSE_TIME: 'ResponseTime',
-  DATABASE_CONNECTIONS: 'DatabaseConnections'
-} as const;
-```
-
-### 3. Error Handling
-
-Always handle CloudWatch API errors gracefully:
-
-```typescript
-async safeLogToCloudwatch(message: string) {
-  try {
-    await this.logsService.putLogEvents([{
-      message,
-      timestamp: Date.now()
-    }]);
-  } catch (error) {
-    // Fall back to local logging
-    console.error('Failed to log to CloudWatch:', error);
-    console.log('Original message:', message);
-  }
-}
-```
-
-## Testing
-
-```typescript
-import { Test, TestingModule } from '@nestjs/testing';
-import { ServerAwsCloudwatchModule, CloudwatchService } from '@onivoro/server-aws-cloudwatch';
-
-describe('CloudwatchService', () => {
-  let service: CloudwatchService;
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      imports: [ServerAwsCloudwatchModule.forRoot({
-        region: 'us-east-1',
-        logGroupName: '/test/logs'
-      })],
-    }).compile();
-
-    service = module.get<CloudwatchService>(CloudwatchService);
-  });
-
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-});
-```
-
-## API Reference
-
-### Exported Classes
-- `ServerAwsCloudwatchConfig`: Configuration class for CloudWatch settings
-- `ServerAwsCloudwatchModule`: NestJS module for CloudWatch integration
-
-### Exported Services
-- `CloudwatchService`: Main CloudWatch metrics service
-- `CloudwatchLogsService`: CloudWatch Logs management service
+The module uses the standard AWS SDK credential resolution chain:
+1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+2. Shared credentials file (`~/.aws/credentials`)
+3. IAM roles for EC2/ECS/Lambda
+4. AWS profile (if `AWS_PROFILE` is set)
 
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT

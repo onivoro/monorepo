@@ -1,6 +1,6 @@
 # @onivoro/server-typeorm-mysql
 
-A comprehensive TypeORM MySQL integration library for NestJS applications, providing custom repositories, decorators, utilities, and enhanced MySQL-specific functionality for enterprise-scale database operations.
+A TypeORM MySQL integration library providing a NestJS module configuration, enhanced repository patterns, custom decorators, and utility functions for MySQL database operations.
 
 ## Installation
 
@@ -8,42 +8,51 @@ A comprehensive TypeORM MySQL integration library for NestJS applications, provi
 npm install @onivoro/server-typeorm-mysql
 ```
 
-## Features
+## Overview
 
-- **TypeORM MySQL Module**: Complete NestJS module for MySQL integration
-- **Custom Repository Classes**: Enhanced repository patterns with pagination and utilities
-- **Custom Decorators**: MySQL-specific column decorators and table definitions
-- **Data Source Factory**: Flexible data source configuration and creation
-- **Pagination Support**: Built-in pagination utilities and interfaces
-- **Query Utilities**: Helper functions for date queries and data manipulation
-- **Type Safety**: Full TypeScript support with comprehensive type definitions
-- **MySQL Optimizations**: MySQL-specific optimizations and best practices
+This library provides:
+- **NestJS Module**: Dynamic module configuration for TypeORM with MySQL
+- **Enhanced Repository**: `TypeOrmRepository` with additional convenience methods
+- **Paging Repository**: Abstract base class for implementing pagination
+- **Custom Decorators**: Simplified table and column decorators with OpenAPI integration
+- **Query Streaming**: Support for processing large datasets efficiently
+- **Utility Functions**: Helper functions for pagination, date queries, and data manipulation
 
-## Quick Start
-
-### Import the Module
+## Module Setup
 
 ```typescript
 import { ServerTypeormMysqlModule } from '@onivoro/server-typeorm-mysql';
+import { User, Product } from './entities';
 
 @Module({
   imports: [
-    ServerTypeormMysqlModule.forRoot({
-      host: 'localhost',
-      port: 3306,
-      username: 'root',
-      password: 'password',
-      database: 'myapp',
-      entities: [User, Product, Order],
-      synchronize: false,
-      logging: true
-    })
-  ],
+    ServerTypeormMysqlModule.configure(
+      [UserRepository, ProductRepository], // Injectables
+      [User, Product],                     // Entities
+      {
+        host: 'localhost',
+        port: 3306,
+        username: 'root',
+        password: 'password',
+        database: 'myapp',
+        synchronize: false,                 // Never true in production
+        logging: false
+      },
+      'default'                            // Connection name
+    )
+  ]
 })
 export class AppModule {}
 ```
 
-### Define Entities with Custom Decorators
+The module:
+- Provides `DataSource` and `EntityManager` for injection
+- Caches data sources by name to prevent duplicate connections
+- Properly cleans up connections on application shutdown
+
+## Entity Definition with Custom Decorators
+
+The library provides simplified decorators that combine TypeORM and OpenAPI functionality:
 
 ```typescript
 import { 
@@ -52,124 +61,33 @@ import {
   TableColumn, 
   NullableTableColumn 
 } from '@onivoro/server-typeorm-mysql';
-import { Entity } from 'typeorm';
 
-@Entity()
-@Table('users')
+@Table({ name: 'users' })
 export class User {
   @PrimaryTableColumn()
   id: number;
 
-  @TableColumn({ type: 'varchar', length: 255 })
+  @TableColumn({ type: 'varchar' })
   email: string;
 
-  @TableColumn({ type: 'varchar', length: 100 })
+  @TableColumn({ type: 'varchar' })
   firstName: string;
-
-  @TableColumn({ type: 'varchar', length: 100 })
-  lastName: string;
 
   @NullableTableColumn({ type: 'datetime' })
   lastLoginAt?: Date;
 
-  @TableColumn({ type: 'boolean', default: true })
+  @TableColumn({ type: 'boolean' })
   isActive: boolean;
-
-  @TableColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
-  createdAt: Date;
-
-  @TableColumn({ 
-    type: 'timestamp', 
-    default: () => 'CURRENT_TIMESTAMP',
-    onUpdate: 'CURRENT_TIMESTAMP'
-  })
-  updatedAt: Date;
 }
 ```
 
-### Use Custom Repository
+**Important**: These decorators only accept the `type` property from TypeORM's `ColumnOptions`. For full control over column options, use TypeORM's decorators directly.
 
-```typescript
-import { Injectable } from '@nestjs/common';
-import { TypeOrmRepository, TypeOrmPagingRepository } from '@onivoro/server-typeorm-mysql';
-import { EntityManager } from 'typeorm';
-import { User } from './user.entity';
+## Repository Classes
 
-@Injectable()
-export class UserRepository extends TypeOrmPagingRepository<User> {
-  constructor(entityManager: EntityManager) {
-    super(User, entityManager);
-  }
+### TypeOrmRepository
 
-  async findByEmail(email: string): Promise<User | null> {
-    return this.getOne({ where: { email } });
-  }
-
-  async findActiveUsers(): Promise<User[]> {
-    return this.getMany({ where: { isActive: true } });
-  }
-
-  async findUsersWithPagination(page: number, limit: number) {
-    return this.findWithPaging(
-      { where: { isActive: true } },
-      { page, limit }
-    );
-  }
-}
-```
-
-## Configuration
-
-### Data Source Configuration
-
-```typescript
-import { dataSourceConfigFactory } from '@onivoro/server-typeorm-mysql';
-
-const config = dataSourceConfigFactory({
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT),
-  username: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  entities: [User, Product, Order],
-  migrations: ['src/migrations/*.ts'],
-  synchronize: false,
-  logging: process.env.NODE_ENV === 'development',
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
-```
-
-### Dynamic Module Configuration
-
-```typescript
-import { Module } from '@nestjs/common';
-import { ServerTypeormMysqlModule } from '@onivoro/server-typeorm-mysql';
-import { ConfigService } from '@nestjs/config';
-
-@Module({
-  imports: [
-    ServerTypeormMysqlModule.forRootAsync({
-      useFactory: (configService: ConfigService) => ({
-        host: configService.get('DATABASE_HOST'),
-        port: configService.get('DATABASE_PORT'),
-        username: configService.get('DATABASE_USERNAME'),
-        password: configService.get('DATABASE_PASSWORD'),
-        database: configService.get('DATABASE_NAME'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        migrations: [__dirname + '/migrations/*{.ts,.js}'],
-        synchronize: configService.get('NODE_ENV') === 'development',
-        logging: configService.get('DATABASE_LOGGING') === 'true'
-      }),
-      inject: [ConfigService]
-    })
-  ],
-})
-export class DatabaseModule {}
-```
-
-## Usage Examples
-
-### Basic Repository Operations
+Enhanced repository with convenience methods and streaming support:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -183,724 +101,260 @@ export class UserRepository extends TypeOrmRepository<User> {
     super(User, entityManager);
   }
 
-  // Create a single user
-  async createUser(userData: Partial<User>): Promise<User> {
-    return this.postOne(userData);
+  // Available methods:
+  async findUsers() {
+    // getOne - throws if more than one result
+    const user = await this.getOne({ where: { id: 1 } });
+    
+    // getMany - returns array
+    const activeUsers = await this.getMany({ where: { isActive: true } });
+    
+    // getManyAndCount - returns [items, count]
+    const [users, total] = await this.getManyAndCount({ 
+      where: { isActive: true },
+      take: 10,
+      skip: 0 
+    });
+    
+    // postOne - save and return (uses save())
+    const newUser = await this.postOne({ email: 'test@example.com', firstName: 'Test' });
+    
+    // postMany - bulk save and return (uses save())
+    const newUsers = await this.postMany([
+      { email: 'user1@example.com', firstName: 'User1' },
+      { email: 'user2@example.com', firstName: 'User2' }
+    ]);
+    
+    // patch - update using TypeORM's update()
+    await this.patch({ id: 1 }, { isActive: false });
+    
+    // put - update using TypeORM's save()  
+    await this.put({ id: 1 }, { isActive: false });
+    
+    // delete - hard delete
+    await this.delete({ id: 1 });
+    
+    // softDelete - soft delete
+    await this.softDelete({ id: 1 });
   }
 
-  // Create multiple users
-  async createUsers(usersData: Partial<User>[]): Promise<User[]> {
-    return this.postMany(usersData);
+  // Transaction support
+  async updateInTransaction(userId: number, data: Partial<User>, entityManager: EntityManager) {
+    const txRepo = this.forTransaction(entityManager);
+    await txRepo.patch({ id: userId }, data);
   }
 
-  // Find users with filters
-  async findUsers(filters: { isActive?: boolean; email?: string }): Promise<User[]> {
+  // ILike helper for case-insensitive search
+  async searchUsers(term: string) {
+    const filters = this.buildWhereILike({
+      firstName: term,
+      email: term
+    });
     return this.getMany({ where: filters });
   }
-
-  // Find users with count
-  async findUsersWithCount(filters: { isActive?: boolean }): Promise<[User[], number]> {
-    return this.getManyAndCount({ where: filters });
-  }
-
-  // Find a single user
-  async findUserById(id: number): Promise<User> {
-    return this.getOne({ where: { id } });
-  }
-
-  // Update user
-  async updateUser(id: number, updateData: Partial<User>): Promise<void> {
-    await this.patch({ id }, updateData);
-  }
-
-  // Replace user data
-  async replaceUser(id: number, userData: Partial<User>): Promise<void> {
-    await this.put({ id }, userData);
-  }
-
-  // Delete user permanently
-  async deleteUser(id: number): Promise<void> {
-    await this.delete({ id });
-  }
-
-  // Soft delete user
-  async softDeleteUser(id: number): Promise<void> {
-    await this.softDelete({ id });
-  }
-}
-```
-
-### Advanced Repository Usage with Pagination
-
-```typescript
-import { Injectable } from '@nestjs/common';
-import { TypeOrmPagingRepository, PageParams, PagedData } from '@onivoro/server-typeorm-mysql';
-import { EntityManager, Like, Between } from 'typeorm';
-import { User } from './user.entity';
-
-@Injectable()
-export class AdvancedUserRepository extends TypeOrmPagingRepository<User> {
-  constructor(entityManager: EntityManager) {
-    super(User, entityManager);
-  }
-
-  async searchUsers(
-    searchTerm: string,
-    pageParams: PageParams
-  ): Promise<PagedData<User>> {
-    const whereConditions = this.buildWhereILike({
-      firstName: searchTerm,
-      lastName: searchTerm,
-      email: searchTerm
-    });
-
-    return this.findWithPaging(
-      { 
-        where: [
-          { firstName: Like(`%${searchTerm}%`) },
-          { lastName: Like(`%${searchTerm}%`) },
-          { email: Like(`%${searchTerm}%`) }
-        ],
-        order: { createdAt: 'DESC' }
-      },
-      pageParams
-    );
-  }
-
-  async findUsersByDateRange(
-    startDate: Date,
-    endDate: Date,
-    pageParams: PageParams
-  ): Promise<PagedData<User>> {
-    return this.findWithPaging(
-      {
-        where: {
-          createdAt: Between(startDate, endDate)
-        },
-        order: { createdAt: 'DESC' }
-      },
-      pageParams
-    );
-  }
-
-  async findRecentlyActiveUsers(days: number = 30): Promise<User[]> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-
-    return this.getMany({
-      where: {
-        lastLoginAt: Between(cutoffDate, new Date())
-      },
-      order: { lastLoginAt: 'DESC' }
-    });
-  }
-
-  async getUserStatistics(): Promise<{
-    total: number;
-    active: number;
-    inactive: number;
-    recentlyRegistered: number;
-  }> {
-    const [allUsers, totalCount] = await this.getManyAndCount({});
-    const [activeUsers, activeCount] = await this.getManyAndCount({ 
-      where: { isActive: true } 
-    });
-    const [recentUsers, recentCount] = await this.getManyAndCount({
-      where: {
-        createdAt: Between(
-          new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
-          new Date()
-        )
-      }
-    });
-
-    return {
-      total: totalCount,
-      active: activeCount,
-      inactive: totalCount - activeCount,
-      recentlyRegistered: recentCount
-    };
-  }
-
-  async bulkUpdateUsers(
-    userIds: number[],
-    updateData: Partial<User>
-  ): Promise<void> {
-    for (const id of userIds) {
-      await this.patch({ id }, updateData);
-    }
-  }
-
-  async softDeleteUsers(userIds: number[]): Promise<void> {
-    for (const id of userIds) {
-      await this.softDelete({ id });
-    }
-  }
-}
-```
-
-### Complex Entity Relationships
-
-```typescript
-import { 
-  Table, 
-  PrimaryTableColumn, 
-  TableColumn, 
-  NullableTableColumn,
-  ManyToOneRelationOptions 
-} from '@onivoro/server-typeorm-mysql';
-import { Entity, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
-
-@Entity()
-@Table('orders')
-export class Order {
-  @PrimaryTableColumn()
-  id: number;
-
-  @TableColumn({ type: 'varchar', length: 50 })
-  orderNumber: string;
-
-  @TableColumn({ type: 'decimal', precision: 10, scale: 2 })
-  totalAmount: number;
-
-  @TableColumn({ type: 'enum', enum: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'] })
-  status: string;
-
-  @TableColumn({ type: 'int' })
-  userId: number;
-
-  @TableColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
-  createdAt: Date;
-
-  @NullableTableColumn({ type: 'timestamp' })
-  shippedAt?: Date;
-
-  @NullableTableColumn({ type: 'timestamp' })
-  deliveredAt?: Date;
-
-  // Relationships
-  @ManyToOne(() => User, user => user.orders, ManyToOneRelationOptions)
-  @JoinColumn({ name: 'userId' })
-  user: User;
-
-  @OneToMany(() => OrderItem, orderItem => orderItem.order)
-  items: OrderItem[];
-}
-
-@Entity()
-@Table('order_items')
-export class OrderItem {
-  @PrimaryTableColumn()
-  id: number;
-
-  @TableColumn({ type: 'int' })
-  orderId: number;
-
-  @TableColumn({ type: 'int' })
-  productId: number;
-
-  @TableColumn({ type: 'int' })
-  quantity: number;
-
-  @TableColumn({ type: 'decimal', precision: 10, scale: 2 })
-  unitPrice: number;
-
-  @TableColumn({ type: 'decimal', precision: 10, scale: 2 })
-  totalPrice: number;
-
-  @ManyToOne(() => Order, order => order.items, ManyToOneRelationOptions)
-  @JoinColumn({ name: 'orderId' })
-  order: Order;
-
-  @ManyToOne(() => Product, product => product.orderItems, ManyToOneRelationOptions)
-  @JoinColumn({ name: 'productId' })
-  product: Product;
-}
-```
-
-### Service Layer with Repository
-
-```typescript
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { AdvancedUserRepository } from './user.repository';
-import { User } from './user.entity';
-import { PageParams, PagedData } from '@onivoro/server-typeorm-mysql';
-
-@Injectable()
-export class UserService {
-  constructor(
-    private userRepository: AdvancedUserRepository
-  ) {}
-
-  async createUser(userData: Partial<User>): Promise<User> {
-    return this.userRepository.postOne(userData);
-  }
-
-  async findUserById(id: number): Promise<User> {
-    const user = await this.userRepository.getOne({ where: { id } });
-    if (!user) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
-    return user;
-  }
-
-  async updateUser(id: number, updateData: Partial<User>): Promise<void> {
-    const user = await this.findUserById(id);
-    await this.userRepository.patch({ id }, updateData);
-  }
-
-  async deleteUser(id: number): Promise<void> {
-    const user = await this.findUserById(id);
-    await this.userRepository.softDelete({ id });
-  }
-
-  async searchUsers(
-    searchTerm: string,
-    pageParams: PageParams
-  ): Promise<PagedData<User>> {
-    return this.userRepository.searchUsers(searchTerm, pageParams);
-  }
-
-  async getUserStatistics() {
-    return this.userRepository.getUserStatistics();
-  }
-
-  async getRecentlyActiveUsers(days: number = 30): Promise<User[]> {
-    return this.userRepository.findRecentlyActiveUsers(days);
-  }
-
-  async bulkUpdateUsers(userIds: number[], updateData: Partial<User>): Promise<void> {
-    await this.userRepository.bulkUpdateUsers(userIds, updateData);
-  }
-}
-```
-
-### Query Utilities Usage
-
-```typescript
-import { Injectable } from '@nestjs/common';
-import { 
-  generateDateQuery, 
-  removeFalseyKeys,
-  getSkip,
-  getPagingKey,
-  TypeOrmRepository
-} from '@onivoro/server-typeorm-mysql';
-import { EntityManager } from 'typeorm';
-import { Order } from './order.entity';
-
-@Injectable()
-export class OrderService extends TypeOrmRepository<Order> {
-  constructor(entityManager: EntityManager) {
-    super(Order, entityManager);
-  }
-
-  async findOrdersByDateRange(
-    startDate?: Date,
-    endDate?: Date,
-    status?: string,
-    page: number = 1,
-    limit: number = 10
-  ) {
-    const whereConditions: any = removeFalseyKeys({
-      status,
-      ...generateDateQuery('createdAt', startDate, endDate)
-    });
-
-    const skip = getSkip(page, limit);
-
-    const [orders, total] = await this.getManyAndCount({
-      where: whereConditions,
-      skip,
-      take: limit,
-      order: { createdAt: 'DESC' },
-      relations: ['user', 'items', 'items.product']
-    });
-
-    return {
-      data: orders,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-        key: getPagingKey(page, limit)
-      }
-    };
-  }
-
-  async getOrderAnalytics(startDate: Date, endDate: Date) {
-    const dateQuery = generateDateQuery('createdAt', startDate, endDate);
-    
-    const queryBuilder = this.repo.createQueryBuilder('order')
-      .where(dateQuery);
-
-    const [
-      totalOrders,
-      totalRevenue,
-      averageOrderValue,
-      statusBreakdown
-    ] = await Promise.all([
-      queryBuilder.getCount(),
-      queryBuilder
-        .select('SUM(order.totalAmount)', 'total')
-        .getRawOne()
-        .then(result => result.total || 0),
-      queryBuilder
-        .select('AVG(order.totalAmount)', 'average')
-        .getRawOne()
-        .then(result => result.average || 0),
-      queryBuilder
-        .select('order.status', 'status')
-        .addSelect('COUNT(*)', 'count')
-        .groupBy('order.status')
-        .getRawMany()
-    ]);
-
-    return {
-      totalOrders,
-      totalRevenue: parseFloat(totalRevenue),
-      averageOrderValue: parseFloat(averageOrderValue),
-      statusBreakdown: statusBreakdown.reduce((acc, item) => {
-        acc[item.status] = parseInt(item.count);
-        return acc;
-      }, {})
-    };
-  }
-}
-```
-
-### Database Transactions
-
-```typescript
-import { Injectable } from '@nestjs/common';
-import { EntityManager } from 'typeorm';
-import { TypeOrmRepository } from '@onivoro/server-typeorm-mysql';
-import { User } from './user.entity';
-import { Order } from './order.entity';
-import { OrderItem } from './order-item.entity';
-
-@Injectable()
-export class OrderTransactionService {
-  constructor(private entityManager: EntityManager) {}
-
-  async createOrderWithItems(
-    userId: number,
-    orderData: Partial<Order>,
-    items: Array<{productId: number, quantity: number, unitPrice: number}>
-  ): Promise<Order> {
-    return this.entityManager.transaction(async transactionalEntityManager => {
-      const orderRepo = new TypeOrmRepository<Order>(Order, transactionalEntityManager);
-      const orderItemRepo = new TypeOrmRepository<OrderItem>(OrderItem, transactionalEntityManager);
-      const userRepo = new TypeOrmRepository<User>(User, transactionalEntityManager);
-
-      // Create the order
-      const order = await orderRepo.postOne({
-        ...orderData,
-        userId,
-        totalAmount: 0 // Will be calculated
-      });
-
-      // Create order items
-      let totalAmount = 0;
-      const orderItems = [];
-
-      for (const itemData of items) {
-        const totalPrice = itemData.quantity * itemData.unitPrice;
-        totalAmount += totalPrice;
-
-        const orderItem = await orderItemRepo.postOne({
-          orderId: order.id,
-          productId: itemData.productId,
-          quantity: itemData.quantity,
-          unitPrice: itemData.unitPrice,
-          totalPrice
-        });
-
-        orderItems.push(orderItem);
-      }
-
-      // Update order total
-      await orderRepo.patch({ id: order.id }, { totalAmount });
-
-      // Update user's last order date
-      await userRepo.patch({ id: userId }, { 
-        updatedAt: new Date() 
-      });
-
-      return order;
-    });
-  }
-
-  async transferOrderToNewUser(
-    orderId: number,
-    newUserId: number
-  ): Promise<void> {
-    await this.entityManager.transaction(async transactionalEntityManager => {
-      const orderRepo = new TypeOrmRepository<Order>(Order, transactionalEntityManager);
-
-      // Update order
-      await orderRepo.patch({ id: orderId }, { 
-        userId: newUserId,
-        updatedAt: new Date()
-      });
-
-      // Log the transfer using raw query
-      await transactionalEntityManager.query(
-        'INSERT INTO order_transfers (order_id, new_user_id, transferred_at) VALUES (?, ?, ?)',
-        [orderId, newUserId, new Date()]
-      );
-    });
-  }
-}
-```
-
-### Query Streaming
-
-```typescript
-import { Injectable } from '@nestjs/common';
-import { TypeOrmRepository } from '@onivoro/server-typeorm-mysql';
-import { EntityManager, QueryRunner } from 'typeorm';
-import { User } from './user.entity';
-import { createWriteStream } from 'fs';
-
-@Injectable()
-export class UserStreamingService extends TypeOrmRepository<User> {
-  constructor(entityManager: EntityManager) {
-    super(User, entityManager);
-  }
-
-  async exportUsersToFile(filePath: string): Promise<void> {
-    const writeStream = createWriteStream(filePath);
-    
-    writeStream.write('id,email,firstName,lastName,createdAt\n');
-
+  
+  // Query streaming for large datasets
+  async exportUsers() {
     const { stream, error } = await this.queryStream({
-      query: 'SELECT id, email, firstName, lastName, createdAt FROM users WHERE isActive = 1',
-      onData: async (stream, record: User, count) => {
-        const csvLine = `${record.id},"${record.email}","${record.firstName}","${record.lastName}","${record.createdAt}"\n`;
-        writeStream.write(csvLine);
-        
-        if (count % 1000 === 0) {
-          console.log(`Processed ${count} records`);
-        }
+      query: 'SELECT * FROM users WHERE isActive = 1',
+      onData: async (stream, user, count) => {
+        console.log(`Processing user ${count}: ${user.email}`);
       },
       onError: async (stream, error) => {
         console.error('Stream error:', error);
-        writeStream.end();
       },
       onEnd: async (stream, count) => {
-        console.log(`Export completed. Total records: ${count}`);
-        writeStream.end();
+        console.log(`Processed ${count} users`);
       }
     });
-
+    
     if (error) {
-      throw new Error(`Failed to start streaming: ${error.message}`);
-    }
-  }
-
-  async processLargeDataset(): Promise<void> {
-    const { stream, error } = await this.queryStream({
-      query: 'SELECT * FROM users WHERE createdAt > DATE_SUB(NOW(), INTERVAL 1 YEAR)',
-      onData: async (stream, record: User, count) => {
-        // Process each record individually
-        // This is memory efficient for large datasets
-        await this.processUserRecord(record);
-      },
-      onError: async (stream, error) => {
-        console.error('Processing error:', error);
-      },
-      onEnd: async (stream, count) => {
-        console.log(`Processed ${count} user records`);
-      }
-    });
-
-    if (error) {
-      throw new Error(`Failed to process dataset: ${error.message}`);
-    }
-  }
-
-  private async processUserRecord(user: User): Promise<void> {
-    // Your custom processing logic here
-    console.log(`Processing user: ${user.email}`);
-  }
-
-  // Static method usage for custom query runners
-  static async streamWithCustomQueryRunner(
-    queryRunner: QueryRunner,
-    query: string
-  ): Promise<void> {
-    const { stream, error } = await TypeOrmRepository.queryStream(queryRunner, {
-      query,
-      onData: async (stream, record, count) => {
-        console.log(`Record ${count}:`, record);
-      },
-      onEnd: async (stream, count) => {
-        console.log(`Stream completed with ${count} records`);
-      }
-    });
-
-    if (error) {
-      console.error('Stream failed:', error);
+      throw error;
     }
   }
 }
 ```
 
-## API Reference
+The repository provides access to:
+- `repo` - The underlying TypeORM repository
+- `entityManager` - The EntityManager instance
 
-### Repository Classes
+### TypeOrmPagingRepository
 
-#### TypeOrmRepository<T>
-
-Base repository class with enhanced functionality:
+Abstract base class requiring implementation of `getPage`:
 
 ```typescript
-export class TypeOrmRepository<T> {
-  constructor(entityType: any, entityManager: EntityManager)
-  
-  // Core CRUD methods
-  async getMany(options: FindManyOptions<T>): Promise<T[]>
-  async getManyAndCount(options: FindManyOptions<T>): Promise<[T[], number]>
-  async getOne(options: FindOneOptions<T>): Promise<T>
-  async postOne(body: Partial<T>): Promise<T>
-  async postMany(body: Partial<T>[]): Promise<T[]>
-  async delete(options: FindOptionsWhere<T>): Promise<void>
-  async softDelete(options: FindOptionsWhere<T>): Promise<void>
-  async put(options: FindOptionsWhere<T>, body: QueryDeepPartialEntity<T>): Promise<void>
-  async patch(options: FindOptionsWhere<T>, body: QueryDeepPartialEntity<T>): Promise<void>
-  
-  // Transaction support
-  forTransaction(entityManager: EntityManager): TypeOrmRepository<T>
-  
-  // Streaming support
-  async queryStream<TRecord = any>(params: TQueryStreamParams): Promise<{stream: any, error: any}>
-  static async queryStream<TRecord = any>(queryRunner: QueryRunner, params: TQueryStreamParams): Promise<{stream: any, error: any}>
-  
-  // Utility methods
-  buildWhereILike(filters?: Record<string, any>): FindOptionsWhere<T>
-  
-  // Internal properties
-  get repo(): Repository<T>
+import { Injectable } from '@nestjs/common';
+import { TypeOrmPagingRepository, IPageParams, IPagedData } from '@onivoro/server-typeorm-mysql';
+import { EntityManager } from 'typeorm';
+import { User } from './user.entity';
+
+interface UserSearchParams {
+  isActive?: boolean;
+  departmentId?: number;
+  search?: string;
+}
+
+@Injectable()
+export class UserPagingRepository extends TypeOrmPagingRepository<User, UserSearchParams> {
+  constructor(entityManager: EntityManager) {
+    super(User, entityManager);
+  }
+
+  // Must implement this abstract method
+  async getPage(pageParams: IPageParams, params: UserSearchParams): Promise<IPagedData<User>> {
+    const { page, limit } = pageParams;
+    const skip = this.getSkip(page, limit);
+
+    const where = this.removeFalseyKeys({
+      departmentId: params.departmentId,
+      isActive: params.isActive
+    });
+
+    const [data, total] = await this.getManyAndCount({
+      where,
+      skip,
+      take: limit,
+      order: { createdAt: 'DESC' }
+    });
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNext: page < Math.ceil(total / limit),
+      hasPrev: page > 1
+    };
+  }
 }
 ```
 
-#### TypeOrmPagingRepository<T>
+Inherited helper methods:
+- `getSkip(page, limit)` - Calculate skip value
+- `getPagingKey(page, limit)` - Generate cache key
+- `removeFalseyKeys(obj)` - Remove null/undefined/empty values
 
-Repository with built-in pagination support:
+## Query Streaming
+
+The library supports efficient processing of large datasets using Node.js streams:
 
 ```typescript
-export class TypeOrmPagingRepository<T> extends TypeOrmRepository<T> {
-  async findWithPaging(
-    options: FindManyOptions<T>,
-    pageParams: PageParams
-  ): Promise<PagedData<T>>
-}
+// Instance method on repository
+const { stream, error } = await repository.queryStream({
+  query: 'SELECT * FROM large_table',
+  onData: async (stream, record, count) => {
+    // Process each record
+  },
+  onError: async (stream, error) => {
+    // Handle errors
+  },
+  onEnd: async (stream, totalCount) => {
+    // Cleanup after processing
+  }
+});
+
+// Static method with custom QueryRunner
+const queryRunner = dataSource.createQueryRunner();
+const { stream, error } = await TypeOrmRepository.queryStream(queryRunner, {
+  query: 'SELECT * FROM another_table',
+  // ... callbacks
+});
 ```
 
-### Decorators
-
-#### @Table(name?: string)
-
-Enhanced table decorator:
+## Utility Functions
 
 ```typescript
-@Table('table_name')
-export class Entity {}
+import { 
+  getSkip,
+  getPagingKey,
+  removeFalseyKeys,
+  generateDateQuery,
+  getApiTypeFromColumn,
+  dataSourceFactory,
+  dataSourceConfigFactory
+} from '@onivoro/server-typeorm-mysql';
+
+// Pagination helpers
+const skip = getSkip(2, 20); // page 2, limit 20 = skip 20
+const cacheKey = getPagingKey(2, 20); // "page_2_limit_20"
+
+// Remove null/undefined/empty string values
+const clean = removeFalseyKeys({ 
+  name: 'John',
+  age: null,      // removed
+  email: '',      // removed  
+  active: false   // kept
+});
+
+// Date range query builder
+const dateFilter = generateDateQuery('created_at', 
+  new Date('2024-01-01'), 
+  new Date('2024-12-31')
+);
+// Returns TypeORM Between operator or MoreThanOrEqual/LessThanOrEqual
+
+// Column type to API type mapping
+const apiType = getApiTypeFromColumn('varchar'); // 'string'
+const apiType2 = getApiTypeFromColumn('int'); // 'number'
+const apiType3 = getApiTypeFromColumn('boolean'); // 'boolean'
+
+// Create data source
+const ds = dataSourceFactory('main', {
+  host: 'localhost',
+  port: 3306,
+  username: 'user',
+  password: 'pass',
+  database: 'db'
+}, [User, Product]);
+
+// Create data source config
+const config = dataSourceConfigFactory({
+  host: 'localhost',
+  port: 3306,
+  username: 'user',
+  password: 'pass',
+  database: 'db',
+  entities: [User, Product]
+});
 ```
 
-#### @PrimaryTableColumn(options?)
+## Type Definitions
 
-Primary key column decorator:
-
-```typescript
-@PrimaryTableColumn()
-id: number;
-```
-
-#### @TableColumn(options)
-
-Standard column decorator:
+### Core Interfaces
 
 ```typescript
-@TableColumn({ type: 'varchar', length: 255 })
-name: string;
-```
-
-#### @NullableTableColumn(options)
-
-Nullable column decorator:
-
-```typescript
-@NullableTableColumn({ type: 'datetime' })
-deletedAt?: Date;
-```
-
-### Utility Functions
-
-#### dataSourceConfigFactory(options)
-
-Create data source configuration:
-
-```typescript
-function dataSourceConfigFactory(options: DataSourceOptions): DataSourceOptions
-```
-
-#### generateDateQuery(field, startDate?, endDate?)
-
-Generate date range query conditions:
-
-```typescript
-function generateDateQuery(
-  field: string,
-  startDate?: Date,
-  endDate?: Date
-): Record<string, any>
-```
-
-#### removeFalseyKeys(object)
-
-Remove falsy values from object:
-
-```typescript
-function removeFalseyKeys<T>(obj: T): Partial<T>
-```
-
-### Type Definitions
-
-#### PageParams
-
-Pagination parameters:
-
-```typescript
-interface PageParams {
+// Page parameters
+interface IPageParams {
   page: number;
   limit: number;
 }
-```
 
-#### PagedData<T>
-
-Paginated response data:
-
-```typescript
-interface PagedData<T> {
+// Paged data result
+interface IPagedData<T> {
   data: T[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    pages: number;
-  };
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
 }
-```
 
-#### TQueryStreamParams
+// Data source options
+interface IDataSourceOptions {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  database: string;
+  synchronize?: boolean;
+  logging?: boolean;
+  [key: string]: any;
+}
 
-Query streaming parameters:
-
-```typescript
+// Query stream parameters
 type TQueryStreamParams<TRecord = any> = {
   query: string;
   onData?: (stream: ReadStream, record: TRecord, count: number) => Promise<any | void>;
@@ -909,94 +363,39 @@ type TQueryStreamParams<TRecord = any> = {
 };
 ```
 
-## Best Practices
-
-1. **Repository Pattern**: Use custom repositories extending TypeOrmRepository for domain-specific operations
-2. **Transactions**: Use `forTransaction()` method for multi-table operations
-3. **Indexing**: Add proper indexes for frequently queried columns
-4. **Pagination**: Always implement pagination using TypeOrmPagingRepository for list operations
-5. **Streaming**: Use `queryStream()` for processing large datasets efficiently
-6. **Error Handling**: Implement proper error handling in repositories and services
-7. **Type Safety**: Leverage TypeScript for type-safe database operations
-8. **Connection Pooling**: Configure appropriate connection pool settings
-
-## Testing
+## Constants
 
 ```typescript
-import { Test } from '@nestjs/testing';
-import { EntityManager } from 'typeorm';
-import { User } from './user.entity';
-import { UserService } from './user.service';
-import { AdvancedUserRepository } from './user.repository';
+import { ManyToOneRelationOptions } from '@onivoro/server-typeorm-mysql';
 
-describe('UserService', () => {
-  let service: UserService;
-  let repository: AdvancedUserRepository;
-  let entityManager: EntityManager;
-
-  beforeEach(async () => {
-    const mockEntityManager = {
-      getRepository: jest.fn().mockReturnValue({
-        find: jest.fn(),
-        findAndCount: jest.fn(),
-        findOne: jest.fn(),
-        save: jest.fn(),
-        create: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
-        softDelete: jest.fn(),
-        createQueryBuilder: jest.fn().mockReturnValue({
-          insert: jest.fn().mockReturnThis(),
-          values: jest.fn().mockReturnThis(),
-          returning: jest.fn().mockReturnThis(),
-          execute: jest.fn()
-        })
-      })
-    };
-
-    const module = await Test.createTestingModule({
-      providers: [
-        UserService,
-        {
-          provide: AdvancedUserRepository,
-          useFactory: () => new AdvancedUserRepository(mockEntityManager as any)
-        },
-        {
-          provide: EntityManager,
-          useValue: mockEntityManager
-        }
-      ],
-    }).compile();
-
-    service = module.get<UserService>(UserService);
-    repository = module.get<AdvancedUserRepository>(AdvancedUserRepository);
-    entityManager = module.get<EntityManager>(EntityManager);
-  });
-
-  it('should create a user', async () => {
-    const userData = {
-      email: 'test@example.com',
-      firstName: 'John',
-      lastName: 'Doe'
-    };
-
-    const createdUser = { id: 1, ...userData };
-    jest.spyOn(repository, 'postOne').mockResolvedValue(createdUser as User);
-
-    const result = await service.createUser(userData);
-    expect(result).toEqual(createdUser);
-  });
-
-  it('should find user by id', async () => {
-    const user = { id: 1, email: 'test@example.com', firstName: 'John', lastName: 'Doe' };
-    jest.spyOn(repository, 'getOne').mockResolvedValue(user as User);
-
-    const result = await service.findUserById(1);
-    expect(result).toEqual(user);
-  });
-});
+// Predefined relation options for ManyToOne relationships
+// { eager: false, cascade: false, nullable: false, onDelete: 'RESTRICT' }
+@ManyToOne(() => User, user => user.orders, ManyToOneRelationOptions)
+user: User;
 ```
+
+## Important Implementation Details
+
+1. **Module Caching**: Data sources are cached by name to prevent duplicate connections
+2. **Repository Methods**:
+   - `postOne` and `postMany` use TypeORM's `save()` method
+   - `patch` uses TypeORM's `update()` 
+   - `put` uses TypeORM's `save()`
+   - `getOne` throws error if multiple results found
+3. **Transaction Support**: The `forTransaction` method returns a shallow copy with new EntityManager
+4. **Streaming**: Requires manual QueryRunner management for custom use cases
+5. **Custom Decorators**: Only accept `type` property - use TypeORM decorators for full control
+
+## Differences from typeorm-postgres
+
+This MySQL library differs from the PostgreSQL version in several ways:
+- No SQL writer utilities (DDL generation)
+- No migration base classes
+- No specialized Redshift repository
+- No metadata-based repository building
+- Simpler repository implementation using TypeORM's save() instead of custom SQL
+- Built-in streaming support for large datasets
 
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT

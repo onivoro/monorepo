@@ -1,6 +1,6 @@
 # @onivoro/server-common
 
-A comprehensive collection of common server utilities, DTOs, decorators, pipes, and functions for building robust NestJS applications. This library provides foundational components used across enterprise-scale server applications.
+Common server utilities, DTOs, decorators, and foundational components for NestJS applications.
 
 ## Installation
 
@@ -8,315 +8,488 @@ A comprehensive collection of common server utilities, DTOs, decorators, pipes, 
 npm install @onivoro/server-common
 ```
 
-## Features
+## Overview
 
-- **NestJS Module**: Ready-to-import server common module
-- **Error Handling**: Advanced error filters for TypeORM and general exceptions
-- **API Decorators**: OpenAPI documentation decorators and response formatters
-- **DTOs**: Common data transfer objects for typical API operations
-- **Validation Pipes**: Custom pipes for data parsing and validation
-- **Utility Functions**: Helper functions for API creation, encoding, file operations, and more
-- **Environment Management**: Environment variable handling and configuration
-- **Application Bootstrap**: Functions for creating and configuring API applications
+This library provides a comprehensive set of utilities, decorators, DTOs, pipes, and functions commonly used in NestJS server applications. It includes error handling, API decorators, validation pipes, and various utility functions.
 
-## Quick Start
-
-### Import the Module
+## Module Setup
 
 ```typescript
+import { Module } from '@nestjs/common';
 import { ServerCommonModule } from '@onivoro/server-common';
 
 @Module({
-  imports: [ServerCommonModule],
-  // ...
+  imports: [ServerCommonModule]
 })
 export class AppModule {}
 ```
 
-### Using API Configuration
+## Error Filters
+
+### ErrorFilter
+
+Base error filter for handling exceptions:
 
 ```typescript
-import { createApiApp, configureApiApp } from '@onivoro/server-common';
+import { ErrorFilter } from '@onivoro/server-common';
 
-async function bootstrap() {
-  const app = await createApiApp(AppModule);
-  await configureApiApp(app, {
-    port: 3000,
-    title: 'My API',
-    version: '1.0.0'
-  });
+// Use globally
+app.useGlobalFilters(new ErrorFilter());
+
+// Or in a controller
+@UseFilters(ErrorFilter)
+@Controller('users')
+export class UsersController {}
+```
+
+### TypeormErrorFilter
+
+Specialized filter for TypeORM database errors:
+
+```typescript
+import { TypeormErrorFilter } from '@onivoro/server-common';
+
+app.useGlobalFilters(new TypeormErrorFilter());
+```
+
+## Decorators
+
+### API Documentation Decorators
+
+```typescript
+import {
+  ApiBodyUnspecified,
+  ApiQueryPagedParams,
+  ApiResponsePaged,
+  ApiResponseUnspecified,
+  ApiResponseUnspecifiedArray,
+  DefaultApiController
+} from '@onivoro/server-common';
+
+@DefaultApiController('users')  // Combines @Controller and @ApiTags
+export class UsersController {
+  
+  @Get()
+  @ApiResponsePaged(UserDto)  // Documents paginated response
+  @ApiQueryPagedParams()      // Documents pagination query params
+  findAll(@QueryPagedParams() params: any) {
+    // Implementation
+  }
+
+  @Post()
+  @ApiBodyUnspecified()         // For dynamic body types
+  @ApiResponseUnspecified()     // For dynamic response types
+  create(@Body() data: any) {
+    // Implementation
+  }
+
+  @Get('list')
+  @ApiResponseUnspecifiedArray() // For dynamic array responses
+  getList() {
+    // Implementation
+  }
 }
 ```
 
-### Environment Configuration
+### Environment Configuration Decorator
 
 ```typescript
 import { EnvironmentClass } from '@onivoro/server-common';
 
 @EnvironmentClass()
 export class AppConfig {
-  @EnvironmentVariable('DATABASE_URL')
-  databaseUrl: string;
-
-  @EnvironmentVariable('PORT', '3000')
-  port: number;
+  API_URL: string;
+  DATABASE_URL: string;
+  PORT?: number = 3000;  // With default
 }
 ```
 
-## Configuration
-
-The library provides several configuration utilities:
-
-### Environment Variables
+### Query Parameter Decorators
 
 ```typescript
-import { loadDotEnvForKey } from '@onivoro/server-common';
+import { QueryPagedParams } from '@onivoro/server-common';
 
-// Load environment variables for a specific key
-loadDotEnvForKey('development');
-```
-
-### Version Management
-
-```typescript
-import { getPackageVersion, VERSION_PROVIDER_TOKEN } from '@onivoro/server-common';
-
-// Get version from package.json
-const version = getPackageVersion();
-
-// Use as provider
-@Module({
-  providers: [
-    {
-      provide: VERSION_PROVIDER_TOKEN,
-      useValue: getPackageVersion()
-    }
-  ]
-})
-export class AppModule {}
-```
-
-## Usage Examples
-
-### Error Handling
-
-```typescript
-import { ErrorFilter, TypeormErrorFilter } from '@onivoro/server-common';
-
-@UseFilters(new ErrorFilter(), new TypeormErrorFilter())
-@Controller('api')
-export class ApiController {
-  // Your controller methods
+@Get()
+findAll(@QueryPagedParams() params: {
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
+}) {
+  // Implementation
 }
 ```
 
-### API Documentation Decorators
-
-```typescript
-import { 
-  DefaultApiController, 
-  ApiResponsePaged, 
-  ApiQueryPagedParams 
-} from '@onivoro/server-common';
-
-@DefaultApiController('users')
-export class UsersController {
-  @Get()
-  @ApiQueryPagedParams()
-  @ApiResponsePaged(UserDto)
-  async findAll(@QueryPagedParams() params: PageParams) {
-    // Implementation
-  }
-}
-```
+## DTOs (Data Transfer Objects)
 
 ### Common DTOs
 
 ```typescript
-import { 
-  PagedResponseDto, 
-  SuccessDto, 
+import {
+  AccountUserDto,
+  BodyDto,
+  EmailDto,
   HealthDto,
-  EmailDto 
+  PagedResponseDto,
+  PutPasswordDto,
+  SuccessDto,
+  StringArrayDto,
+  UrlDto,
+  UserIdDto,
+  ValueDto,
+  ValuesDto,
+  LookupDto
 } from '@onivoro/server-common';
 
-@Get('health')
-async getHealth(): Promise<HealthDto> {
-  return { status: 'ok', timestamp: new Date() };
-}
+// Account user information
+const user: AccountUserDto = {
+  id: 'user-123',
+  email: 'user@example.com',
+  name: 'John Doe'
+};
 
-@Post('send-email')
-async sendEmail(@Body() emailDto: EmailDto): Promise<SuccessDto> {
-  // Send email logic
-  return { success: true };
-}
+// Paginated response
+const response: PagedResponseDto<UserDto> = {
+  data: users,
+  total: 100,
+  page: 1,
+  pageSize: 10
+};
+
+// Simple value wrapper
+const value: ValueDto<string> = {
+  value: 'some-value'
+};
+
+// Multiple values
+const values: ValuesDto<number> = {
+  values: [1, 2, 3, 4, 5]
+};
+
+// Lookup/dropdown option
+const option: LookupDto<string, number> = {
+  display: 'Option One',
+  value: 1
+};
 ```
 
-### Validation Pipes
+## Validation Pipes
+
+### Date and Time Pipes
 
 ```typescript
-import { 
-  ParseDateOptionalPipe, 
-  ParseUuidOptionalPipe,
-  ZodValidationPipe 
+import {
+  ParseDateOptionalPipe,
+  ParseMonthPipe,
+  ParseYearPipe
 } from '@onivoro/server-common';
 
-@Get('events')
-async getEvents(
+@Get('by-date')
+findByDate(
   @Query('date', ParseDateOptionalPipe) date?: Date,
-  @Query('userId', ParseUuidOptionalPipe) userId?: string
+  @Query('month', ParseMonthPipe) month?: number,
+  @Query('year', ParseYearPipe) year?: number
 ) {
   // Implementation
 }
 ```
 
-### Utility Functions
+### UUID Pipes
 
 ```typescript
-import { 
-  generateUniqueCode,
+import {
+  ParseUuidOptionalPipe,
+  ParseUuidsPipe
+} from '@onivoro/server-common';
+
+@Get(':id')
+findOne(@Param('id', ParseUuidOptionalPipe) id?: string) {
+  // Implementation
+}
+
+@Post('batch')
+findMany(@Body('ids', ParseUuidsPipe) ids: string[]) {
+  // Implementation
+}
+```
+
+### Zod Validation Pipe
+
+```typescript
+import { ZodValidationPipe } from '@onivoro/server-common';
+import { z } from 'zod';
+
+const UserSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  age: z.number().positive()
+});
+
+@Post()
+create(@Body(new ZodValidationPipe(UserSchema)) user: z.infer<typeof UserSchema>) {
+  // Implementation
+}
+```
+
+## Utility Functions
+
+### API Configuration
+
+```typescript
+import {
+  createApiApp,
+  configureApiApp,
+  initOpenapi
+} from '@onivoro/server-common';
+
+// Create NestJS application with default settings
+const app = await createApiApp(AppModule);
+
+// Configure with custom settings
+await configureApiApp(app, {
+  cors: true,
+  globalPrefix: 'api',
+  port: 3000
+});
+
+// Initialize OpenAPI/Swagger
+initOpenapi(app, {
+  title: 'My API',
+  description: 'API Documentation',
+  version: '1.0.0'
+});
+```
+
+### Environment and Package Utilities
+
+```typescript
+import {
+  loadDotEnvForKey,
+  getPackageVersion,
+  parsePackageJson,
+  generateAppMetadata
+} from '@onivoro/server-common';
+
+// Load environment file
+loadDotEnvForKey('development');
+
+// Get package version (async)
+const version = await getPackageVersion();
+
+// Parse package.json
+const packageInfo = parsePackageJson();
+
+// Generate app metadata
+const metadata = generateAppMetadata();
+```
+
+### File Operations
+
+```typescript
+import {
+  readFileAsJson,
+  saveFileAsJson,
+  readSslCertificate
+} from '@onivoro/server-common';
+
+// Read JSON file
+const data = await readFileAsJson<ConfigType>('config.json');
+
+// Save JSON file
+await saveFileAsJson('output.json', { data: 'value' });
+
+// Read SSL certificate
+const cert = await readSslCertificate('cert.pem');
+```
+
+### String and Code Generation
+
+```typescript
+import {
   getRandomString,
+  generateUniqueCode,
+  generateFirestoreId,
   encode,
-  decode,
+  decode
+} from '@onivoro/server-common';
+
+// Random string
+const random = getRandomString(16);
+
+// Unique code (6 characters)
+const code = generateUniqueCode();
+
+// Firestore-style ID
+const id = generateFirestoreId();
+
+// Base64 encoding/decoding
+const encoded = encode('hello world');
+const decoded = decode(encoded);
+```
+
+### Database Utilities
+
+```typescript
+import { asInsert } from '@onivoro/server-common';
+
+// Convert object to INSERT statement
+const sql = asInsert('users', {
+  name: 'John',
+  email: 'john@example.com',
+  created_at: new Date()
+});
+// Returns: INSERT INTO users (name, email, created_at) VALUES ($1, $2, $3)
+```
+
+### System Utilities
+
+```typescript
+import {
+  getMemoryStats,
+  isPortInUse,
   shell,
   tryCatch
 } from '@onivoro/server-common';
 
-// Generate unique codes
-const code = generateUniqueCode(8);
+// Memory statistics
+const stats = getMemoryStats();
 
-// Random string generation
-const randomStr = getRandomString(16);
+// Check if port is in use
+const inUse = await isPortInUse(3000);
 
-// Encoding/decoding
-const encoded = encode('sensitive data');
-const decoded = decode(encoded);
-
-// Shell command execution
+// Execute shell command
 const result = await shell('ls -la');
 
-// Safe function execution
-const [error, result] = await tryCatch(async () => {
-  return await someAsyncOperation();
+// Try-catch wrapper
+const [result, error] = await tryCatch(async () => {
+  return await riskyOperation();
 });
 ```
 
-### File Operations
+### Request Parsing
 
 ```typescript
-import { 
-  readFileAsJson,
-  saveFileAsJson,
-  parsePackageJson 
+import { parseBody } from '@onivoro/server-common';
+
+// Parse request body
+app.use((req, res, next) => {
+  parseBody(req, (err, body) => {
+    if (err) return next(err);
+    req.body = body;
+    next();
+  });
+});
+```
+
+## Providers
+
+### Version Provider
+
+```typescript
+import { VersionProvider, VERSION_PROVIDER_TOKEN } from '@onivoro/server-common';
+
+@Module({
+  providers: [VersionProvider],
+  exports: [VERSION_PROVIDER_TOKEN]
+})
+export class AppModule {}
+
+// Inject in service
+@Injectable()
+export class AppService {
+  constructor(
+    @Inject(VERSION_PROVIDER_TOKEN) private version: string
+  ) {}
+}
+```
+
+## Constants
+
+```typescript
+import {
+  API_ID_HEADER,
+  API_KEY_HEADER
 } from '@onivoro/server-common';
 
-// Read JSON file
-const config = await readFileAsJson('./config.json');
-
-// Save JSON file
-await saveFileAsJson('./output.json', { data: 'example' });
-
-// Parse package.json
-const packageInfo = parsePackageJson('./package.json');
+// Use in guards or middleware
+const apiKey = request.headers[API_KEY_HEADER];
+const apiId = request.headers[API_ID_HEADER];
 ```
 
-### Application Metadata
+## Module Factory
 
 ```typescript
-import { generateAppMetadata } from '@onivoro/server-common';
+import { moduleFactory } from '@onivoro/server-common';
 
-const metadata = generateAppMetadata({
-  name: 'My API',
-  version: '1.0.0',
-  description: 'Example API'
+// Create dynamic module with environment config
+const MyModule = moduleFactory({
+  providers: [MyService],
+  exports: [MyService]
 });
 ```
 
-## API Reference
+## Complete Example
 
-### Core Functions
+```typescript
+import {
+  ServerCommonModule,
+  DefaultApiController,
+  ApiResponsePaged,
+  QueryPagedParams,
+  PagedResponseDto,
+  EnvironmentClass,
+  ZodValidationPipe,
+  getPackageVersion,
+  ErrorFilter
+} from '@onivoro/server-common';
+import { z } from 'zod';
 
-- **createApiApp(module)**: Create NestJS application
-- **configureApiApp(app, options)**: Configure API with OpenAPI, CORS, etc.
-- **moduleFactory(module, options)**: Create dynamic modules
-- **initOpenapi(app, config)**: Initialize OpenAPI documentation
+// Configuration
+@EnvironmentClass()
+class AppConfig {
+  PORT: number = 3000;
+  DATABASE_URL: string;
+}
 
-### Utility Functions
+// DTO
+const UserSchema = z.object({
+  name: z.string(),
+  email: z.string().email()
+});
 
-- **encode(data)**: Encode sensitive data
-- **decode(data)**: Decode sensitive data
-- **generateUniqueCode(length)**: Generate unique alphanumeric codes
-- **getRandomString(length)**: Generate random strings
-- **shell(command)**: Execute shell commands
-- **tryCatch(fn)**: Safe async function execution
+// Controller
+@DefaultApiController('users')
+export class UsersController {
+  @Get()
+  @ApiResponsePaged(UserDto)
+  async findAll(@QueryPagedParams() params: any): Promise<PagedResponseDto<UserDto>> {
+    const users = await this.userService.findAll(params);
+    return {
+      data: users.data,
+      total: users.total,
+      page: params.page || 1,
+      pageSize: params.pageSize || 10
+    };
+  }
 
-### File Operations
+  @Post()
+  create(@Body(new ZodValidationPipe(UserSchema)) user: z.infer<typeof UserSchema>) {
+    return this.userService.create(user);
+  }
+}
 
-- **readFileAsJson(path)**: Read and parse JSON files
-- **saveFileAsJson(path, data)**: Save data as JSON file
-- **parsePackageJson(path)**: Parse package.json files
-
-### Environment
-
-- **loadDotEnvForKey(key)**: Load environment variables
-- **getPackageVersion()**: Get current package version
-- **isPortInUse(port)**: Check if port is available
-
-### Memory and Performance
-
-- **getMemoryStats()**: Get Node.js memory statistics
-
-## DTOs
-
-### Common DTOs
-
-- **SuccessDto**: Standard success response
-- **HealthDto**: Health check response
-- **EmailDto**: Email data transfer object
-- **PagedResponseDto**: Paginated response wrapper
-- **LookupDto**: Key-value lookup objects
-
-### Request DTOs
-
-- **BodyDto**: Generic request body
-- **UserIdDto**: User ID parameter
-- **ValueDto/ValuesDto**: Generic value containers
-
-## Decorators
-
-### API Documentation
-
-- **@DefaultApiController**: Standard API controller decorator
-- **@ApiResponsePaged**: Paginated response documentation
-- **@ApiQueryPagedParams**: Paginated query parameters
-- **@ApiBodyUnspecified**: Unspecified request body
-- **@ApiResponseUnspecified**: Unspecified response
-
-### Environment
-
-- **@EnvironmentClass**: Mark classes for environment variable injection
-
-### Query Parameters
-
-- **@QueryPagedParams**: Extract pagination parameters
-
-## Error Handling
-
-The library provides comprehensive error handling:
-
-- **ErrorFilter**: General application error filter
-- **TypeormErrorFilter**: Database-specific error handling
-- **Structured Error Responses**: Consistent error response format
-
-## Best Practices
-
-1. **Use Type Safety**: Leverage TypeScript for all DTOs and interfaces
-2. **Environment Configuration**: Use `@EnvironmentClass` for configuration
-3. **Error Handling**: Apply error filters at the controller level
-4. **API Documentation**: Use provided decorators for OpenAPI documentation
-5. **Validation**: Use custom pipes for input validation
-6. **Pagination**: Use provided pagination utilities for list endpoints
+// Bootstrap
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.useGlobalFilters(new ErrorFilter());
+  
+  const version = await getPackageVersion();
+  console.log(`Starting app v${version}`);
+  
+  await app.listen(3000);
+}
+```
 
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT

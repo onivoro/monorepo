@@ -1,6 +1,6 @@
 # @onivoro/server-cli
 
-A powerful command-line interface utilities library for Node.js applications, providing abstract command classes, decorators, and type definitions for building robust CLI tools with NestJS.
+Command-line interface utilities for building CLI tools with NestJS and nest-commander.
 
 ## Installation
 
@@ -8,234 +8,228 @@ A powerful command-line interface utilities library for Node.js applications, pr
 npm install @onivoro/server-cli
 ```
 
-## Features
+## Overview
 
-- **Abstract Command Classes**: Base classes for creating structured CLI commands
-- **Decorators**: CLI option decorators for parameter parsing
-- **Type Definitions**: TypeScript types for CLI operations
-- **Command Factory**: Utilities for creating and managing CLI commands
-- **Built-in Error Handling**: Automatic error handling and process management
+This library provides a thin abstraction layer over `nest-commander` for building command-line applications with NestJS. It includes an abstract command class, CLI option decorator, and utility functions.
 
-## Quick Start
+## Core Components
 
-### Creating a Basic Command
+### AbstractCommand
 
-```typescript
-import { AbstractCommand, CliOption } from '@onivoro/server-cli';
-
-interface MyCommandParams {
-  name: string;
-  count: number;
-}
-
-export class MyCommand extends AbstractCommand<MyCommandParams> {
-  constructor() {
-    super('my-command');
-  }
-
-  async main(args: string[], params: MyCommandParams): Promise<void> {
-    console.log(`Hello ${params.name}! Count: ${params.count}`);
-    // Your command logic here
-  }
-}
-```
-
-### Using CLI Options Decorator
-
-```typescript
-import { CliOption } from '@onivoro/server-cli';
-
-export class ExampleCommand extends AbstractCommand<{
-  verbose: boolean;
-  output: string;
-}> {
-  constructor() {
-    super('example');
-  }
-
-  @CliOption({
-    flags: '-v, --verbose',
-    description: 'Enable verbose output'
-  })
-  verbose: boolean;
-
-  @CliOption({
-    flags: '-o, --output <path>',
-    description: 'Output file path'
-  })
-  output: string;
-
-  async main(args: string[], params: any): Promise<void> {
-    if (params.verbose) {
-      console.log('Verbose mode enabled');
-    }
-    // Command implementation
-  }
-}
-```
-
-### Command Factory Usage
-
-```typescript
-import { asCommand } from '@onivoro/server-cli';
-
-const command = asCommand(MyCommand);
-// Use the command in your CLI application
-```
-
-## Configuration
-
-The library works seamlessly with NestJS applications and supports:
-
-- **Type Safety**: Full TypeScript support with strongly typed parameters
-- **Parameter Validation**: Built-in validation for command parameters
-- **Error Handling**: Automatic error catching and process exit handling
-- **Flexible Architecture**: Easy to extend and customize for specific needs
-
-## Usage Examples
-
-### Simple Command
+Base class for CLI commands that extends `nest-commander`'s `CommandRunner`:
 
 ```typescript
 import { AbstractCommand } from '@onivoro/server-cli';
+import { Command } from 'nest-commander';
 
-export class HelloCommand extends AbstractCommand<{ name: string }> {
-  constructor() {
-    super('hello');
-  }
-
-  async main(args: string[], params: { name: string }): Promise<void> {
-    console.log(`Hello, ${params.name}!`);
-  }
-}
-```
-
-### Command with Multiple Options
-
-```typescript
-import { AbstractCommand, CliOption } from '@onivoro/server-cli';
-
-interface ProcessOptions {
-  input: string;
-  output: string;
-  format: string;
-  verbose: boolean;
-}
-
-export class ProcessCommand extends AbstractCommand<ProcessOptions> {
-  constructor() {
-    super('process');
-  }
-
-  @CliOption({
-    flags: '-i, --input <file>',
-    description: 'Input file path',
-    required: true
-  })
-  input: string;
-
-  @CliOption({
-    flags: '-o, --output <file>',
-    description: 'Output file path',
-    required: true
-  })
-  output: string;
-
-  @CliOption({
-    flags: '-f, --format <type>',
-    description: 'Output format',
-    defaultValue: 'json'
-  })
-  format: string;
-
-  @CliOption({
-    flags: '-v, --verbose',
-    description: 'Enable verbose logging'
-  })
-  verbose: boolean;
-
-  async main(args: string[], params: ProcessOptions): Promise<void> {
-    if (params.verbose) {
-      console.log(`Processing ${params.input} -> ${params.output} (${params.format})`);
+@Command({
+  name: 'process',
+  description: 'Process data files'
+})
+export class ProcessCommand extends AbstractCommand {
+  async run(inputs: string[], options: Record<string, any>): Promise<void> {
+    try {
+      console.log('Processing with options:', options);
+      // Your command logic here
+      
+      // The base class handles process.exit() automatically
+    } catch (error) {
+      // Error will be logged and process will exit with code 1
+      throw error;
     }
-    
-    // Processing logic here
-    
-    console.log('Processing completed successfully');
   }
 }
 ```
 
-### Advanced Command with Validation
-
-```typescript
-import { AbstractCommand } from '@onivoro/server-cli';
-import { existsSync } from 'fs';
-
-export class ValidatedCommand extends AbstractCommand<{ file: string }> {
-  constructor() {
-    super('validate');
-  }
-
-  async main(args: string[], params: { file: string }): Promise<void> {
-    // Custom validation
-    if (!existsSync(params.file)) {
-      throw new Error(`File not found: ${params.file}`);
-    }
-
-    // Command logic
-    console.log(`Processing file: ${params.file}`);
-  }
-}
-```
-
-## API Reference
-
-### AbstractCommand<TParams>
-
-Base class for all CLI commands.
-
-- **constructor(name: string)**: Initialize command with a name
-- **main(args: string[], params: TParams)**: Abstract method to implement command logic
-- **run(args: string[], params: TParams)**: Internal method handling execution and error management
+The `AbstractCommand` class:
+- Automatically handles errors and logs them
+- Exits the process with code 0 on success
+- Exits the process with code 1 on error
+- Extends `CommandRunner` from nest-commander
 
 ### CliOption Decorator
 
-Decorator for defining CLI options.
+Decorator for defining command-line options (re-exported from nest-commander):
 
 ```typescript
-@CliOption({
-  flags: string;        // Command flags (e.g., '-v, --verbose')
-  description: string;  // Option description
-  required?: boolean;   // Whether option is required
-  defaultValue?: any;   // Default value if not provided
+import { AbstractCommand, CliOption } from '@onivoro/server-cli';
+import { Command } from 'nest-commander';
+
+@Command({
+  name: 'deploy',
+  description: 'Deploy application'
 })
+export class DeployCommand extends AbstractCommand {
+  @CliOption({
+    flags: '-e, --environment <environment>',
+    description: 'Deployment environment',
+    defaultValue: 'development'
+  })
+  parseEnvironment(val: string): string {
+    return val;
+  }
+
+  @CliOption({
+    flags: '-d, --dry-run',
+    description: 'Run without making changes',
+    defaultValue: false
+  })
+  parseDryRun(): boolean {
+    return true;
+  }
+
+  async run(inputs: string[], options: Record<string, any>): Promise<void> {
+    console.log(`Deploying to ${options.environment}`);
+    if (options.dryRun) {
+      console.log('DRY RUN - No changes will be made');
+    }
+  }
+}
 ```
 
 ### asCommand Function
 
-Factory function for creating command instances.
+Utility function to execute async functions as commands with automatic error handling:
 
 ```typescript
-asCommand<T extends AbstractCommand<any>>(CommandClass: new () => T): T
+import { asCommand } from '@onivoro/server-cli';
+
+// Wrap any async function
+asCommand(async () => {
+  const data = await fetchData();
+  await processData(data);
+  console.log('Processing complete');
+});
+
+// With parameters
+const processFile = async (filename: string) => {
+  const content = await readFile(filename);
+  await process(content);
+};
+
+asCommand(() => processFile('data.json'));
 ```
 
-## Error Handling
+### Type Definitions
 
-The library provides built-in error handling:
+The library exports CLI-related types:
 
-- Commands automatically catch and log errors
-- Process exits with appropriate codes (0 for success, 1 for errors)
-- Structured error logging for debugging
+```typescript
+import { TCliArgs, TCliCommand, TCliFlag } from '@onivoro/server-cli';
 
-## Best Practices
+// TCliArgs - Command line arguments type
+// TCliCommand - Command configuration type
+// TCliFlag - CLI flag definition type
+```
 
-1. **Use Strong Typing**: Always define parameter interfaces for type safety
-2. **Validate Input**: Implement validation logic in your `main` method
-3. **Handle Errors Gracefully**: Let the base class handle process exits
-4. **Use Descriptive Names**: Choose clear, descriptive command names
-5. **Document Options**: Provide clear descriptions for all CLI options
+## Complete Example
+
+```typescript
+// main.ts
+import { CommandFactory } from 'nest-commander';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  await CommandFactory.run(AppModule);
+}
+bootstrap();
+
+// app.module.ts
+import { Module } from '@nestjs/common';
+import { MigrateCommand } from './commands/migrate.command';
+
+@Module({
+  providers: [MigrateCommand]
+})
+export class AppModule {}
+
+// commands/migrate.command.ts
+import { AbstractCommand, CliOption } from '@onivoro/server-cli';
+import { Command } from 'nest-commander';
+import { Injectable } from '@nestjs/common';
+
+@Injectable()
+@Command({
+  name: 'migrate',
+  description: 'Run database migrations'
+})
+export class MigrateCommand extends AbstractCommand {
+  @CliOption({
+    flags: '-d, --direction <direction>',
+    description: 'Migration direction (up/down)',
+    defaultValue: 'up'
+  })
+  parseDirection(val: string): string {
+    if (!['up', 'down'].includes(val)) {
+      throw new Error('Direction must be "up" or "down"');
+    }
+    return val;
+  }
+
+  @CliOption({
+    flags: '-c, --count <count>',
+    description: 'Number of migrations to run'
+  })
+  parseCount(val: string): number {
+    return parseInt(val, 10);
+  }
+
+  async run(inputs: string[], options: Record<string, any>): Promise<void> {
+    const { direction, count } = options;
+    
+    console.log(`Running migrations ${direction}`);
+    
+    if (count) {
+      console.log(`Limited to ${count} migrations`);
+    }
+    
+    // Your migration logic here
+    await this.runMigrations(direction, count);
+    
+    console.log('Migrations complete');
+  }
+
+  private async runMigrations(direction: string, count?: number): Promise<void> {
+    // Implementation
+  }
+}
+```
+
+## Running Commands
+
+```bash
+# Run the command
+npx my-cli migrate
+
+# With options
+npx my-cli migrate --direction down --count 3
+
+# Get help
+npx my-cli migrate --help
+```
+
+## Dependencies
+
+This library is built on top of `nest-commander`. Make sure to install it:
+
+```bash
+npm install nest-commander
+```
+
+## Key Features
+
+- Automatic error handling and process exit
+- Built on proven nest-commander library
+- Full TypeScript support
+- Integrates seamlessly with NestJS dependency injection
+- Simple decorator-based option parsing
+
+## Limitations
+
+- This is a thin wrapper over nest-commander
+- Limited to nest-commander's features
+- No built-in validation beyond what nest-commander provides
 
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT

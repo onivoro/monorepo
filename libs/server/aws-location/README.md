@@ -1,6 +1,6 @@
 # @onivoro/server-aws-location
 
-A NestJS module for integrating with AWS Location Service, providing geocoding, route calculation, and location-based services for your server applications.
+AWS Location Service integration for NestJS applications with geocoding and route calculation capabilities.
 
 ## Installation
 
@@ -8,660 +8,295 @@ A NestJS module for integrating with AWS Location Service, providing geocoding, 
 npm install @onivoro/server-aws-location
 ```
 
-## Features
+## Overview
 
-- **AWS Location Service Integration**: Direct integration with AWS Location Service
-- **Route Calculation**: Calculate routes between locations with distance and duration
-- **Geocoding**: Convert addresses to geographic coordinates
-- **Place Search**: Search for places using text queries
-- **Multi-Modal Routing**: Support for Car, Truck, Bicycle, and Walking travel modes
-- **Distance Units**: Support for both Miles and Kilometers
-- **Environment-Based Configuration**: Configurable location settings per environment
-- **Credential Provider Integration**: Seamless integration with AWS credential providers
+This library provides AWS Location Service integration for NestJS applications, offering geocoding and route calculation functionality.
 
-## Quick Start
-
-### 1. Module Configuration
+## Module Setup
 
 ```typescript
+import { Module } from '@nestjs/common';
 import { ServerAwsLocationModule } from '@onivoro/server-aws-location';
 
 @Module({
   imports: [
-    ServerAwsLocationModule.configure({
-      AWS_REGION: 'us-east-1',
-      ROUTE_CALCULATOR_NAME: process.env.AWS_LOCATION_ROUTE_CALCULATOR,
-      PLACE_INDEX_NAME: process.env.AWS_LOCATION_PLACE_INDEX,
-      AWS_PROFILE: process.env.AWS_PROFILE || 'default',
-    }),
-  ],
+    ServerAwsLocationModule.configure()
+  ]
 })
 export class AppModule {}
 ```
 
-### 2. Basic Usage
-
-```typescript
-import { LocationService } from '@onivoro/server-aws-location';
-
-@Injectable()
-export class RoutingService {
-  constructor(private locationService: LocationService) {}
-
-  async getRoute(from: { lat: number; lng: number }, to: { lat: number; lng: number }) {
-    const result = await this.locationService.calculateRoute({
-      departurePosition: { latitude: from.lat, longitude: from.lng },
-      destinationPosition: { latitude: to.lat, longitude: to.lng },
-      travelMode: 'Car',
-      distanceUnit: 'Miles'
-    });
-
-    return {
-      distance: result.distance,
-      duration: `${result.duration.hours}h ${result.duration.minutes}m`
-    };
-  }
-
-  async geocodeAddress(address: string) {
-    const results = await this.locationService.geocodeAddress(address);
-
-    return results.map(result => ({
-      address: result.text,
-      coordinates: result.coordinates,
-      confidence: result.relevance
-    }));
-  }
-}
-```
-
 ## Configuration
 
-### ServerAwsLocationConfig
+The module uses environment-based configuration:
 
 ```typescript
-import { ServerAwsLocationConfig } from '@onivoro/server-aws-location';
-
-export class AppLocationConfig extends ServerAwsLocationConfig {
-  AWS_REGION = process.env.AWS_REGION || 'us-east-1';
-  AWS_PROFILE = process.env.AWS_PROFILE || 'default';
-  ROUTE_CALCULATOR_NAME = process.env.AWS_LOCATION_ROUTE_CALCULATOR || 'MyRouteCalculator';
-  PLACE_INDEX_NAME = process.env.AWS_LOCATION_PLACE_INDEX || 'MyPlaceIndex';
+export class ServerAwsLocationConfig {
+  AWS_LOCATION_INDEX_NAME: string;  // The name of your AWS Location place index
+  AWS_LOCATION_CALCULATOR_NAME: string;  // The name of your AWS Location route calculator
+  AWS_REGION: string;
+  AWS_PROFILE?: string;  // Optional AWS profile
 }
 ```
 
-### Environment Variables
+## Service
 
-```bash
-# AWS Configuration
-AWS_REGION=us-east-1
-AWS_PROFILE=default
+### LocationService
 
-# AWS Location Service Configuration
-AWS_LOCATION_ROUTE_CALCULATOR=MyRouteCalculator
-AWS_LOCATION_PLACE_INDEX=MyPlaceIndex
-```
-
-## Usage Examples
-
-### Wrapping With Controllers
+The service provides two main operations:
 
 ```typescript
-// route-calculation.controller.ts
-import { Body, Post } from "@nestjs/common";
-import { ApiBody, ApiResponse } from "@nestjs/swagger";
-import { DefaultApiController } from "@onivoro/server-common"; // optional
-import { LocationService, RouteCalculationRequestDto, RouteCalculationResultDto } from "@onivoro/server-aws-location";
-
-@DefaultApiController('route-calculation')
-export class RouteCalculationController {
-    constructor(private locationService: LocationService) { }
-
-    @Post()
-    @ApiBody({ type: RouteCalculationRequestDto })
-    @ApiResponse({ type: RouteCalculationResultDto })
-    async post(@Body() body: RouteCalculationRequestDto) {
-        return this.locationService.calculateRoute(body);
-    }
-}
-```
-
-```typescript
-// geolocation.controller.ts
-import { Get, Param } from "@nestjs/common";
-import { ApiParam, ApiResponse } from "@nestjs/swagger";
-import { DefaultApiController } from "@onivoro/server-common"; // optional
-import { LocationService, GeocodingResultDto } from "@onivoro/server-aws-location";
-
-@DefaultApiController('geolocation')
-export class GeolocationController {
-    constructor(private locationService: LocationService) { }
-
-    @Get(':address')
-    @ApiParam({ type: 'string', name: 'address' })
-    @ApiResponse({ type: GeocodingResultDto, isArray: true })
-    async post(@Param('address') value: string): Promise<GeocodingResultDto[]> {
-        return this.locationService.geocodeAddress(value);
-    }
-}
-```
-
-### Route Optimization Service
-
-```typescript
+import { Injectable } from '@nestjs/common';
 import { LocationService } from '@onivoro/server-aws-location';
-import { RouteCalculationRequestDto, RouteCalculationResultDto } from '@onivoro/server-aws-location';
 
 @Injectable()
-export class RouteOptimizationService {
-  constructor(private locationService: LocationService) {}
+export class GeocodingService {
+  constructor(private readonly locationService: LocationService) {}
 
-  async findOptimalRoute(
-    waypoints: Array<{ lat: number; lng: number; name: string }>,
-    travelMode: 'Car' | 'Truck' | 'Bicycle' | 'Walking' = 'Car'
-  ) {
-    const routes: Array<{
-      from: string;
-      to: string;
-      distance: number;
-      duration: { hours: number; minutes: number };
-    }> = [];
-
-    for (let i = 0; i < waypoints.length - 1; i++) {
-      const from = waypoints[i];
-      const to = waypoints[i + 1];
-
-      const route = await this.locationService.calculateRoute({
-        departurePosition: { latitude: from.lat, longitude: from.lng },
-        destinationPosition: { latitude: to.lat, longitude: to.lng },
-        travelMode,
-        distanceUnit: 'Miles'
-      });
-
-      routes.push({
-        from: from.name,
-        to: to.name,
-        distance: route.distance,
-        duration: route.duration
-      });
+  // Geocode an address to coordinates
+  async getCoordinates(address: string) {
+    const results = await this.locationService.geocodeAddress(address);
+    
+    if (results && results.length > 0) {
+      const location = results[0];
+      return {
+        lat: location.Place.Geometry.Point[1],
+        lng: location.Place.Geometry.Point[0],
+        label: location.Place.Label,
+        confidence: location.Place.Confidence
+      };
     }
+    
+    return null;
+  }
 
-    const totalDistance = routes.reduce((sum, route) => sum + route.distance, 0);
-    const totalMinutes = routes.reduce(
-      (sum, route) => sum + (route.duration.hours * 60) + route.duration.minutes,
-      0
+  // Calculate route between two points
+  async getRoute(startLat: number, startLng: number, endLat: number, endLng: number) {
+    const route = await this.locationService.calculateRoute(
+      startLat,
+      startLng,
+      endLat,
+      endLng
     );
-
+    
     return {
-      routes,
-      totalDistance,
-      totalDuration: {
-        hours: Math.floor(totalMinutes / 60),
-        minutes: totalMinutes % 60
-      }
+      distance: route.Summary.Distance,
+      duration: route.Summary.DurationSeconds,
+      legs: route.Legs
     };
   }
+}
+```
 
-  async compareRoutes(
-    origin: { lat: number; lng: number },
-    destination: { lat: number; lng: number }
-  ) {
-    const travelModes: Array<'Car' | 'Truck' | 'Bicycle' | 'Walking'> =
-      ['Car', 'Truck', 'Bicycle', 'Walking'];
+## Method Details
 
-    const comparisons = await Promise.all(
-      travelModes.map(async mode => {
-        try {
-          const route = await this.locationService.calculateRoute({
-            departurePosition: { latitude: origin.lat, longitude: origin.lng },
-            destinationPosition: { latitude: destination.lat, longitude: destination.lng },
-            travelMode: mode,
-            distanceUnit: 'Miles'
-          });
+### geocodeAddress(address: string)
 
-          return {
-            mode,
-            distance: route.distance,
-            duration: route.duration,
-            totalMinutes: (route.duration.hours * 60) + route.duration.minutes
-          };
-        } catch (error) {
-          // Some modes might not be available for certain routes
-          return null;
-        }
-      })
-    );
+Converts an address string to geographic coordinates.
 
-    return comparisons
-      .filter(Boolean)
-      .sort((a, b) => a!.totalMinutes - b!.totalMinutes);
+- **Returns**: Array of search results with place information including coordinates, labels, and confidence scores
+- **Uses**: The place index configured in `AWS_LOCATION_INDEX_NAME`
+
+### calculateRoute(startLat, startLng, endLat, endLng)
+
+Calculates a route between two geographic points.
+
+- **Parameters**:
+  - `startLat`: Starting point latitude
+  - `startLng`: Starting point longitude
+  - `endLat`: Destination latitude
+  - `endLng`: Destination longitude
+- **Returns**: Route information including distance, duration, and turn-by-turn directions
+- **Uses**: The route calculator configured in `AWS_LOCATION_CALCULATOR_NAME`
+
+## Direct Client Access
+
+The service exposes the underlying Location client for advanced operations:
+
+```typescript
+import { 
+  GetPlaceCommand,
+  SearchPlaceIndexForPositionCommand,
+  BatchGetDevicePositionCommand
+} from '@aws-sdk/client-location';
+
+@Injectable()
+export class AdvancedLocationService {
+  constructor(private readonly locationService: LocationService) {}
+
+  // Reverse geocoding - coordinates to address
+  async reverseGeocode(lat: number, lng: number) {
+    const command = new SearchPlaceIndexForPositionCommand({
+      IndexName: process.env.AWS_LOCATION_INDEX_NAME,
+      Position: [lng, lat] // Note: AWS Location uses [longitude, latitude]
+    });
+    
+    return await this.locationService.locationClient.send(command);
+  }
+
+  // Get place details by ID
+  async getPlaceDetails(placeId: string) {
+    const command = new GetPlaceCommand({
+      IndexName: process.env.AWS_LOCATION_INDEX_NAME,
+      PlaceId: placeId
+    });
+    
+    return await this.locationService.locationClient.send(command);
   }
 }
 ```
 
-### Geocoding and Address Validation Service
+## Complete Example
 
 ```typescript
-import { LocationService, GeocodingResultDto } from '@onivoro/server-aws-location';
+import { Module, Injectable, Controller, Get, Query } from '@nestjs/common';
+import { ServerAwsLocationModule, LocationService } from '@onivoro/server-aws-location';
+
+@Module({
+  imports: [ServerAwsLocationModule.configure()],
+  controllers: [DeliveryController],
+  providers: [DeliveryService]
+})
+export class DeliveryModule {}
 
 @Injectable()
-export class AddressValidationService {
-  constructor(private locationService: LocationService) {}
+export class DeliveryService {
+  constructor(private readonly locationService: LocationService) {}
 
-  async validateAddress(address: string): Promise<{
-    isValid: boolean;
-    suggestedAddress?: GeocodingResultDto;
-    alternatives?: GeocodingResultDto[];
-  }> {
+  async calculateDeliveryRoute(pickupAddress: string, deliveryAddress: string) {
     try {
-      const results = await this.locationService.geocodeAddress(address, 5);
+      // Geocode both addresses
+      const [pickupResults, deliveryResults] = await Promise.all([
+        this.locationService.geocodeAddress(pickupAddress),
+        this.locationService.geocodeAddress(deliveryAddress)
+      ]);
 
-      if (results.length === 0) {
-        return { isValid: false };
+      if (!pickupResults?.length || !deliveryResults?.length) {
+        throw new Error('Unable to geocode addresses');
       }
 
-      const topResult = results[0];
-      const isHighConfidence = topResult.relevance > 0.9;
+      const pickup = pickupResults[0].Place.Geometry.Point;
+      const delivery = deliveryResults[0].Place.Geometry.Point;
+
+      // Calculate route
+      const route = await this.locationService.calculateRoute(
+        pickup[1], // lat
+        pickup[0], // lng
+        delivery[1], // lat
+        delivery[0]  // lng
+      );
 
       return {
-        isValid: isHighConfidence,
-        suggestedAddress: topResult,
-        alternatives: results.slice(1)
+        pickup: {
+          address: pickupResults[0].Place.Label,
+          coordinates: { lat: pickup[1], lng: pickup[0] }
+        },
+        delivery: {
+          address: deliveryResults[0].Place.Label,
+          coordinates: { lat: delivery[1], lng: delivery[0] }
+        },
+        route: {
+          distanceKm: route.Summary.Distance,
+          durationMinutes: Math.ceil(route.Summary.DurationSeconds / 60),
+          steps: route.Legs[0]?.Steps.map(step => ({
+            distance: step.Distance,
+            duration: step.DurationSeconds,
+            instruction: step.EndPosition
+          }))
+        }
       };
     } catch (error) {
-      console.error('Address validation failed:', error);
-      return { isValid: false };
+      console.error('Route calculation failed:', error);
+      throw error;
     }
   }
 
-  async enrichAddress(partialAddress: string) {
-    const results = await this.locationService.geocodeAddress(partialAddress, 1);
-
-    if (results.length === 0) {
-      throw new Error('Address not found');
-    }
-
-    const result = results[0];
-
-    return {
-      fullAddress: result.text,
-      coordinates: result.coordinates,
-      components: {
-        street: result.street,
-        municipality: result.municipality,
-        region: result.region,
-        country: result.country,
-        postalCode: result.postalCode
-      }
-    };
-  }
-
-  async reverseGeocode(latitude: number, longitude: number) {
-    // Note: This would require implementing reverse geocoding in the LocationService
-    // For now, this is a placeholder showing the expected interface
-    throw new Error('Reverse geocoding not yet implemented');
+  async estimateDeliveryTime(distance: number, trafficMultiplier: number = 1.2) {
+    // Average delivery speed in km/h
+    const averageSpeed = 40;
+    const baseTime = (distance / averageSpeed) * 60; // minutes
+    return Math.ceil(baseTime * trafficMultiplier);
   }
 }
-```
 
-### Delivery Route Service
+@Controller('delivery')
+export class DeliveryController {
+  constructor(private readonly deliveryService: DeliveryService) {}
 
-```typescript
-@Injectable()
-export class DeliveryRouteService {
-  constructor(
-    private locationService: LocationService,
-    private logger: Logger
-  ) {}
-
-  async planDeliveryRoute(
-    warehouse: { address: string },
-    deliveries: Array<{ id: string; address: string; priority: number }>
+  @Get('route')
+  async getDeliveryRoute(
+    @Query('pickup') pickup: string,
+    @Query('delivery') delivery: string
   ) {
-    // Geocode all addresses
-    const warehouseLocation = await this.geocodeLocation(warehouse.address);
-    const deliveryLocations = await Promise.all(
-      deliveries.map(async delivery => ({
-        ...delivery,
-        location: await this.geocodeLocation(delivery.address)
-      }))
-    );
-
-    // Sort by priority
-    deliveryLocations.sort((a, b) => b.priority - a.priority);
-
-    // Calculate routes
-    const routes = [];
-    let currentLocation = warehouseLocation;
-
-    for (const delivery of deliveryLocations) {
-      const route = await this.locationService.calculateRoute({
-        departurePosition: {
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude
-        },
-        destinationPosition: {
-          latitude: delivery.location.latitude,
-          longitude: delivery.location.longitude
-        },
-        travelMode: 'Truck',
-        distanceUnit: 'Miles'
-      });
-
-      routes.push({
-        deliveryId: delivery.id,
-        address: delivery.address,
-        distance: route.distance,
-        duration: route.duration
-      });
-
-      currentLocation = delivery.location;
-    }
-
-    // Calculate return to warehouse
-    const returnRoute = await this.locationService.calculateRoute({
-      departurePosition: {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude
-      },
-      destinationPosition: {
-        latitude: warehouseLocation.latitude,
-        longitude: warehouseLocation.longitude
-      },
-      travelMode: 'Truck',
-      distanceUnit: 'Miles'
-    });
-
-    return {
-      deliveries: routes,
-      returnToWarehouse: returnRoute,
-      totalDistance: routes.reduce((sum, r) => sum + r.distance, 0) + returnRoute.distance,
-      estimatedTime: this.calculateTotalTime(routes, returnRoute)
-    };
-  }
-
-  private async geocodeLocation(address: string) {
-    const results = await this.locationService.geocodeAddress(address, 1);
-
-    if (results.length === 0) {
-      throw new Error(`Unable to geocode address: ${address}`);
-    }
-
-    return results[0].coordinates;
-  }
-
-  private calculateTotalTime(
-    routes: Array<{ duration: { hours: number; minutes: number } }>,
-    returnRoute: { duration: { hours: number; minutes: number } }
-  ) {
-    const totalMinutes = routes.reduce(
-      (sum, route) => sum + (route.duration.hours * 60) + route.duration.minutes,
-      0
-    ) + (returnRoute.duration.hours * 60) + returnRoute.duration.minutes;
-
-    return {
-      hours: Math.floor(totalMinutes / 60),
-      minutes: totalMinutes % 60
-    };
+    return await this.deliveryService.calculateDeliveryRoute(pickup, delivery);
   }
 }
 ```
 
-## Advanced Usage
+## AWS Location Service Setup
 
-### Batch Geocoding with Caching
+Before using this library, you need to set up AWS Location Service resources:
 
-```typescript
-@Injectable()
-export class CachedGeocodingService {
-  private geocodeCache = new Map<string, GeocodingResultDto[]>();
-
-  constructor(private locationService: LocationService) {}
-
-  async batchGeocode(addresses: string[]) {
-    const results = new Map<string, GeocodingResultDto[]>();
-    const uncachedAddresses: string[] = [];
-
-    // Check cache first
-    for (const address of addresses) {
-      const cached = this.geocodeCache.get(address);
-      if (cached) {
-        results.set(address, cached);
-      } else {
-        uncachedAddresses.push(address);
-      }
-    }
-
-    // Geocode uncached addresses
-    const geocodePromises = uncachedAddresses.map(async address => {
-      try {
-        const geocoded = await this.locationService.geocodeAddress(address);
-        this.geocodeCache.set(address, geocoded);
-        results.set(address, geocoded);
-      } catch (error) {
-        console.error(`Failed to geocode: ${address}`, error);
-        results.set(address, []);
-      }
-    });
-
-    await Promise.all(geocodePromises);
-
-    return results;
-  }
-
-  clearCache() {
-    this.geocodeCache.clear();
-  }
-}
+1. **Create a Place Index** for geocoding:
+```bash
+aws location create-place-index \
+  --index-name my-place-index \
+  --data-source Esri \
+  --pricing-plan RequestBasedUsage
 ```
 
-### Distance Matrix Service
+2. **Create a Route Calculator** for routing:
+```bash
+aws location create-route-calculator \
+  --calculator-name my-route-calculator \
+  --data-source Esri \
+  --pricing-plan RequestBasedUsage
+```
+
+## Environment Variables
+
+```bash
+# Required: AWS Location resource names
+AWS_LOCATION_INDEX_NAME=my-place-index
+AWS_LOCATION_CALCULATOR_NAME=my-route-calculator
+
+# Required: AWS region
+AWS_REGION=us-east-1
+
+# Optional: AWS profile
+AWS_PROFILE=my-profile
+```
+
+## Error Handling
 
 ```typescript
-@Injectable()
-export class DistanceMatrixService {
-  constructor(private locationService: LocationService) {}
-
-  async calculateDistanceMatrix(
-    origins: Array<{ name: string; lat: number; lng: number }>,
-    destinations: Array<{ name: string; lat: number; lng: number }>,
-    travelMode: 'Car' | 'Truck' | 'Bicycle' | 'Walking' = 'Car'
-  ) {
-    const matrix: Array<Array<{
-      distance: number;
-      duration: { hours: number; minutes: number };
-    }>> = [];
-
-    for (const origin of origins) {
-      const row = [];
-
-      for (const destination of destinations) {
-        try {
-          const route = await this.locationService.calculateRoute({
-            departurePosition: { latitude: origin.lat, longitude: origin.lng },
-            destinationPosition: { latitude: destination.lat, longitude: destination.lng },
-            travelMode,
-            distanceUnit: 'Miles'
-          });
-
-          row.push({
-            distance: route.distance,
-            duration: route.duration
-          });
-        } catch (error) {
-          row.push({
-            distance: -1,
-            duration: { hours: -1, minutes: -1 }
-          });
-        }
-      }
-
-      matrix.push(row);
-    }
-
-    return {
-      origins: origins.map(o => o.name),
-      destinations: destinations.map(d => d.name),
-      matrix,
-      travelMode
-    };
-  }
-
-  findNearestDestination(
-    origin: { name: string; lat: number; lng: number },
-    destinations: Array<{ name: string; lat: number; lng: number }>
-  ) {
-    return this.calculateDistanceMatrix([origin], destinations).then(result => {
-      const distances = result.matrix[0];
-      let nearestIndex = -1;
-      let shortestDistance = Infinity;
-
-      distances.forEach((route, index) => {
-        if (route.distance > 0 && route.distance < shortestDistance) {
-          shortestDistance = route.distance;
-          nearestIndex = index;
-        }
-      });
-
-      if (nearestIndex === -1) {
-        return null;
-      }
-
-      return {
-        destination: destinations[nearestIndex],
-        distance: distances[nearestIndex].distance,
-        duration: distances[nearestIndex].duration
-      };
-    });
+try {
+  const results = await locationService.geocodeAddress('invalid address xyz123');
+} catch (error) {
+  if (error.name === 'ResourceNotFoundException') {
+    console.error('Place index not found');
+  } else if (error.name === 'ValidationException') {
+    console.error('Invalid input parameters');
   }
 }
 ```
 
-## DTOs
+## Limitations
 
-### RouteCalculationRequestDto
-
-```typescript
-import { RouteCalculationRequestDto } from '@onivoro/server-aws-location';
-
-const routeRequest: RouteCalculationRequestDto = {
-  departurePosition: { latitude: 40.7128, longitude: -74.0060 },
-  destinationPosition: { latitude: 42.3601, longitude: -71.0589 },
-  distanceUnit: 'Miles',
-  travelMode: 'Car'
-};
-```
-
-### GeocodingResultDto
-
-```typescript
-interface GeocodingResultDto {
-  text: string;
-  relevance: number;
-  coordinates: {
-    longitude: number;
-    latitude: number;
-  };
-  country?: string;
-  region?: string;
-  municipality?: string;
-  street?: string;
-  postalCode?: string;
-}
-```
+- Only provides two methods: geocoding and route calculation
+- No support for geofencing or device tracking
+- Limited to single address geocoding (no batch operations)
+- Route calculation limited to two-point routes
+- For advanced features, use the exposed `locationClient` directly
 
 ## Best Practices
 
-### 1. Error Handling
-
-```typescript
-async safeCalculateRoute(request: RouteCalculationRequestDto) {
-  try {
-    return await this.locationService.calculateRoute(request);
-  } catch (error: any) {
-    if (error.name === 'ResourceNotFoundException') {
-      throw new Error('Route calculator not configured');
-    } else if (error.name === 'ValidationException') {
-      throw new Error('Invalid coordinates provided');
-    }
-    throw error;
-  }
-}
-```
-
-### 2. Rate Limiting
-
-```typescript
-// Implement rate limiting for API calls
-const RATE_LIMIT = 10; // requests per second
-const INTERVAL = 1000 / RATE_LIMIT;
-
-let lastCallTime = 0;
-
-async function rateLimitedCall<T>(fn: () => Promise<T>): Promise<T> {
-  const now = Date.now();
-  const timeSinceLastCall = now - lastCallTime;
-
-  if (timeSinceLastCall < INTERVAL) {
-    await new Promise(resolve => setTimeout(resolve, INTERVAL - timeSinceLastCall));
-  }
-
-  lastCallTime = Date.now();
-  return fn();
-}
-```
-
-### 3. Coordinate Validation
-
-```typescript
-function validateCoordinates(lat: number, lng: number): boolean {
-  return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
-}
-```
-
-## Testing
-
-```typescript
-import { Test, TestingModule } from '@nestjs/testing';
-import { ServerAwsLocationModule, LocationService } from '@onivoro/server-aws-location';
-
-describe('LocationService', () => {
-  let service: LocationService;
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      imports: [ServerAwsLocationModule.configure({
-        AWS_REGION: 'us-east-1',
-        ROUTE_CALCULATOR_NAME: 'test-calculator',
-        PLACE_INDEX_NAME: 'test-index',
-        AWS_PROFILE: 'test'
-      })],
-    }).compile();
-
-    service = module.get<LocationService>(LocationService);
-  });
-
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-});
-```
-
-## API Reference
-
-### Exported Classes
-- `ServerAwsLocationConfig`: Configuration class for AWS Location Service settings
-- `ServerAwsLocationModule`: NestJS module for AWS Location Service integration
-
-### Exported Services
-- `LocationService`: Main service for route calculation and geocoding
-
-### Exported DTOs
-- `RouteCalculationRequestDto`: Request parameters for route calculation
-- `RouteCalculationResultDto`: Route calculation response
-- `GeocodingResultDto`: Geocoding response
-- `LocationDto`: Basic location coordinates
-- `DurationDto`: Time duration representation
+1. **Resource Names**: Store AWS Location resource names in environment variables
+2. **Error Handling**: Always handle cases where geocoding returns no results
+3. **Coordinate Order**: AWS Location uses [longitude, latitude] order
+4. **Rate Limiting**: Implement appropriate rate limiting for production use
+5. **Caching**: Consider caching geocoding results to reduce API calls
 
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT

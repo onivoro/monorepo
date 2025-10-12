@@ -1,6 +1,6 @@
 # @onivoro/server-aws-s3
 
-A NestJS module for integrating with AWS S3 (Simple Storage Service), providing file upload, download, management, and bucket operations for your server applications.
+AWS S3 integration for NestJS applications with file upload/download capabilities.
 
 ## Installation
 
@@ -8,615 +8,285 @@ A NestJS module for integrating with AWS S3 (Simple Storage Service), providing 
 npm install @onivoro/server-aws-s3
 ```
 
-## Features
+## Overview
 
-- **S3 Client Integration**: Direct integration with AWS S3 service
-- **Bucket Operations**: Create, list, and manage S3 buckets
-- **File Upload/Download**: Upload and download files to/from S3
-- **Pre-signed URLs**: Generate secure, time-limited URLs for file access
-- **Multipart Uploads**: Support for large file uploads
-- **Object Management**: List, copy, move, and delete S3 objects
-- **Environment-Based Configuration**: Configurable S3 settings per environment
-- **Credential Provider Integration**: Seamless integration with AWS credential providers
+This library provides AWS S3 integration for NestJS applications, offering file upload, download, deletion, and pre-signed URL generation.
 
-## Quick Start
-
-### 1. Module Configuration
+## Module Setup
 
 ```typescript
+import { Module } from '@nestjs/common';
 import { ServerAwsS3Module } from '@onivoro/server-aws-s3';
 
 @Module({
   imports: [
-    ServerAwsS3Module.configure({
-      AWS_REGION: 'us-east-1',
-      AWS_BUCKET: process.env.S3_BUCKET_NAME,
-      AWS_PROFILE: process.env.AWS_PROFILE || 'default',
-    }),
-  ],
+    ServerAwsS3Module.configure()
+  ]
 })
 export class AppModule {}
 ```
 
-### 2. Basic Usage
-
-```typescript
-import { S3Client } from '@aws-sdk/client-s3';
-
-@Injectable()
-export class FileService {
-  constructor(private s3Client: S3Client) {}
-
-  async uploadFile(file: Buffer, key: string, bucket?: string) {
-    const uploadParams = {
-      Bucket: bucket || process.env.S3_BUCKET_NAME,
-      Key: key,
-      Body: file,
-      ContentType: 'application/octet-stream'
-    };
-
-    return this.s3Client.send(new PutObjectCommand(uploadParams));
-  }
-
-  async downloadFile(key: string, bucket?: string) {
-    const downloadParams = {
-      Bucket: bucket || process.env.S3_BUCKET_NAME,
-      Key: key
-    };
-
-    return this.s3Client.send(new GetObjectCommand(downloadParams));
-  }
-
-  async deleteFile(key: string, bucket?: string) {
-    const deleteParams = {
-      Bucket: bucket || process.env.S3_BUCKET_NAME,
-      Key: key
-    };
-
-    return this.s3Client.send(new DeleteObjectCommand(deleteParams));
-  }
-}
-```
-
 ## Configuration
 
-### ServerAwsS3Config
+The module uses environment-based configuration:
 
 ```typescript
-import { ServerAwsS3Config } from '@onivoro/server-aws-s3';
-
-export class AppS3Config extends ServerAwsS3Config {
-  AWS_REGION = process.env.AWS_REGION || 'us-east-1';
-  AWS_BUCKET = process.env.S3_BUCKET_NAME || 'my-default-bucket';
-  AWS_PROFILE = process.env.AWS_PROFILE || 'default';
+export class ServerAwsS3Config {
+  AWS_REGION: string;
+  AWS_PROFILE?: string;  // Optional AWS profile
+  AWS_S3_BUCKET: string;  // Default bucket name
+  AWS_S3_PREFIX?: string; // Optional prefix for all keys
 }
 ```
 
-### Environment Variables
+## Service
 
-```bash
-# AWS Configuration
-AWS_REGION=us-east-1
-AWS_PROFILE=default
+### S3Service
 
-# S3 Configuration
-S3_BUCKET_NAME=my-application-bucket
-```
-
-## Usage Examples
-
-### File Upload Service
+The service provides file operations:
 
 ```typescript
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { Injectable } from '@nestjs/common';
+import { S3Service } from '@onivoro/server-aws-s3';
 
 @Injectable()
-export class S3FileUploadService {
-  constructor(private s3Client: S3Client) {}
+export class FileStorageService {
+  constructor(private readonly s3Service: S3Service) {}
 
-  async uploadImage(imageBuffer: Buffer, fileName: string, metadata?: Record<string, string>) {
-    const params = {
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: `images/${fileName}`,
-      Body: imageBuffer,
-      ContentType: 'image/jpeg',
-      Metadata: metadata || {},
-      ServerSideEncryption: 'AES256'
-    };
-
-    return this.s3Client.send(new PutObjectCommand(params));
+  // Upload a file
+  async uploadFile(key: string, body: Buffer | string, contentType: string) {
+    const result = await this.s3Service.upload(key, body, contentType);
+    return result;
   }
 
-  async uploadDocument(documentBuffer: Buffer, fileName: string, mimeType: string) {
-    const params = {
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: `documents/${fileName}`,
-      Body: documentBuffer,
-      ContentType: mimeType,
-      StorageClass: 'STANDARD_IA' // Infrequent Access for cost savings
-    };
-
-    return this.s3Client.send(new PutObjectCommand(params));
+  // Upload a public file
+  async uploadPublicFile(key: string, body: Buffer | string, contentType: string) {
+    const result = await this.s3Service.uploadPublic(key, body, contentType);
+    return result;
   }
 
-  async uploadWithTags(fileBuffer: Buffer, key: string, tags: Record<string, string>) {
-    const putParams = {
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: key,
-      Body: fileBuffer
-    };
+  // Download a file
+  async downloadFile(key: string) {
+    const fileContent = await this.s3Service.download(key);
+    return fileContent;
+  }
 
-    await this.s3Client.send(new PutObjectCommand(putParams));
+  // Get a pre-signed download URL
+  async getDownloadUrl(key: string, expiresIn: number = 3600) {
+    const url = await this.s3Service.getPresignedDownloadUrl(key, expiresIn);
+    return url;
+  }
 
-    // Add tags after upload
-    const tagParams = {
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: key,
-      Tagging: {
-        TagSet: Object.entries(tags).map(([Key, Value]) => ({ Key, Value }))
-      }
-    };
+  // Delete a single file
+  async deleteFile(key: string) {
+    await this.s3Service.delete(key);
+  }
 
-    return this.s3Client.send(new PutObjectTaggingCommand(tagParams));
+  // Delete files by prefix
+  async deleteFilesByPrefix(prefix: string) {
+    await this.s3Service.deleteByPrefix(prefix);
   }
 }
 ```
 
-### Pre-signed URL Service
+## Available Methods
+
+### Upload Operations
+- **upload(key: string, body: Buffer | string, contentType: string, bucket?: string)** - Upload a private file
+- **uploadPublic(key: string, body: Buffer | string, contentType: string, bucket?: string)** - Upload a publicly accessible file
+
+### Download Operations
+- **download(key: string, bucket?: string)** - Download file content
+- **getPresignedDownloadUrl(key: string, expiresInSeconds?: number, bucket?: string)** - Generate pre-signed download URL
+
+### Delete Operations
+- **delete(key: string, bucket?: string)** - Delete a single object
+- **deleteByPrefix(prefix: string, bucket?: string)** - Delete all objects with a specific prefix
+
+## Direct Client Access
+
+The service exposes the underlying S3 client for advanced operations:
 
 ```typescript
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { 
+  ListObjectsV2Command,
+  CopyObjectCommand,
+  HeadObjectCommand,
+  GetObjectTaggingCommand
+} from '@aws-sdk/client-s3';
 
 @Injectable()
-export class S3PresignedUrlService {
-  constructor(private s3Client: S3Client) {}
+export class AdvancedS3Service {
+  constructor(private readonly s3Service: S3Service) {}
 
-  async generateDownloadUrl(key: string, expiresIn: number = 3600) {
-    const command = new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME,
+  // List objects in bucket
+  async listObjects(prefix?: string) {
+    const command = new ListObjectsV2Command({
+      Bucket: process.env.AWS_S3_BUCKET,
+      Prefix: prefix
+    });
+    
+    return await this.s3Service.s3Client.send(command);
+  }
+
+  // Copy object
+  async copyObject(sourceKey: string, destinationKey: string) {
+    const command = new CopyObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET,
+      CopySource: `${process.env.AWS_S3_BUCKET}/${sourceKey}`,
+      Key: destinationKey
+    });
+    
+    return await this.s3Service.s3Client.send(command);
+  }
+
+  // Get object metadata
+  async getObjectMetadata(key: string) {
+    const command = new HeadObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET,
       Key: key
     });
-
-    return getSignedUrl(this.s3Client, command, { expiresIn });
-  }
-
-  async generateUploadUrl(key: string, contentType: string, expiresIn: number = 3600) {
-    const command = new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: key,
-      ContentType: contentType
-    });
-
-    return getSignedUrl(this.s3Client, command, { expiresIn });
-  }
-
-  async generateMultipleDownloadUrls(keys: string[], expiresIn: number = 3600) {
-    const urlPromises = keys.map(key => this.generateDownloadUrl(key, expiresIn));
-    const urls = await Promise.all(urlPromises);
     
-    return keys.reduce((result, key, index) => {
-      result[key] = urls[index];
-      return result;
-    }, {} as Record<string, string>);
+    return await this.s3Service.s3Client.send(command);
   }
 }
 ```
 
-### Bucket Management Service
+## Complete Example
 
 ```typescript
-import { 
-  S3Client, 
-  CreateBucketCommand, 
-  ListBucketsCommand, 
-  DeleteBucketCommand,
-  HeadBucketCommand,
-  PutBucketVersioningCommand
-} from '@aws-sdk/client-s3';
+import { Module, Injectable, Controller, Post, Get, Delete, Param, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ServerAwsS3Module, S3Service } from '@onivoro/server-aws-s3';
+
+@Module({
+  imports: [ServerAwsS3Module.configure()],
+  controllers: [DocumentController],
+  providers: [DocumentService]
+})
+export class DocumentModule {}
 
 @Injectable()
-export class S3BucketService {
-  constructor(private s3Client: S3Client) {}
+export class DocumentService {
+  constructor(private readonly s3Service: S3Service) {}
 
-  async createBucket(bucketName: string, region?: string) {
-    const params = {
-      Bucket: bucketName,
-      CreateBucketConfiguration: region && region !== 'us-east-1' 
-        ? { LocationConstraint: region }
-        : undefined
-    };
-
-    return this.s3Client.send(new CreateBucketCommand(params));
-  }
-
-  async listBuckets() {
-    return this.s3Client.send(new ListBucketsCommand({}));
-  }
-
-  async bucketExists(bucketName: string): Promise<boolean> {
+  async uploadDocument(userId: string, file: Express.Multer.File) {
+    const key = `documents/${userId}/${Date.now()}-${file.originalname}`;
+    
     try {
-      await this.s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
-      return true;
+      // Upload to S3
+      const result = await this.s3Service.upload(
+        key,
+        file.buffer,
+        file.mimetype
+      );
+
+      return {
+        key,
+        location: result.Location,
+        etag: result.ETag
+      };
     } catch (error) {
-      return false;
-    }
-  }
-
-  async enableVersioning(bucketName: string) {
-    const params = {
-      Bucket: bucketName,
-      VersioningConfiguration: {
-        Status: 'Enabled'
-      }
-    };
-
-    return this.s3Client.send(new PutBucketVersioningCommand(params));
-  }
-
-  async deleteBucket(bucketName: string) {
-    return this.s3Client.send(new DeleteBucketCommand({ Bucket: bucketName }));
-  }
-}
-```
-
-### Object Management Service
-
-```typescript
-import { 
-  S3Client, 
-  ListObjectsV2Command, 
-  CopyObjectCommand, 
-  DeleteObjectsCommand,
-  GetObjectAttributesCommand
-} from '@aws-sdk/client-s3';
-
-@Injectable()
-export class S3ObjectService {
-  constructor(private s3Client: S3Client) {}
-
-  async listObjects(bucket: string, prefix?: string, maxKeys: number = 1000) {
-    const params = {
-      Bucket: bucket,
-      Prefix: prefix,
-      MaxKeys: maxKeys
-    };
-
-    return this.s3Client.send(new ListObjectsV2Command(params));
-  }
-
-  async copyObject(sourceBucket: string, sourceKey: string, destBucket: string, destKey: string) {
-    const params = {
-      Bucket: destBucket,
-      CopySource: `${sourceBucket}/${sourceKey}`,
-      Key: destKey
-    };
-
-    return this.s3Client.send(new CopyObjectCommand(params));
-  }
-
-  async deleteMultipleObjects(bucket: string, keys: string[]) {
-    const params = {
-      Bucket: bucket,
-      Delete: {
-        Objects: keys.map(Key => ({ Key }))
-      }
-    };
-
-    return this.s3Client.send(new DeleteObjectsCommand(params));
-  }
-
-  async getObjectMetadata(bucket: string, key: string) {
-    const params = {
-      Bucket: bucket,
-      Key: key,
-      ObjectAttributes: ['ETag', 'Checksum', 'ObjectSize', 'StorageClass']
-    };
-
-    return this.s3Client.send(new GetObjectAttributesCommand(params));
-  }
-
-  async moveObject(sourceBucket: string, sourceKey: string, destBucket: string, destKey: string) {
-    // Copy the object
-    await this.copyObject(sourceBucket, sourceKey, destBucket, destKey);
-    
-    // Delete the original
-    const deleteParams = {
-      Bucket: sourceBucket,
-      Key: sourceKey
-    };
-    
-    return this.s3Client.send(new DeleteObjectCommand(deleteParams));
-  }
-}
-```
-
-### Multipart Upload Service
-
-```typescript
-import { 
-  S3Client,
-  CreateMultipartUploadCommand,
-  UploadPartCommand,
-  CompleteMultipartUploadCommand,
-  AbortMultipartUploadCommand
-} from '@aws-sdk/client-s3';
-
-@Injectable()
-export class S3MultipartUploadService {
-  constructor(private s3Client: S3Client) {}
-
-  async initiateMultipartUpload(bucket: string, key: string, contentType?: string) {
-    const params = {
-      Bucket: bucket,
-      Key: key,
-      ContentType: contentType
-    };
-
-    return this.s3Client.send(new CreateMultipartUploadCommand(params));
-  }
-
-  async uploadPart(
-    bucket: string, 
-    key: string, 
-    uploadId: string, 
-    partNumber: number, 
-    body: Buffer
-  ) {
-    const params = {
-      Bucket: bucket,
-      Key: key,
-      UploadId: uploadId,
-      PartNumber: partNumber,
-      Body: body
-    };
-
-    return this.s3Client.send(new UploadPartCommand(params));
-  }
-
-  async completeMultipartUpload(
-    bucket: string, 
-    key: string, 
-    uploadId: string, 
-    parts: Array<{ ETag: string; PartNumber: number }>
-  ) {
-    const params = {
-      Bucket: bucket,
-      Key: key,
-      UploadId: uploadId,
-      MultipartUpload: { Parts: parts }
-    };
-
-    return this.s3Client.send(new CompleteMultipartUploadCommand(params));
-  }
-
-  async abortMultipartUpload(bucket: string, key: string, uploadId: string) {
-    const params = {
-      Bucket: bucket,
-      Key: key,
-      UploadId: uploadId
-    };
-
-    return this.s3Client.send(new AbortMultipartUploadCommand(params));
-  }
-
-  async uploadLargeFile(bucket: string, key: string, fileBuffer: Buffer, chunkSize: number = 5 * 1024 * 1024) {
-    if (fileBuffer.length <= chunkSize) {
-      // Use regular upload for small files
-      return this.s3Client.send(new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: fileBuffer
-      }));
-    }
-
-    // Initiate multipart upload
-    const { UploadId } = await this.initiateMultipartUpload(bucket, key);
-    
-    if (!UploadId) {
-      throw new Error('Failed to initiate multipart upload');
-    }
-
-    const parts: Array<{ ETag: string; PartNumber: number }> = [];
-    let partNumber = 1;
-    let start = 0;
-
-    try {
-      while (start < fileBuffer.length) {
-        const end = Math.min(start + chunkSize, fileBuffer.length);
-        const chunk = fileBuffer.slice(start, end);
-
-        const { ETag } = await this.uploadPart(bucket, key, UploadId, partNumber, chunk);
-        
-        if (ETag) {
-          parts.push({ PartNumber: partNumber, ETag });
-        }
-
-        start = end;
-        partNumber++;
-      }
-
-      return this.completeMultipartUpload(bucket, key, UploadId, parts);
-    } catch (error) {
-      // Abort the upload on error
-      await this.abortMultipartUpload(bucket, key, UploadId);
+      console.error('Upload failed:', error);
       throw error;
     }
   }
-}
-```
 
-## Advanced Usage
+  async getDocumentUrl(key: string) {
+    // Generate URL valid for 1 hour
+    const url = await this.s3Service.getPresignedDownloadUrl(key, 3600);
+    return { url };
+  }
 
-### File Processing Pipeline
+  async deleteUserDocuments(userId: string) {
+    const prefix = `documents/${userId}/`;
+    await this.s3Service.deleteByPrefix(prefix);
+  }
 
-```typescript
-@Injectable()
-export class S3FileProcessingService {
-  constructor(private s3Client: S3Client) {}
-
-  async processImagePipeline(imageBuffer: Buffer, fileName: string) {
-    const originalKey = `original/${fileName}`;
-    const processedKey = `processed/${fileName}`;
+  async uploadPublicAvatar(userId: string, imageBuffer: Buffer) {
+    const key = `avatars/${userId}.jpg`;
     
-    // Upload original
-    await this.s3Client.send(new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: originalKey,
-      Body: imageBuffer,
-      ContentType: 'image/jpeg',
-      Metadata: { 'processing-status': 'uploaded' }
-    }));
+    const result = await this.s3Service.uploadPublic(
+      key,
+      imageBuffer,
+      'image/jpeg'
+    );
 
-    // Process image (placeholder for actual image processing)
-    const processedBuffer = await this.processImage(imageBuffer);
+    return {
+      key,
+      publicUrl: result.Location
+    };
+  }
+}
 
-    // Upload processed version
-    await this.s3Client.send(new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: processedKey,
-      Body: processedBuffer,
-      ContentType: 'image/jpeg',
-      Metadata: { 'processing-status': 'completed', 'original-key': originalKey }
-    }));
+@Controller('documents')
+export class DocumentController {
+  constructor(private readonly documentService: DocumentService) {}
 
-    return { originalKey, processedKey };
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadDocument(
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    const userId = 'user123'; // Get from auth context
+    return await this.documentService.uploadDocument(userId, file);
   }
 
-  private async processImage(buffer: Buffer): Promise<Buffer> {
-    // Implement your image processing logic here
-    return buffer;
+  @Get(':key/url')
+  async getDocumentUrl(@Param('key') key: string) {
+    return await this.documentService.getDocumentUrl(key);
+  }
+
+  @Delete('user/:userId')
+  async deleteUserDocuments(@Param('userId') userId: string) {
+    await this.documentService.deleteUserDocuments(userId);
+    return { message: 'Documents deleted successfully' };
   }
 }
 ```
 
-### S3 Event Processing
+## Environment Variables
+
+```bash
+# Required
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=my-bucket-name
+
+# Optional
+AWS_PROFILE=my-profile
+AWS_S3_PREFIX=my-app/  # Prefix for all keys
+```
+
+## Error Handling
 
 ```typescript
-@Injectable()
-export class S3EventService {
-  constructor(private s3Client: S3Client) {}
-
-  async handleS3Event(event: any) {
-    for (const record of event.Records) {
-      if (record.eventSource === 'aws:s3') {
-        const bucket = record.s3.bucket.name;
-        const key = decodeURIComponent(record.s3.object.key);
-        const eventName = record.eventName;
-
-        switch (eventName) {
-          case 's3:ObjectCreated:*':
-            await this.handleObjectCreated(bucket, key);
-            break;
-          case 's3:ObjectRemoved:*':
-            await this.handleObjectRemoved(bucket, key);
-            break;
-          default:
-            console.log(`Unhandled S3 event: ${eventName}`);
-        }
-      }
-    }
-  }
-
-  private async handleObjectCreated(bucket: string, key: string) {
-    console.log(`Object created: ${bucket}/${key}`);
-    // Add your object creation handling logic
-  }
-
-  private async handleObjectRemoved(bucket: string, key: string) {
-    console.log(`Object removed: ${bucket}/${key}`);
-    // Add your object removal handling logic
+try {
+  await s3Service.download('non-existent-key');
+} catch (error) {
+  if (error.name === 'NoSuchKey') {
+    console.error('File not found');
+  } else if (error.name === 'AccessDenied') {
+    console.error('Permission denied');
   }
 }
 ```
+
+## Limitations
+
+- No multipart upload support (large files must be handled manually)
+- No built-in bucket management operations
+- No object tagging or versioning support
+- Limited to basic CRUD operations
+- For advanced features, use the exposed `s3Client` directly
 
 ## Best Practices
 
-### 1. Error Handling
-
-```typescript
-async safeS3Operation<T>(operation: () => Promise<T>): Promise<T | null> {
-  try {
-    return await operation();
-  } catch (error: any) {
-    if (error.name === 'NoSuchKey') {
-      console.warn('S3 object not found');
-      return null;
-    } else if (error.name === 'NoSuchBucket') {
-      console.error('S3 bucket does not exist');
-      throw new Error('Bucket not found');
-    } else {
-      console.error('S3 operation failed:', error);
-      throw error;
-    }
-  }
-}
-```
-
-### 2. File Validation
-
-```typescript
-validateFile(file: Buffer, allowedTypes: string[] = ['image/jpeg', 'image/png']): boolean {
-  // Implement file validation logic
-  return true;
-}
-```
-
-### 3. Cost Optimization
-
-```typescript
-// Use appropriate storage classes
-const getStorageClassForFile = (fileType: string, accessFrequency: 'frequent' | 'infrequent' | 'archive') => {
-  switch (accessFrequency) {
-    case 'frequent':
-      return 'STANDARD';
-    case 'infrequent':
-      return 'STANDARD_IA';
-    case 'archive':
-      return 'GLACIER';
-    default:
-      return 'STANDARD';
-  }
-};
-```
-
-## Testing
-
-```typescript
-import { Test, TestingModule } from '@nestjs/testing';
-import { ServerAwsS3Module } from '@onivoro/server-aws-s3';
-import { S3Client } from '@aws-sdk/client-s3';
-
-describe('S3Client', () => {
-  let s3Client: S3Client;
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      imports: [ServerAwsS3Module.configure({
-        AWS_REGION: 'us-east-1',
-        AWS_BUCKET: 'test-bucket',
-        AWS_PROFILE: 'test'
-      })],
-    }).compile();
-
-    s3Client = module.get<S3Client>(S3Client);
-  });
-
-  it('should be defined', () => {
-    expect(s3Client).toBeDefined();
-  });
-});
-```
-
-## API Reference
-
-### Exported Classes
-- `ServerAwsS3Config`: Configuration class for S3 settings
-- `ServerAwsS3Module`: NestJS module for S3 integration
-
-### Exported Services
-- `S3Client`: AWS S3 client instance (from @aws-sdk/client-s3)
+1. **Key Naming**: Use a consistent key naming strategy (e.g., `type/userId/timestamp-filename`)
+2. **Content Types**: Always specify correct content types for proper browser handling
+3. **Security**: Use pre-signed URLs for temporary access instead of public uploads when possible
+4. **Cleanup**: Implement lifecycle policies for automatic object expiration
+5. **Error Handling**: Always handle S3 errors appropriately
 
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT

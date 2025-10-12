@@ -1,39 +1,63 @@
 # @onivoro/server-typeorm-postgres
 
-A TypeORM PostgreSQL integration library providing repository patterns, SQL generation utilities, migration base classes, and PostgreSQL/Redshift-specific optimizations for enterprise-scale applications.
+A TypeORM PostgreSQL integration library providing a NestJS module configuration, enhanced repository patterns, SQL generation utilities, migration base classes, and custom decorators for PostgreSQL and Amazon Redshift applications.
 
 ## Installation
 
 ```bash
-npm install @onivoro/server-typeorm-postgres
+npm install @onivoro/server-typeorm-postgres typeorm-naming-strategies
 ```
 
-## Features
+## Overview
 
-- **TypeORM Repository Pattern**: Enhanced repository with PostgreSQL-specific features
-- **Redshift Repository**: Specialized repository for Amazon Redshift operations
-- **SQL Writer**: Static utility class for PostgreSQL DDL generation
-- **Migration Base Classes**: Simplified migration classes for common operations
-- **Custom Decorators**: Table and column decorators for entity definitions
-- **Pagination Support**: Abstract paging repository for custom implementations
-- **Type Safety**: Full TypeScript support with comprehensive type definitions
+This library provides:
+- **NestJS Module**: Dynamic module configuration for TypeORM with PostgreSQL
+- **Enhanced Repositories**: `TypeOrmRepository` with additional methods beyond standard TypeORM
+- **Redshift Repository**: Specialized repository for Amazon Redshift with optimizations
+- **SQL Writer**: Static utility for generating PostgreSQL DDL statements  
+- **Migration Base Classes**: Simplified classes for common migration operations
+- **Custom Decorators**: Simplified table and column decorators with OpenAPI integration
+- **Pagination Support**: Abstract base class for implementing paginated queries
+- **Utility Functions**: Helper functions for pagination, date queries, and data manipulation
 
-## Quick Start
-
-### Module Import
+## Module Setup
 
 ```typescript
 import { ServerTypeormPostgresModule } from '@onivoro/server-typeorm-postgres';
+import { User, Product } from './entities';
 
 @Module({
   imports: [
-    ServerTypeormPostgresModule
-  ],
+    ServerTypeormPostgresModule.configure(
+      [UserRepository, ProductRepository], // Injectables
+      [User, Product],                     // Entities
+      {
+        host: 'localhost',
+        port: 5432,
+        username: 'postgres',
+        password: 'password',
+        database: 'myapp',
+        ca: process.env.DB_CA,             // Optional SSL certificate
+        synchronize: false,                 // Never true in production
+        logging: false,
+        schema: 'public'                   // Optional schema
+      },
+      'default'                            // Connection name
+    )
+  ]
 })
 export class AppModule {}
 ```
 
-### Entity Definition with Custom Decorators
+The module:
+- Provides `DataSource` and `EntityManager` for injection
+- Caches data sources by name to prevent duplicate connections
+- Uses `SnakeNamingStrategy` for column naming
+- Supports SSL connections with certificate
+
+## Entity Definition with Custom Decorators
+
+The library provides simplified decorators that combine TypeORM and OpenAPI functionality:
 
 ```typescript
 import { 
@@ -48,34 +72,30 @@ export class User {
   @PrimaryTableColumn()
   id: number;
 
-  @TableColumn({ type: 'varchar', length: 255, unique: true })
+  @TableColumn({ type: 'varchar' })
   email: string;
 
-  @TableColumn({ type: 'varchar', length: 100 })
+  @TableColumn({ type: 'varchar' })
   firstName: string;
 
   @NullableTableColumn({ type: 'timestamp' })
   lastLoginAt?: Date;
 
-  @TableColumn({ type: 'boolean', default: true })
+  @TableColumn({ type: 'boolean' })
   isActive: boolean;
 
-  @TableColumn({ type: 'jsonb', default: '{}' })
+  @TableColumn({ type: 'jsonb' })
   metadata: Record<string, any>;
-
-  @TableColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
-  createdAt: Date;
-
-  @NullableTableColumn({ type: 'timestamp' })
-  deletedAt?: Date;
 }
 ```
+
+**Important**: These decorators only accept the `type` property from TypeORM's `ColumnOptions`. For full control over column options, use TypeORM's decorators directly.
 
 ## Repository Classes
 
 ### TypeOrmRepository
 
-Enhanced repository with PostgreSQL-specific methods:
+Enhanced repository with additional convenience methods:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -89,120 +109,100 @@ export class UserRepository extends TypeOrmRepository<User> {
     super(User, entityManager);
   }
 
-  // Core methods available:
-  async findByEmail(email: string): Promise<User> {
-    return this.getOne({ where: { email } });
-  }
-
-  async findActiveUsers(): Promise<User[]> {
-    return this.getMany({ 
-      where: { isActive: true } 
+  // Available methods:
+  async findUsers() {
+    // getOne - throws if more than one result
+    const user = await this.getOne({ where: { id: 1 } });
+    
+    // getMany - returns array
+    const activeUsers = await this.getMany({ where: { isActive: true } });
+    
+    // getManyAndCount - returns [items, count]
+    const [users, total] = await this.getManyAndCount({ 
+      where: { isActive: true },
+      take: 10,
+      skip: 0 
     });
-  }
-
-  async findUsersWithCount(): Promise<[User[], number]> {
-    return this.getManyAndCount({ 
-      where: { isActive: true } 
-    });
-  }
-
-  async createUser(userData: Partial<User>): Promise<User> {
-    return this.postOne(userData);
-  }
-
-  async createUsers(usersData: Partial<User>[]): Promise<User[]> {
-    return this.postMany(usersData);
-  }
-
-  async updateUser(id: number, updates: Partial<User>): Promise<void> {
-    // patch() uses TypeORM's update() method
-    await this.patch({ id }, updates);
-  }
-
-  async replaceUser(id: number, userData: Partial<User>): Promise<void> {
-    // put() uses TypeORM's save() method
-    await this.put({ id }, userData);
-  }
-
-  async deleteUser(id: number): Promise<void> {
-    await this.delete({ id });
-  }
-
-  async softDeleteUser(id: number): Promise<void> {
-    await this.softDelete({ id });
+    
+    // postOne - insert and return
+    const newUser = await this.postOne({ email: 'test@example.com', firstName: 'Test' });
+    
+    // postMany - bulk insert and return
+    const newUsers = await this.postMany([
+      { email: 'user1@example.com', firstName: 'User1' },
+      { email: 'user2@example.com', firstName: 'User2' }
+    ]);
+    
+    // patch - update using TypeORM's update() (doesn't trigger hooks)
+    await this.patch({ id: 1 }, { isActive: false });
+    
+    // put - update using TypeORM's save() (triggers hooks)  
+    await this.put({ id: 1 }, { isActive: false });
+    
+    // delete - hard delete
+    await this.delete({ id: 1 });
+    
+    // softDelete - soft delete
+    await this.softDelete({ id: 1 });
   }
 
   // Transaction support
-  async createUserInTransaction(userData: Partial<User>, entityManager: EntityManager): Promise<User> {
-    const txRepository = this.forTransaction(entityManager);
-    return txRepository.postOne(userData);
+  async updateInTransaction(userId: number, data: Partial<User>, entityManager: EntityManager) {
+    const txRepo = this.forTransaction(entityManager);
+    await txRepo.patch({ id: userId }, data);
   }
 
-  // Custom queries with mapping
-  async findUsersByMetadata(key: string, value: any): Promise<User[]> {
-    const query = `
-      SELECT * FROM ${this.getTableNameExpression()}
-      WHERE metadata->>'${key}' = $1
-      AND deleted_at IS NULL
-    `;
-    return this.queryAndMap(query, [value]);
-  }
-
-  // Using ILike for case-insensitive search
-  async searchUsers(searchTerm: string): Promise<User[]> {
-    const filters = this.buildWhereILike({
-      firstName: searchTerm,
-      lastName: searchTerm,
-      email: searchTerm
-    });
+  // Raw SQL with mapping
+  async customQuery() {
+    // query - returns raw results
+    const raw = await this.query('SELECT * FROM users WHERE created_at > $1', [new Date('2024-01-01')]);
     
+    // queryAndMap - maps results to entity type
+    const users = await this.queryAndMap('SELECT * FROM users WHERE active = $1', [true]);
+  }
+
+  // ILike helper for case-insensitive search  
+  async searchUsers(term: string) {
+    const filters = this.buildWhereILike({
+      firstName: term,
+      email: term
+    });
     return this.getMany({ where: filters });
   }
 }
 ```
 
+The repository also provides access to:
+- `repo` - The underlying TypeORM repository
+- `columns` - Metadata about entity columns
+- `table` - Table name
+- `schema` - Schema name
+
 ### TypeOrmPagingRepository
 
-Abstract base class for implementing pagination:
+Abstract base class requiring implementation of `getPage`:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { TypeOrmPagingRepository, IPageParams, IPagedData } from '@onivoro/server-typeorm-postgres';
-import { EntityManager, FindManyOptions } from 'typeorm';
+import { TypeOrmPagingRepository, IPageParams, IPagedData, getSkip, getPagingKey, removeFalseyKeys } from '@onivoro/server-typeorm-postgres';
+import { EntityManager } from 'typeorm';
 import { User } from './user.entity';
 
-// Define your custom params interface
-interface UserPageParams {
-  isActive?: boolean;
-  search?: string;
-  departmentId?: number;
-}
-
 @Injectable()
-export class UserPagingRepository extends TypeOrmPagingRepository<User, UserPageParams> {
+export class UserPagingRepository extends TypeOrmPagingRepository<User, UserSearchParams> {
   constructor(entityManager: EntityManager) {
     super(User, entityManager);
   }
 
-  // You must implement the abstract getPage method
-  async getPage(pageParams: IPageParams, params: UserPageParams): Promise<IPagedData<User>> {
+  // Must implement this abstract method
+  async getPage(pageParams: IPageParams, params: UserSearchParams): Promise<IPagedData<User>> {
     const { page, limit } = pageParams;
-    const skip = this.getSkip(page, limit);
+    const skip = getSkip(page, limit);
 
-    // Build where conditions
-    const where = this.removeFalseyKeys({
-      isActive: params.isActive,
-      departmentId: params.departmentId
+    const where = removeFalseyKeys({
+      departmentId: params.departmentId,
+      isActive: params.isActive
     });
-
-    // Add search conditions if provided
-    if (params.search) {
-      Object.assign(where, this.buildWhereILike({
-        firstName: params.search,
-        lastName: params.search,
-        email: params.search
-      }));
-    }
 
     const [data, total] = await this.getManyAndCount({
       where,
@@ -221,17 +221,12 @@ export class UserPagingRepository extends TypeOrmPagingRepository<User, UserPage
       hasPrev: page > 1
     };
   }
-
-  // You can add additional helper methods
-  getCacheKey(pageParams: IPageParams, params: UserPageParams): string {
-    return this.getPagingKey(pageParams.page, pageParams.limit) + '_' + JSON.stringify(params);
-  }
 }
 ```
 
-### RedshiftRepository
+### RedshiftRepository  
 
-Specialized repository for Amazon Redshift with custom SQL building:
+Specialized repository for Amazon Redshift with different SQL generation:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -244,58 +239,30 @@ export class AnalyticsRepository extends RedshiftRepository<AnalyticsEvent> {
   constructor(entityManager: EntityManager) {
     super(AnalyticsEvent, entityManager);
   }
-
-  // RedshiftRepository overrides several methods for Redshift compatibility
-  async createAnalyticsEvent(event: Partial<AnalyticsEvent>): Promise<AnalyticsEvent> {
-    // Uses custom SQL building and retrieval
-    return this.postOne(event);
-  }
-
-  async bulkInsertEvents(events: Partial<AnalyticsEvent>[]): Promise<AnalyticsEvent[]> {
-    // Uses optimized bulk insert
-    return this.postMany(events);
-  }
-
-  // Performance-optimized methods unique to RedshiftRepository
-  async insertWithoutReturn(event: Partial<AnalyticsEvent>): Promise<void> {
-    // Inserts without performing retrieval query
-    await this.postOneWithoutReturn(event);
-  }
-
-  async bulkInsertWithoutReturn(events: Partial<AnalyticsEvent>[]): Promise<void> {
-    // NOTE: Currently throws NotImplementedException
+  
+  // Optimized methods for Redshift
+  async bulkInsertEvents(events: Partial<AnalyticsEvent>[]) {
+    // postOne - performs manual insert + select
+    const event = await this.postOne({ type: 'click', userId: 123 });
+    
+    // postOneWithoutReturn - insert only, no select (better performance)
+    await this.postOneWithoutReturn({ type: 'view', userId: 456 });
+    
+    // postMany - bulk insert with retrieval
+    const inserted = await this.postMany(events);
+    
+    // postManyWithoutReturn - NOT IMPLEMENTED (throws error)
     // await this.postManyWithoutReturn(events);
-  }
-
-  // Custom analytics queries
-  async getEventAnalytics(startDate: Date, endDate: Date) {
-    const query = `
-      SELECT 
-        event_type,
-        COUNT(*) as event_count,
-        COUNT(DISTINCT user_id) as unique_users,
-        DATE_TRUNC('day', created_at) as event_date
-      FROM ${this.getTableNameExpression()}
-      WHERE created_at BETWEEN $1 AND $2
-      GROUP BY event_type, event_date
-      ORDER BY event_date DESC, event_count DESC
-    `;
-    
-    return this.query(query, [startDate, endDate]);
-  }
-
-  // Redshift handles JSONB differently
-  async findEventsByJsonData(key: string, value: any): Promise<AnalyticsEvent[]> {
-    // JSON_PARSE is used automatically for jsonb columns in Redshift
-    const query = `
-      SELECT * FROM ${this.getTableNameExpression()}
-      WHERE JSON_EXTRACT_PATH_TEXT(event_data, '${key}') = $1
-    `;
-    
-    return this.queryAndMap(query, [value]);
   }
 }
 ```
+
+Key differences in RedshiftRepository:
+- Uses raw SQL instead of TypeORM query builder for better Redshift compatibility
+- Automatically wraps JSONB values with `JSON_PARSE()` 
+- `getMany`, `getOne`, `delete`, `patch` use custom SQL generation
+- `put`, `forTransaction`, `getManyAndCount` throw `NotImplementedException`
+- `softDelete` uses patch with `deletedAt` field
 
 ## SQL Writer
 
@@ -303,310 +270,103 @@ Static utility class for generating PostgreSQL DDL:
 
 ```typescript
 import { SqlWriter } from '@onivoro/server-typeorm-postgres';
-import { TableColumnOptions } from 'typeorm';
 
-// Add single column
-const addColumnSql = SqlWriter.addColumn('users', {
-  name: 'phone_number',
-  type: 'varchar',
-  length: 20,
-  isNullable: true
-});
-// Returns: ALTER TABLE "users" ADD "phone_number" varchar(20)
+// All methods return SQL strings
+const sql1 = SqlWriter.addColumn('users', { name: 'phone', type: 'varchar', length: 20 });
+// Returns: ALTER TABLE "users" ADD "phone" varchar(20)
 
-// Create table with multiple columns
-const createTableSql = SqlWriter.createTable('products', [
+const sql2 = SqlWriter.addColumns('users', [
+  { name: 'phone', type: 'varchar', length: 20 },
+  { name: 'address', type: 'jsonb', nullable: true }
+]);
+
+const sql3 = SqlWriter.createTable('products', [
   { name: 'id', type: 'serial', isPrimary: true },
-  { name: 'name', type: 'varchar', length: 255, isNullable: false },
-  { name: 'price', type: 'decimal', precision: 10, scale: 2 },
-  { name: 'metadata', type: 'jsonb', default: {} },
-  { name: 'created_at', type: 'timestamp', default: 'CURRENT_TIMESTAMP' }
+  { name: 'name', type: 'varchar', length: 255 },
+  { name: 'price', type: 'decimal', precision: 10, scale: 2 }
 ]);
 
-// Drop table
-const dropTableSql = SqlWriter.dropTable('products');
-// Returns: DROP TABLE "products";
+const sql4 = SqlWriter.dropTable('old_table');
+// Returns: DROP TABLE "old_table";
 
-// Add multiple columns
-const addColumnsSql = SqlWriter.addColumns('products', [
-  { name: 'category_id', type: 'int', isNullable: true },
-  { name: 'sku', type: 'varchar', length: 50, isUnique: true }
-]);
+const sql5 = SqlWriter.dropColumn('users', { name: 'old_column' });  
+// Returns: ALTER TABLE "users" DROP COLUMN old_column
 
-// Drop column
-const dropColumnSql = SqlWriter.dropColumn('products', { name: 'old_column' });
-// Returns: ALTER TABLE "products" DROP COLUMN old_column
+const sql6 = SqlWriter.createIndex('users', 'email', false);
+// Returns: CREATE INDEX IF NOT EXISTS users_email ON "users"(email)
 
-// Create indexes
-const createIndexSql = SqlWriter.createIndex('products', 'name', false);
-// Returns: CREATE INDEX IF NOT EXISTS products_name ON "products"(name)
+const sql7 = SqlWriter.createUniqueIndex('users', 'username');
+// Returns: CREATE UNIQUE INDEX IF NOT EXISTS users_username ON "users"(username)
 
-const createUniqueIndexSql = SqlWriter.createUniqueIndex('products', 'sku');
-// Returns: CREATE UNIQUE INDEX IF NOT EXISTS products_sku ON "products"(sku)
-
-// Drop index
-const dropIndexSql = SqlWriter.dropIndex('products_name');
-// Returns: DROP INDEX IF EXISTS products_name
-
-// Handle special default values
-const jsonbColumn: TableColumnOptions = {
-  name: 'settings',
-  type: 'jsonb',
-  default: { notifications: true, theme: 'light' }
-};
-const jsonbSql = SqlWriter.addColumn('users', jsonbColumn);
-// Returns: ALTER TABLE "users" ADD "settings" jsonb DEFAULT '{"notifications":true,"theme":"light"}'::jsonb
-
-// Boolean and numeric defaults
-const booleanSql = SqlWriter.addColumn('users', {
-  name: 'is_verified',
-  type: 'boolean',
-  default: false
-});
-// Returns: ALTER TABLE "users" ADD "is_verified" boolean DEFAULT FALSE
+const sql8 = SqlWriter.dropIndex('users_email');
+// Returns: DROP INDEX IF EXISTS users_email
 ```
+
+Special handling for defaults:
+- JSONB values are stringified and cast: `'{"key":"value"}'::jsonb`
+- Booleans become `TRUE`/`FALSE`
+- Other values are quoted appropriately
 
 ## Migration Base Classes
 
-### TableMigrationBase
+Simplified migration classes that implement TypeORM's up/down methods:
 
 ```typescript
-import { TableMigrationBase } from '@onivoro/server-typeorm-postgres';
-import { MigrationInterface } from 'typeorm';
+import { 
+  TableMigrationBase,
+  ColumnMigrationBase,
+  ColumnsMigrationBase,
+  IndexMigrationBase,
+  DropTableMigrationBase,
+  DropColumnMigrationBase 
+} from '@onivoro/server-typeorm-postgres';
 
-export class CreateUsersTable1234567890 extends TableMigrationBase implements MigrationInterface {
+// Create table
+export class CreateUsersTable1234567890 extends TableMigrationBase {
   constructor() {
     super('users', [
       { name: 'id', type: 'serial', isPrimary: true },
-      { name: 'email', type: 'varchar', length: 255, isUnique: true, isNullable: false },
-      { name: 'first_name', type: 'varchar', length: 100, isNullable: false },
-      { name: 'metadata', type: 'jsonb', default: '{}' },
-      { name: 'is_active', type: 'boolean', default: true },
-      { name: 'created_at', type: 'timestamp', default: 'CURRENT_TIMESTAMP' },
-      { name: 'deleted_at', type: 'timestamp', isNullable: true }
+      { name: 'email', type: 'varchar', length: 255, isUnique: true }
     ]);
   }
 }
-```
 
-### ColumnMigrationBase
-
-```typescript
-import { ColumnMigrationBase } from '@onivoro/server-typeorm-postgres';
-
-export class AddUserPhoneNumber1234567891 extends ColumnMigrationBase {
+// Add single column
+export class AddUserPhone1234567891 extends ColumnMigrationBase {
   constructor() {
-    super('users', {
-      name: 'phone_number',
-      type: 'varchar',
-      length: 20,
-      isNullable: true
-    });
+    super('users', { name: 'phone', type: 'varchar', length: 20, isNullable: true });
   }
 }
-```
 
-### ColumnsMigrationBase
-
-```typescript
-import { ColumnsMigrationBase } from '@onivoro/server-typeorm-postgres';
-
-export class AddUserContactInfo1234567892 extends ColumnsMigrationBase {
+// Add multiple columns
+export class AddUserDetails1234567892 extends ColumnsMigrationBase {
   constructor() {
     super('users', [
-      { name: 'phone_number', type: 'varchar', length: 20, isNullable: true },
-      { name: 'secondary_email', type: 'varchar', length: 255, isNullable: true },
-      { name: 'address', type: 'jsonb', isNullable: true }
+      { name: 'phone', type: 'varchar', length: 20 },
+      { name: 'address', type: 'jsonb' }
     ]);
   }
 }
-```
 
-### IndexMigrationBase
-
-```typescript
-import { IndexMigrationBase } from '@onivoro/server-typeorm-postgres';
-
-export class CreateUserEmailIndex1234567893 extends IndexMigrationBase {
+// Create index
+export class IndexUserEmail1234567893 extends IndexMigrationBase {
   constructor() {
-    super('users', 'email', true); // table, column, unique
+    super('users', 'email', true); // table, column, isUnique
   }
 }
-```
 
-### DropTableMigrationBase & DropColumnMigrationBase
-
-```typescript
-import { DropTableMigrationBase, DropColumnMigrationBase } from '@onivoro/server-typeorm-postgres';
-
-export class DropLegacyUsersTable1234567894 extends DropTableMigrationBase {
+// Drop table
+export class DropOldTable1234567894 extends DropTableMigrationBase {
   constructor() {
     super('legacy_users');
   }
 }
 
-export class DropUserMiddleName1234567895 extends DropColumnMigrationBase {
+// Drop column  
+export class DropMiddleName1234567895 extends DropColumnMigrationBase {
   constructor() {
     super('users', { name: 'middle_name' });
   }
-}
-```
-
-## Building Repositories from Metadata
-
-Both TypeOrmRepository and RedshiftRepository support building instances from metadata:
-
-```typescript
-import { TypeOrmRepository, RedshiftRepository } from '@onivoro/server-typeorm-postgres';
-import { DataSource } from 'typeorm';
-
-// Define your entity type
-interface UserEvent {
-  id: number;
-  userId: number;
-  eventType: string;
-  eventData: any;
-  createdAt: Date;
-}
-
-// Build TypeORM repository from metadata
-const userEventRepo = TypeOrmRepository.buildFromMetadata<UserEvent>(dataSource, {
-  schema: 'public',
-  table: 'user_events',
-  columns: {
-    id: { 
-      databasePath: 'id', 
-      type: 'int', 
-      propertyPath: 'id', 
-      isPrimary: true,
-      default: undefined 
-    },
-    userId: { 
-      databasePath: 'user_id', 
-      type: 'int', 
-      propertyPath: 'userId', 
-      isPrimary: false,
-      default: undefined 
-    },
-    eventType: { 
-      databasePath: 'event_type', 
-      type: 'varchar', 
-      propertyPath: 'eventType', 
-      isPrimary: false,
-      default: undefined 
-    },
-    eventData: { 
-      databasePath: 'event_data', 
-      type: 'jsonb', 
-      propertyPath: 'eventData', 
-      isPrimary: false,
-      default: {} 
-    },
-    createdAt: { 
-      databasePath: 'created_at', 
-      type: 'timestamp', 
-      propertyPath: 'createdAt', 
-      isPrimary: false,
-      default: 'CURRENT_TIMESTAMP' 
-    }
-  }
-});
-
-// Build Redshift repository from metadata
-const analyticsRepo = RedshiftRepository.buildFromMetadata<UserEvent>(redshiftDataSource, {
-  schema: 'analytics',
-  table: 'user_events',
-  columns: {
-    // Same column definitions as above
-  }
-});
-
-// Use the repositories
-const events = await userEventRepo.getMany({ where: { userId: 123 } });
-const recentEvent = await userEventRepo.getOne({ where: { id: 456 } });
-```
-
-## Data Source Configuration
-
-```typescript
-import { dataSourceFactory, dataSourceConfigFactory } from '@onivoro/server-typeorm-postgres';
-import { User, Product, Order } from './entities';
-
-// Using data source factory
-const dataSource = dataSourceFactory('postgres-main', {
-  host: 'localhost',
-  port: 5432,
-  username: 'postgres',
-  password: 'password',
-  database: 'myapp'
-}, [User, Product, Order]);
-
-// Using config factory for more control
-const config = dataSourceConfigFactory('postgres-main', {
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT),
-  username: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-}, [User, Product, Order]);
-
-const dataSource = new DataSource(config);
-```
-
-## Type Definitions
-
-### Core Types
-
-```typescript
-// Table metadata
-interface TTableMeta {
-  databasePath: string;
-  type: string;
-  propertyPath: string;
-  isPrimary: boolean;
-  default?: any;
-}
-
-// Page parameters
-interface IPageParams {
-  page: number;
-  limit: number;
-}
-
-// Paged data result
-interface IPagedData<T> {
-  data: T[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrev: boolean;
-}
-
-// Data source options
-interface IDataSourceOptions {
-  host: string;
-  port: number;
-  username: string;
-  password: string;
-  database: string;
-  ssl?: any;
-  extra?: any;
-}
-
-// Entity provider interface
-interface IEntityProvider<TEntity, TFindOneOptions, TFindManyOptions, TFindOptionsWhere, TUpdateData> {
-  getOne(options: TFindOneOptions): Promise<TEntity>;
-  getMany(options: TFindManyOptions): Promise<TEntity[]>;
-  getManyAndCount(options: TFindManyOptions): Promise<[TEntity[], number]>;
-  postOne(body: Partial<TEntity>): Promise<TEntity>;
-  postMany(body: Partial<TEntity>[]): Promise<TEntity[]>;
-  delete(options: TFindOptionsWhere): Promise<void>;
-  softDelete(options: TFindOptionsWhere): Promise<void>;
-  put(options: TFindOptionsWhere, body: TUpdateData): Promise<void>;
-  patch(options: TFindOptionsWhere, body: TUpdateData): Promise<void>;
 }
 ```
 
@@ -614,115 +374,86 @@ interface IEntityProvider<TEntity, TFindOneOptions, TFindManyOptions, TFindOptio
 
 ```typescript
 import { 
-  getSkip, 
-  getPagingKey, 
+  getSkip,
+  getPagingKey,
   removeFalseyKeys,
   generateDateQuery,
-  getApiTypeFromColumn 
+  getApiTypeFromColumn,
+  dataSourceFactory,
+  dataSourceConfigFactory
 } from '@onivoro/server-typeorm-postgres';
 
-// Calculate skip value for pagination
+// Pagination helpers
 const skip = getSkip(2, 20); // page 2, limit 20 = skip 20
+const cacheKey = getPagingKey(2, 20); // "page_2_limit_20"
 
-// Generate cache key for pagination
-const cacheKey = getPagingKey(2, 20); // Returns: "page_2_limit_20"
-
-// Remove falsey values from object
-const cleanedFilters = removeFalseyKeys({
+// Remove null/undefined/empty string values
+const clean = removeFalseyKeys({ 
   name: 'John',
-  age: 0,        // Removed
-  active: false, // Kept (false is not falsey for this function)
-  email: '',     // Removed
-  dept: null     // Removed
+  age: null,      // removed
+  email: '',      // removed  
+  active: false   // kept
 });
 
-// Generate date range query
-const dateQuery = generateDateQuery('created_at', {
+// Date range query builder
+const dateFilter = generateDateQuery('created_at', {
   startDate: new Date('2024-01-01'),
   endDate: new Date('2024-12-31')
 });
+// Returns TypeORM Between operator
 
-// Get API type from TypeORM column metadata
-const apiType = getApiTypeFromColumn(columnMetadata);
+// Column type to API type mapping
+const apiType = getApiTypeFromColumn('varchar'); // 'string'
+const apiType2 = getApiTypeFromColumn('int'); // 'number'
+const apiType3 = getApiTypeFromColumn('jsonb'); // 'object'
+
+// Create data source
+const ds = dataSourceFactory('main', {
+  host: 'localhost',
+  port: 5432,
+  username: 'user',
+  password: 'pass',
+  database: 'db'
+}, [User, Product]);
 ```
 
-## Best Practices
+## Building Repositories from Metadata
 
-1. **Repository Pattern**: Extend TypeOrmRepository for standard PostgreSQL operations
-2. **Redshift Operations**: Use RedshiftRepository for analytics workloads with specific optimizations
-3. **Pagination**: Implement TypeOrmPagingRepository for consistent pagination across your app
-4. **Migrations**: Use migration base classes for consistent schema management
-5. **SQL Generation**: Use SqlWriter for complex DDL operations
-6. **Transactions**: Use `forTransaction()` to create transaction-scoped repositories
-7. **Performance**: For Redshift bulk inserts, use `postOneWithoutReturn()` when you don't need the inserted record back
-8. **Type Safety**: Leverage the strongly-typed column metadata for compile-time safety
-
-## Testing
+For dynamic entity handling without TypeORM decorators:
 
 ```typescript
-import { Test } from '@nestjs/testing';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { EntityManager } from 'typeorm';
-import { UserRepository } from './user.repository';
-import { User } from './user.entity';
+const metadata = {
+  schema: 'public',
+  table: 'events',
+  columns: {
+    id: { databasePath: 'id', type: 'int', propertyPath: 'id', isPrimary: true, default: undefined },
+    type: { databasePath: 'event_type', type: 'varchar', propertyPath: 'type', isPrimary: false, default: undefined },
+    data: { databasePath: 'event_data', type: 'jsonb', propertyPath: 'data', isPrimary: false, default: {} }
+  }
+};
 
-describe('UserRepository', () => {
-  let repository: UserRepository;
-  let entityManager: EntityManager;
+// Build TypeORM repository
+const eventRepo = TypeOrmRepository.buildFromMetadata(dataSource, metadata);
 
-  beforeEach(async () => {
-    const module = await Test.createTestingModule({
-      imports: [
-        TypeOrmModule.forRoot({
-          type: 'postgres',
-          host: 'localhost',
-          port: 5432,
-          username: 'test',
-          password: 'test',
-          database: 'test_db',
-          entities: [User],
-          synchronize: true,
-        }),
-        TypeOrmModule.forFeature([User])
-      ],
-      providers: [UserRepository],
-    }).compile();
-
-    entityManager = module.get<EntityManager>(EntityManager);
-    repository = new UserRepository(entityManager);
-  });
-
-  it('should create and retrieve user', async () => {
-    const userData = {
-      email: 'test@example.com',
-      firstName: 'John',
-      isActive: true
-    };
-
-    const user = await repository.postOne(userData);
-    expect(user.id).toBeDefined();
-    expect(user.email).toBe('test@example.com');
-
-    const foundUser = await repository.getOne({ where: { id: user.id } });
-    expect(foundUser).toEqual(user);
-  });
-
-  it('should handle transactions', async () => {
-    await entityManager.transaction(async (transactionalEntityManager) => {
-      const txRepository = repository.forTransaction(transactionalEntityManager);
-      
-      await txRepository.postOne({
-        email: 'tx@example.com',
-        firstName: 'Transaction',
-        isActive: true
-      });
-
-      // Transaction will be rolled back after test
-    });
-  });
-});
+// Build Redshift repository  
+const analyticsRepo = RedshiftRepository.buildFromMetadata(redshiftDataSource, metadata);
 ```
+
+## Important Implementation Details
+
+1. **Data Source Caching**: The module caches data sources by name to prevent multiple connections
+2. **Snake Case**: All database columns use snake_case via `SnakeNamingStrategy`
+3. **Column Decorators**: The custom decorators are thin wrappers - use TypeORM decorators for full control
+4. **Repository Methods**:
+   - `patch` uses TypeORM's `update()` - doesn't trigger entity hooks
+   - `put` uses TypeORM's `save()` - triggers entity hooks  
+   - `getOne` throws error if multiple results found
+5. **Redshift Limitations**:
+   - No transaction support
+   - No `getManyAndCount` 
+   - `postManyWithoutReturn` not implemented
+   - Automatic `JSON_PARSE()` wrapping for JSONB columns
 
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT

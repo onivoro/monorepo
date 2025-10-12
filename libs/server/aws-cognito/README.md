@@ -1,6 +1,6 @@
 # @onivoro/server-aws-cognito
 
-A comprehensive NestJS module for AWS Cognito integration, providing OIDC (OpenID Connect) and SAML authentication, token validation, user management, and seamless integration with AWS Cognito User Pools and Identity Pools.
+AWS Cognito integration for NestJS applications with OIDC/SAML authentication and token validation.
 
 ## Installation
 
@@ -8,533 +8,413 @@ A comprehensive NestJS module for AWS Cognito integration, providing OIDC (OpenI
 npm install @onivoro/server-aws-cognito
 ```
 
-## Features
+## Overview
 
-- **OIDC Authentication**: Full OpenID Connect support with AWS Cognito
-- **SAML Integration**: SAML 2.0 authentication and configuration
-- **Token Management**: JWT token validation, refresh, and management
-- **User Management**: User creation, profile management, and attribute handling
-- **Multi-Provider Support**: Support for multiple identity providers (Cognito, Entra ID)
-- **Cookie Management**: Secure cookie handling for session management
-- **Middleware Integration**: Authentication middleware for request processing
-- **Abstract Guards**: Extensible authentication guards for custom authorization
+This library provides comprehensive AWS Cognito integration for NestJS applications, supporting:
+- OIDC (OpenID Connect) authentication
+- SAML authentication configuration
+- JWT token validation and refresh
+- User management and attribute hydration
+- Cookie-based session management
+- Authentication guards and middlewares
 
-## Quick Start
+## Modules
 
-### 1. OIDC Module Configuration
+### 1. ServerAwsCognitoModule
+
+Base module for AWS Cognito integration.
+
+```typescript
+import { ServerAwsCognitoModule } from '@onivoro/server-aws-cognito';
+
+@Module({
+  imports: [
+    ServerAwsCognitoModule.configure()
+  ]
+})
+export class AppModule {}
+```
+
+Configuration:
+```typescript
+export class ServerAwsCognitoConfig {
+  AWS_COGNITO_USER_POOL_ID?: string;
+  AWS_REGION: string;
+  AWS_PROFILE?: string;
+}
+```
+
+### 2. ServerAwsCognitoOidcModule
+
+Module for OIDC authentication flow.
 
 ```typescript
 import { ServerAwsCognitoOidcModule } from '@onivoro/server-aws-cognito';
 
 @Module({
   imports: [
-    ServerAwsCognitoOidcModule.forRoot({
-      region: 'us-east-1',
-      userPoolId: process.env.COGNITO_USER_POOL_ID,
-      clientId: process.env.COGNITO_CLIENT_ID,
-      clientSecret: process.env.COGNITO_CLIENT_SECRET,
-      redirectUri: process.env.COGNITO_REDIRECT_URI,
-      issuer: process.env.COGNITO_ISSUER,
-    }),
-  ],
+    ServerAwsCognitoOidcModule.configure()
+  ]
 })
 export class AppModule {}
 ```
 
-### 2. SAML Module Configuration
-
+Configuration:
 ```typescript
-import { ServerAwsCognitoSamlModule } from '@onivoro/server-aws-cognito';
-
-@Module({
-  imports: [
-    ServerAwsCognitoSamlModule.forRoot({
-      region: 'us-east-1',
-      userPoolId: process.env.COGNITO_USER_POOL_ID,
-      identityProviderName: process.env.SAML_PROVIDER_NAME,
-      metadataUrl: process.env.SAML_METADATA_URL,
-    }),
-  ],
-})
-export class AppModule {}
-```
-
-### 3. Basic Authentication
-
-```typescript
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { HasTokenGuard, RequestUser, IdToken } from '@onivoro/server-aws-cognito';
-
-@Controller('protected')
-@UseGuards(HasTokenGuard)
-export class ProtectedController {
-  @Get('profile')
-  getProfile(
-    @RequestUser() user: any,
-    @IdToken() idToken: string
-  ) {
-    return { user, tokenPresent: !!idToken };
-  }
+export class ServerAwsCognitoOidcConfig {
+  COGNITO_CLIENT_ID: string;
+  COGNITO_DOMAIN_PREFIX: string;
+  COGNITO_OIDC_LOGOUT_URL?: string;
+  COGNITO_OIDC_REDIRECT_URL?: string;
+  SERVER_URL: string;
 }
 ```
 
-## Configuration Classes
-
-### ServerAwsCognitoOidcConfig
-
-```typescript
-import { ServerAwsCognitoOidcConfig } from '@onivoro/server-aws-cognito';
-
-export class AppCognitoOidcConfig extends ServerAwsCognitoOidcConfig {
-  region = process.env.AWS_REGION || 'us-east-1';
-  userPoolId = process.env.COGNITO_USER_POOL_ID;
-  clientId = process.env.COGNITO_CLIENT_ID;
-  clientSecret = process.env.COGNITO_CLIENT_SECRET;
-  redirectUri = process.env.COGNITO_REDIRECT_URI;
-  issuer = process.env.COGNITO_ISSUER;
-  scope = 'openid profile email';
-  responseType = 'code';
-}
-```
-
-### ServerAwsCognitoSamlConfig
-
-```typescript
-import { ServerAwsCognitoSamlConfig } from '@onivoro/server-aws-cognito';
-
-export class AppCognitoSamlConfig extends ServerAwsCognitoSamlConfig {
-  region = process.env.AWS_REGION || 'us-east-1';
-  userPoolId = process.env.COGNITO_USER_POOL_ID;
-  identityProviderName = process.env.SAML_PROVIDER_NAME;
-  metadataUrl = process.env.SAML_METADATA_URL;
-  attributeMapping = {
-    email: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
-    given_name: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname',
-    family_name: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname',
-  };
-}
-```
-
-## Services
-
-### CognitoUserService
-
-User management service for AWS Cognito operations:
-
-```typescript
-import { CognitoUserService } from '@onivoro/server-aws-cognito';
-
-@Injectable()
-export class UserManagementService {
-  constructor(private cognitoUserService: CognitoUserService) {}
-
-  async createUser(userData: {
-    email: string;
-    temporaryPassword: string;
-    attributes?: Record<string, string>;
-  }) {
-    return this.cognitoUserService.adminCreateUser({
-      UserPoolId: process.env.COGNITO_USER_POOL_ID,
-      Username: userData.email,
-      TemporaryPassword: userData.temporaryPassword,
-      UserAttributes: Object.entries(userData.attributes || {}).map(([Name, Value]) => ({
-        Name,
-        Value
-      })),
-      MessageAction: 'SUPPRESS'
-    });
-  }
-
-  async getUser(username: string) {
-    return this.cognitoUserService.adminGetUser({
-      UserPoolId: process.env.COGNITO_USER_POOL_ID,
-      Username: username
-    });
-  }
-
-  async updateUserAttributes(username: string, attributes: Record<string, string>) {
-    return this.cognitoUserService.adminUpdateUserAttributes({
-      UserPoolId: process.env.COGNITO_USER_POOL_ID,
-      Username: username,
-      UserAttributes: Object.entries(attributes).map(([Name, Value]) => ({
-        Name,
-        Value
-      }))
-    });
-  }
-
-  async deleteUser(username: string) {
-    return this.cognitoUserService.adminDeleteUser({
-      UserPoolId: process.env.COGNITO_USER_POOL_ID,
-      Username: username
-    });
-  }
-}
-```
+## Core Services
 
 ### CognitoTokenValidatorService
 
-Token validation and management service:
+Validates JWT tokens from AWS Cognito.
 
 ```typescript
 import { CognitoTokenValidatorService } from '@onivoro/server-aws-cognito';
 
 @Injectable()
-export class TokenService {
-  constructor(private tokenValidator: CognitoTokenValidatorService) {}
+export class AuthService {
+  constructor(
+    private readonly tokenValidator: CognitoTokenValidatorService
+  ) {}
 
-  async validateAccessToken(token: string) {
+  async validateToken(token: string) {
     try {
-      const decoded = await this.tokenValidator.verifyToken(token);
-      return { valid: true, payload: decoded };
+      const decoded = await this.tokenValidator.validate(token);
+      return { valid: true, claims: decoded };
     } catch (error) {
       return { valid: false, error: error.message };
     }
-  }
-
-  async validateIdToken(idToken: string) {
-    try {
-      const decoded = await this.tokenValidator.verifyIdToken(idToken);
-      return { valid: true, user: decoded };
-    } catch (error) {
-      return { valid: false, error: error.message };
-    }
-  }
-
-  async getTokenClaims(token: string) {
-    return this.tokenValidator.getTokenClaims(token);
   }
 }
 ```
 
 ### CognitoRefreshTokenService
 
-Refresh token management:
+Handles token refresh operations.
 
 ```typescript
 import { CognitoRefreshTokenService } from '@onivoro/server-aws-cognito';
 
 @Injectable()
-export class RefreshTokenService {
-  constructor(private refreshTokenService: CognitoRefreshTokenService) {}
+export class TokenService {
+  constructor(
+    private readonly refreshTokenService: CognitoRefreshTokenService
+  ) {}
 
-  async refreshTokens(refreshToken: string, clientId: string) {
-    return this.refreshTokenService.refreshTokens({
-      RefreshToken: refreshToken,
-      ClientId: clientId
-    });
-  }
-
-  async revokeToken(token: string, clientId: string) {
-    return this.refreshTokenService.revokeToken({
-      Token: token,
-      ClientId: clientId
-    });
+  async refreshAccessToken(refreshToken: string) {
+    const result = await this.refreshTokenService.refreshToken(refreshToken);
+    return result;
   }
 }
 ```
 
-### TokenRetrievalService
+### CognitoUserService
 
-Service for retrieving tokens from various sources:
-
-```typescript
-import { TokenRetrievalService } from '@onivoro/server-aws-cognito';
-
-@Injectable()
-export class AuthTokenService {
-  constructor(private tokenRetrievalService: TokenRetrievalService) {}
-
-  async exchangeCodeForTokens(authorizationCode: string, redirectUri: string) {
-    return this.tokenRetrievalService.exchangeCodeForTokens({
-      code: authorizationCode,
-      redirect_uri: redirectUri,
-      grant_type: 'authorization_code'
-    });
-  }
-
-  async getTokensFromRequest(request: any) {
-    return this.tokenRetrievalService.extractTokensFromRequest(request);
-  }
-}
-```
-
-### UserHydraterService
-
-Service for hydrating user data from tokens:
+Manages Cognito user operations.
 
 ```typescript
-import { UserHydraterService } from '@onivoro/server-aws-cognito';
+import { CognitoUserService } from '@onivoro/server-aws-cognito';
 
 @Injectable()
-export class UserContextService {
-  constructor(private userHydrater: UserHydraterService) {}
+export class UserService {
+  constructor(
+    private readonly cognitoUserService: CognitoUserService
+  ) {}
 
-  async hydrateUserFromToken(token: string) {
-    return this.userHydrater.hydrateUser(token);
+  async getUser(accessToken: string) {
+    const user = await this.cognitoUserService.getUser(accessToken);
+    return user;
   }
 
-  async getUserProfile(userId: string) {
-    return this.userHydrater.getUserProfile(userId);
+  async getUserAttributes(accessToken: string) {
+    const attributes = await this.cognitoUserService.getUserAttributes(accessToken);
+    return attributes;
   }
 }
 ```
 
 ### CookieService
 
-Secure cookie management for authentication:
+Manages authentication cookies.
 
 ```typescript
 import { CookieService } from '@onivoro/server-aws-cognito';
 
 @Injectable()
 export class SessionService {
-  constructor(private cookieService: CookieService) {}
+  constructor(
+    private readonly cookieService: CookieService
+  ) {}
 
-  setAuthCookies(response: any, tokens: { accessToken: string; idToken: string; refreshToken: string }) {
-    this.cookieService.setSecureCookie(response, 'access_token', tokens.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 3600000 // 1 hour
-    });
-
-    this.cookieService.setSecureCookie(response, 'id_token', tokens.idToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 3600000
-    });
-
-    this.cookieService.setSecureCookie(response, 'refresh_token', tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 2592000000 // 30 days
-    });
+  setAuthCookies(response: Response, tokens: Tokens) {
+    this.cookieService.setCookies(response, tokens);
   }
 
-  clearAuthCookies(response: any) {
-    this.cookieService.clearCookie(response, 'access_token');
-    this.cookieService.clearCookie(response, 'id_token');
-    this.cookieService.clearCookie(response, 'refresh_token');
+  clearAuthCookies(response: Response) {
+    this.cookieService.clearCookies(response);
   }
 }
 ```
 
-## Controllers
+### UserHydraterService
 
-The module includes several pre-built controllers:
-
-### OidcConfigController
+Hydrates user data from various sources.
 
 ```typescript
-@Controller('auth/oidc')
-export class AuthController {
-  @Get('config')
-  getOidcConfig() {
-    // Returns OIDC client configuration
-  }
+import { UserHydraterService } from '@onivoro/server-aws-cognito';
 
-  @Get('login')
-  initiateLogin() {
-    // Initiates OIDC login flow
-  }
+@Injectable()
+export class ProfileService {
+  constructor(
+    private readonly userHydrater: UserHydraterService
+  ) {}
 
-  @Get('callback')
-  handleCallback() {
-    // Handles OIDC callback
+  async hydrateUserProfile(userId: string, claims: any) {
+    const hydratedUser = await this.userHydrater.hydrate(userId, claims);
+    return hydratedUser;
   }
 }
 ```
 
-### TokenValidationController
+## Guards and Middleware
+
+### HasTokenGuard
+
+Guards routes requiring authentication.
 
 ```typescript
-@Controller('auth/token')
-export class TokenController {
-  @Post('validate')
-  validateToken() {
-    // Token validation endpoint
+import { HasTokenGuard } from '@onivoro/server-aws-cognito';
+
+@Controller('protected')
+@UseGuards(HasTokenGuard)
+export class ProtectedController {
+  @Get()
+  getProtectedResource() {
+    return { message: 'This is protected' };
   }
+}
+```
 
-  @Post('refresh')
-  refreshToken() {
-    // Token refresh endpoint
+### OidcAuthMiddleware
+
+Middleware for OIDC authentication flow.
+
+```typescript
+import { OidcAuthMiddleware } from '@onivoro/server-aws-cognito';
+
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(OidcAuthMiddleware)
+      .forRoutes('/api/*');
   }
 }
 ```
 
-## Data Transfer Objects (DTOs)
+### AbstractAuthGuard
 
-### OidcClientConfigDto
-
-```typescript
-export class OidcClientConfigDto {
-  client_id: string;
-  redirect_uris: string[];
-  response_types: string[];
-  grant_types: string[];
-  scope: string;
-  issuer: string;
-  authorization_endpoint: string;
-  token_endpoint: string;
-  userinfo_endpoint: string;
-  jwks_uri: string;
-}
-```
-
-### CognitoSamlClientConfigDto
+Base class for creating custom auth guards.
 
 ```typescript
-export class CognitoSamlClientConfigDto {
-  providerName: string;
-  metadataUrl: string;
-  attributeMapping: Record<string, string>;
-  signRequest: boolean;
-  signAssertion: boolean;
-}
-```
+import { AbstractAuthGuard } from '@onivoro/server-aws-cognito';
 
-### ClaimResponseDto
-
-```typescript
-export class ClaimResponseDto {
-  sub: string;
-  email: string;
-  email_verified: boolean;
-  given_name?: string;
-  family_name?: string;
-  picture?: string;
-  custom_attributes?: Record<string, any>;
+@Injectable()
+export class CustomAuthGuard extends AbstractAuthGuard {
+  protected async authorizeRequest(request: any): Promise<boolean> {
+    // Custom authorization logic
+    return true;
+  }
 }
 ```
 
 ## Decorators
 
-### Request Context Decorators
+### Request User Decorators
 
-| Decorator | Description |
-|-----------|-------------|
-| `@RequestUser()` | Extract user object from request |
-| `@IdToken()` | Extract ID token from request |
-| `@AccessTokenHeader()` | Extract access token from Authorization header |
-| `@Email()` | Extract email from token claims |
+Extract user information from authenticated requests.
 
 ```typescript
+import { 
+  RequestUser, 
+  Email, 
+  IdToken,
+  AccessTokenHeader 
+} from '@onivoro/server-aws-cognito';
+
 @Controller('user')
 export class UserController {
   @Get('profile')
-  @UseGuards(HasTokenGuard)
-  getProfile(
-    @RequestUser() user: any,
-    @Email() email: string,
-    @IdToken() idToken: string
+  getProfile(@RequestUser() user: any) {
+    return user;
+  }
+
+  @Get('email')
+  getEmail(@Email() email: string) {
+    return { email };
+  }
+
+  @Get('token-info')
+  getTokenInfo(
+    @IdToken() idToken: string,
+    @AccessTokenHeader() accessToken: string
   ) {
-    return { user, email, hasIdToken: !!idToken };
+    return { idToken, accessToken };
   }
 }
 ```
 
-## Utility Functions
+## Configuration Factories
 
-### OIDC Configuration Factory
+### OIDC Client Configuration
 
 ```typescript
 import { oidcClientConfigFactory, oidcEntraConfigFactory } from '@onivoro/server-aws-cognito';
 
 // AWS Cognito OIDC config
 const cognitoConfig = oidcClientConfigFactory({
+  clientId: 'your-client-id',
+  domainPrefix: 'your-domain',
   region: 'us-east-1',
-  userPoolId: 'us-east-1_ABC123',
-  clientId: 'your-client-id'
+  redirectUri: 'https://app.example.com/callback'
 });
 
-// Microsoft Entra ID config
+// Microsoft Entra (Azure AD) OIDC config
 const entraConfig = oidcEntraConfigFactory({
   tenantId: 'your-tenant-id',
-  clientId: 'your-client-id'
+  clientId: 'your-client-id',
+  redirectUri: 'https://app.example.com/callback'
 });
 ```
 
-### Token Utilities
+## Helper Functions
+
+### Token and Authorization Utilities
 
 ```typescript
-import { 
-  getTokenIssuerUrl, 
-  getTokenSigningKeyUrl, 
+import {
+  authorizeRequest,
+  extractOrigin,
   formatClaimOverrides,
-  getOidcUser 
+  getOidcUser,
+  getTokenIssuerUrl,
+  getTokenSigningKeyUrl,
+  getTokenSigningUrl
 } from '@onivoro/server-aws-cognito';
 
-// Get token issuer URL
-const issuerUrl = getTokenIssuerUrl('us-east-1', 'us-east-1_ABC123');
+// Authorize a request with custom logic
+const isAuthorized = await authorizeRequest(request, authFunction);
 
-// Get JWKS URL
-const jwksUrl = getTokenSigningKeyUrl('us-east-1', 'us-east-1_ABC123');
+// Extract origin from request
+const origin = extractOrigin(request);
 
-// Format claim overrides
-const claims = formatClaimOverrides({
-  email: 'user@example.com',
-  name: 'John Doe'
-});
+// Format claim overrides for SAML/OIDC
+const formattedClaims = formatClaimOverrides(claims);
 
-// Extract user from OIDC token
-const user = getOidcUser(decodedToken);
+// Get OIDC user information
+const user = await getOidcUser(accessToken, userInfoEndpoint);
+
+// Get token URLs
+const issuerUrl = getTokenIssuerUrl(region, userPoolId);
+const signingKeyUrl = getTokenSigningKeyUrl(region, userPoolId);
+const signingUrl = getTokenSigningUrl(region, userPoolId);
 ```
 
-## Middleware
+## Types and DTOs
 
-### OidcAuthMiddleware
+### Core Types
 
 ```typescript
-import { OidcAuthMiddleware } from '@onivoro/server-aws-cognito';
+import {
+  CognitoIdentityToken,
+  CognitoJwk,
+  CognitoAttribute,
+  Tokens,
+  ClaimResponse,
+  OidcClientConfig,
+  OidcClientConfigMetadata,
+  CognitoSamlClientConfig,
+  CognitoSamlIdpConfig
+} from '@onivoro/server-aws-cognito';
 
-@Module({
-  imports: [ServerAwsCognitoOidcModule],
-})
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(OidcAuthMiddleware)
-      .forRoutes({ path: 'protected/*', method: RequestMethod.ALL });
-  }
+// Token interface
+interface Tokens {
+  AccessToken: string;
+  IdToken: string;
+  RefreshToken?: string;
+  TokenType?: string;
+  ExpiresIn?: number;
+}
+
+// Identity token structure
+interface CognitoIdentityToken {
+  sub: string;
+  email?: string;
+  email_verified?: boolean;
+  cognito:username?: string;
+  // ... other claims
 }
 ```
 
-## Advanced Usage
-
-### Custom Auth Guard
+## Complete Example
 
 ```typescript
-import { AbstractAuthGuard } from '@onivoro/server-aws-cognito';
+import { Module, Controller, Get, UseGuards } from '@nestjs/common';
+import {
+  ServerAwsCognitoModule,
+  ServerAwsCognitoOidcModule,
+  HasTokenGuard,
+  RequestUser,
+  Email,
+  CognitoTokenValidatorService,
+  CognitoUserService
+} from '@onivoro/server-aws-cognito';
 
-@Injectable()
-export class CustomCognitoGuard extends AbstractAuthGuard<any> {
-  evaluateToken(token: any, request: any): boolean {
-    // Custom token evaluation logic
-    return token && token.token_use === 'access' && token.client_id === process.env.COGNITO_CLIENT_ID;
-  }
-}
-```
-
-### Multi-Provider Configuration
-
-```typescript
 @Module({
   imports: [
-    ServerAwsCognitoOidcModule.forRoot({
-      // Cognito configuration
-      region: 'us-east-1',
-      userPoolId: process.env.COGNITO_USER_POOL_ID,
-      clientId: process.env.COGNITO_CLIENT_ID,
-    }),
-    ServerAwsCognitoSamlModule.forRoot({
-      // SAML configuration
-      region: 'us-east-1',
-      userPoolId: process.env.COGNITO_USER_POOL_ID,
-      identityProviderName: 'EntraID',
-    })
-  ],
+    ServerAwsCognitoModule.configure(),
+    ServerAwsCognitoOidcModule.configure()
+  ]
 })
-export class MultiProviderModule {}
+export class AuthModule {}
+
+@Controller('auth')
+export class AuthController {
+  constructor(
+    private readonly tokenValidator: CognitoTokenValidatorService,
+    private readonly userService: CognitoUserService
+  ) {}
+
+  @Get('profile')
+  @UseGuards(HasTokenGuard)
+  async getProfile(
+    @RequestUser() user: any,
+    @Email() email: string
+  ) {
+    return {
+      user,
+      email,
+      timestamp: new Date()
+    };
+  }
+
+  @Post('validate')
+  async validateToken(@Body('token') token: string) {
+    try {
+      const decoded = await this.tokenValidator.validate(token);
+      return { valid: true, decoded };
+    } catch (error) {
+      return { valid: false, error: error.message };
+    }
+  }
+}
 ```
 
 ## Environment Variables
@@ -542,69 +422,28 @@ export class MultiProviderModule {}
 ```bash
 # AWS Configuration
 AWS_REGION=us-east-1
+AWS_PROFILE=default # Optional
 
-# Cognito OIDC
-COGNITO_USER_POOL_ID=us-east-1_ABC123
+# Cognito Configuration  
+AWS_COGNITO_USER_POOL_ID=us-east-1_XXXXXXXXX
+
+# OIDC Configuration
 COGNITO_CLIENT_ID=your-client-id
-COGNITO_CLIENT_SECRET=your-client-secret
-COGNITO_REDIRECT_URI=https://yourapp.com/auth/callback
-COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_ABC123
-
-# SAML
-SAML_PROVIDER_NAME=EntraID
-SAML_METADATA_URL=https://login.microsoftonline.com/tenant-id/federationmetadata/2007-06/federationmetadata.xml
+COGNITO_DOMAIN_PREFIX=your-domain
+COGNITO_OIDC_LOGOUT_URL=https://app.example.com/logout
+COGNITO_OIDC_REDIRECT_URL=https://app.example.com/callback
+SERVER_URL=https://app.example.com
 ```
 
-## Testing
+## Security Best Practices
 
-```typescript
-import { Test, TestingModule } from '@nestjs/testing';
-import { ServerAwsCognitoOidcModule, CognitoTokenValidatorService } from '@onivoro/server-aws-cognito';
-
-describe('CognitoTokenValidatorService', () => {
-  let service: CognitoTokenValidatorService;
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      imports: [ServerAwsCognitoOidcModule.forRoot({
-        region: 'us-east-1',
-        userPoolId: 'test-pool',
-        clientId: 'test-client'
-      })],
-    }).compile();
-
-    service = module.get<CognitoTokenValidatorService>(CognitoTokenValidatorService);
-  });
-
-  it('should validate tokens', () => {
-    expect(service).toBeDefined();
-  });
-});
-```
-
-## API Reference
-
-### Exported Modules
-- `ServerAwsCognitoModule`: Main Cognito module
-- `ServerAwsCognitoOidcModule`: OIDC-specific module
-- `ServerAwsCognitoSamlModule`: SAML-specific module
-
-### Exported Services
-- `CognitoUserService`: User management
-- `CognitoTokenValidatorService`: Token validation
-- `CognitoRefreshTokenService`: Token refresh
-- `TokenRetrievalService`: Token extraction
-- `TokenValidationService`: Token verification
-- `UserHydraterService`: User data hydration
-- `CookieService`: Cookie management
-
-### Exported Controllers
-- `OidcConfigController`: OIDC configuration endpoints
-- `OidcCookieController`: Cookie management endpoints
-- `SamlConfigController`: SAML configuration endpoints
-- `TokenRetrievalController`: Token retrieval endpoints
-- `TokenValidationController`: Token validation endpoints
+1. **Token Validation**: Always validate tokens before trusting claims
+2. **HTTPS Only**: Use HTTPS in production for all authentication flows
+3. **Secure Cookies**: Cookie service sets httpOnly and secure flags
+4. **CORS Configuration**: Configure CORS appropriately for your domain
+5. **Token Refresh**: Implement token refresh to maintain sessions
+6. **Guard Usage**: Use guards to protect sensitive endpoints
 
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT

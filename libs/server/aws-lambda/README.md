@@ -1,6 +1,6 @@
 # @onivoro/server-aws-lambda
 
-A NestJS module that provides type-safe AWS Lambda invocation capabilities for server-side applications.
+Type-safe AWS Lambda invocation for NestJS applications.
 
 ## Installation
 
@@ -8,414 +8,297 @@ A NestJS module that provides type-safe AWS Lambda invocation capabilities for s
 npm install @onivoro/server-aws-lambda
 ```
 
-## Features
+## Overview
 
-- Type-safe Lambda function invocation with full TypeScript support
-- Support for multiple Lambda event types (API Gateway, Cognito, S3, SQS)
-- Synchronous and asynchronous invocation patterns
-- Automatic response parsing and error handling
-- Clean NestJS module integration
-- AWS SDK v3 compatibility
+This library provides a simple AWS Lambda integration for NestJS applications, offering type-safe Lambda function invocation with automatic response parsing.
 
-## Quick Start
-
-Import and configure the module in your NestJS application:
+## Module Setup
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { ServerAwsLambdaModule, ServerAwsLambdaConfig } from '@onivoro/server-aws-lambda';
+import { ServerAwsLambdaModule } from '@onivoro/server-aws-lambda';
 
 @Module({
   imports: [
-    ServerAwsLambdaModule.configure(
-      ServerAwsLambdaModule,
-      new ServerAwsLambdaConfig('us-east-1')
-    ),
-  ],
+    ServerAwsLambdaModule.configure()
+  ]
 })
 export class AppModule {}
 ```
 
-Basic usage example:
+## Configuration
+
+The module uses environment-based configuration:
+
+```typescript
+export class ServerAwsLambdaConfig {
+  AWS_REGION: string;
+  AWS_PROFILE?: string;  // Optional AWS profile
+}
+```
+
+## Service
+
+### LambdaService
+
+The main service for invoking Lambda functions:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { LambdaService } from '@onivoro/server-aws-lambda';
 
 @Injectable()
-export class UserService {
+export class FunctionInvokerService {
   constructor(private readonly lambdaService: LambdaService) {}
 
-  async processUser(userId: string) {
-    const event = {
-      body: JSON.stringify({ userId }),
-      headers: { 'Content-Type': 'application/json' },
-    };
+  async invokeDataProcessor(data: any) {
+    const result = await this.lambdaService.invoke<ProcessorResponse>({
+      functionName: 'data-processor-function',
+      body: {
+        action: 'process',
+        data: data
+      }
+    });
+    
+    return result;
+  }
 
-    const result = await this.lambdaService.invoke(
-      event,
-      'user-processor-lambda'
+  async invokeWithoutPayload(functionName: string) {
+    return await this.lambdaService.invoke({
+      functionName
+    });
+  }
+}
+```
+
+## Method Details
+
+### invoke<T>(params)
+
+The `invoke` method accepts an object with the following properties:
+
+- **functionName** (string, required): The name or ARN of the Lambda function
+- **body** (any, optional): The payload to send to the function (will be JSON stringified)
+
+The method returns the parsed response of type `T` (if specified).
+
+## Response Parsing
+
+The service automatically handles response parsing with the following logic:
+
+1. If the Lambda returns a response with `statusCode` and `body` (API Gateway format), it parses the nested body
+2. Otherwise, it returns the Lambda response payload directly
+3. All responses are automatically JSON parsed
+
+## Type Safety
+
+Use TypeScript generics for type-safe responses:
+
+```typescript
+interface UserData {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const userData = await lambdaService.invoke<UserData>({
+  functionName: 'get-user-function',
+  body: { userId: '123' }
+});
+
+// userData is typed as UserData
+console.log(userData.email);
+```
+
+## Direct Client Access
+
+The service exposes the underlying Lambda client for advanced operations:
+
+```typescript
+import { 
+  ListFunctionsCommand,
+  GetFunctionCommand,
+  UpdateFunctionCodeCommand,
+  CreateFunctionCommand
+} from '@aws-sdk/client-lambda';
+
+@Injectable()
+export class AdvancedLambdaService {
+  constructor(private readonly lambdaService: LambdaService) {}
+
+  // List all Lambda functions
+  async listFunctions() {
+    const command = new ListFunctionsCommand({});
+    return await this.lambdaService.lambdaClient.send(command);
+  }
+
+  // Get function configuration
+  async getFunctionInfo(functionName: string) {
+    const command = new GetFunctionCommand({
+      FunctionName: functionName
+    });
+    return await this.lambdaService.lambdaClient.send(command);
+  }
+
+  // Invoke with specific invocation type
+  async invokeAsync(functionName: string, payload: any) {
+    const command = new InvokeCommand({
+      FunctionName: functionName,
+      InvocationType: 'Event', // Async invocation
+      Payload: Buffer.from(JSON.stringify(payload))
+    });
+    return await this.lambdaService.lambdaClient.send(command);
+  }
+}
+```
+
+## Complete Example
+
+```typescript
+import { Module, Injectable } from '@nestjs/common';
+import { ServerAwsLambdaModule, LambdaService } from '@onivoro/server-aws-lambda';
+
+// Types for Lambda responses
+interface CalculationResult {
+  result: number;
+  operation: string;
+  timestamp: string;
+}
+
+interface ValidationResult {
+  isValid: boolean;
+  errors?: string[];
+}
+
+@Module({
+  imports: [ServerAwsLambdaModule.configure()],
+  providers: [MicroserviceGateway],
+  exports: [MicroserviceGateway]
+})
+export class GatewayModule {}
+
+@Injectable()
+export class MicroserviceGateway {
+  constructor(private readonly lambdaService: LambdaService) {}
+
+  // Invoke calculation microservice
+  async calculate(operation: string, values: number[]) {
+    try {
+      const result = await this.lambdaService.invoke<CalculationResult>({
+        functionName: 'calculator-service',
+        body: {
+          operation,
+          values
+        }
+      });
+
+      console.log(`Calculation completed: ${result.operation} = ${result.result}`);
+      return result;
+    } catch (error) {
+      console.error('Calculation failed:', error);
+      throw error;
+    }
+  }
+
+  // Invoke validation microservice
+  async validateData(data: any, rules: any) {
+    const result = await this.lambdaService.invoke<ValidationResult>({
+      functionName: 'validator-service',
+      body: {
+        data,
+        rules
+      }
+    });
+
+    if (!result.isValid) {
+      throw new Error(`Validation failed: ${result.errors.join(', ')}`);
+    }
+
+    return result;
+  }
+
+  // Chain multiple Lambda functions
+  async processOrder(order: any) {
+    // Step 1: Validate order
+    await this.validateData(order, {
+      required: ['customerId', 'items', 'paymentMethod']
+    });
+
+    // Step 2: Calculate totals
+    const calculation = await this.calculate('sum', 
+      order.items.map(item => item.price * item.quantity)
     );
 
-    return result;
+    // Step 3: Process payment
+    const payment = await this.lambdaService.invoke<{transactionId: string}>({
+      functionName: 'payment-processor',
+      body: {
+        amount: calculation.result,
+        paymentMethod: order.paymentMethod,
+        customerId: order.customerId
+      }
+    });
+
+    return {
+      orderId: order.id,
+      total: calculation.result,
+      transactionId: payment.transactionId
+    };
   }
 }
 ```
 
-## Configuration
-
-The module requires minimal configuration:
+## Error Handling
 
 ```typescript
-export class ServerAwsLambdaConfig {
-  constructor(public AWS_REGION: string) {}
+try {
+  const result = await lambdaService.invoke({
+    functionName: 'my-function',
+    body: { data: 'test' }
+  });
+} catch (error) {
+  if (error.name === 'ResourceNotFoundException') {
+    console.error('Lambda function not found');
+  } else if (error.name === 'TooManyRequestsException') {
+    console.error('Rate limit exceeded');
+  } else if (error.FunctionError) {
+    console.error('Lambda function error:', error.Payload);
+  }
 }
 ```
 
-### Environment Variables
-
-Configure your AWS region through environment variables:
+## Environment Variables
 
 ```bash
+# Required: AWS region
 AWS_REGION=us-east-1
+
+# Optional: AWS profile
+AWS_PROFILE=my-profile
 ```
 
-### Advanced Configuration
+## AWS Credentials
 
-For custom Lambda client configuration:
+The module uses the standard AWS SDK credential chain:
+1. Environment variables
+2. Shared credentials file
+3. IAM roles (for EC2/ECS/Lambda)
 
-```typescript
-import { LambdaClient } from '@aws-sdk/client-lambda';
+## Limitations
 
-// The module automatically creates a Lambda client with your region
-// AWS credentials are loaded from the standard AWS credential chain
-```
-
-## Usage Examples
-
-### API Gateway Event with Body
-
-```typescript
-import { IEventWithBody } from '@onivoro/server-aws-lambda';
-
-interface CreateOrderDto {
-  productId: string;
-  quantity: number;
-}
-
-async createOrder(orderData: CreateOrderDto) {
-  const event: IEventWithBody<CreateOrderDto> = {
-    body: JSON.stringify(orderData),
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer token123',
-    },
-  };
-
-  // Invoke order processing Lambda
-  const response = await this.lambdaService.invoke(
-    event,
-    'order-processor-lambda'
-  );
-
-  return response;
-}
-```
-
-### API Gateway Event with Path Parameters
-
-```typescript
-import { IEventWithPathParams } from '@onivoro/server-aws-lambda';
-
-interface UserPathParams {
-  userId: string;
-}
-
-async getUser(userId: string) {
-  const event: IEventWithPathParams<UserPathParams> = {
-    pathParameters: { userId },
-    headers: { 'Accept': 'application/json' },
-  };
-
-  const user = await this.lambdaService.invoke(
-    event,
-    'get-user-lambda'
-  );
-
-  return user;
-}
-```
-
-### API Gateway Event with Query Parameters
-
-```typescript
-import { IEventWithQueryParams } from '@onivoro/server-aws-lambda';
-
-interface SearchParams {
-  q: string;
-  limit: string;
-  offset: string;
-}
-
-async searchProducts(query: string, limit = 10, offset = 0) {
-  const event: IEventWithQueryParams<SearchParams> = {
-    queryStringParameters: {
-      q: query,
-      limit: limit.toString(),
-      offset: offset.toString(),
-    },
-  };
-
-  const results = await this.lambdaService.invoke(
-    event,
-    'product-search-lambda'
-  );
-
-  return results;
-}
-```
-
-### Cognito Pre-Token Generation Event
-
-```typescript
-import { IPreTokenGenerationEvent } from '@onivoro/server-aws-lambda';
-
-async customizeTokens(userId: string, groups: string[]) {
-  const event: IPreTokenGenerationEvent = {
-    userPoolId: 'us-east-1_ABC123',
-    request: {
-      userAttributes: {
-        sub: userId,
-        email: 'user@example.com',
-      },
-      groupConfiguration: {
-        groupsToOverride: groups,
-      },
-    },
-  };
-
-  const response = await this.lambdaService.invoke(
-    event,
-    'token-customizer-lambda'
-  );
-
-  return response;
-}
-```
-
-### Asynchronous Invocation
-
-```typescript
-import { InvocationType } from '@aws-sdk/client-lambda';
-
-async triggerBackgroundJob(jobData: any) {
-  const event = {
-    body: JSON.stringify(jobData),
-    headers: { 'X-Job-Type': 'data-processing' },
-  };
-
-  // Fire-and-forget invocation
-  await this.lambdaService.invoke(
-    event,
-    'background-job-lambda',
-    InvocationType.Event // Asynchronous invocation
-  );
-
-  // Returns immediately without waiting for Lambda response
-  return { jobId: jobData.id, status: 'queued' };
-}
-```
-
-### Generic Event with Multiple Parameters
-
-```typescript
-import { IEvent } from '@onivoro/server-aws-lambda';
-
-interface OrderBody {
-  items: Array<{ sku: string; quantity: number }>;
-}
-
-interface OrderPathParams {
-  customerId: string;
-}
-
-interface OrderQueryParams {
-  couponCode?: string;
-}
-
-async processComplexOrder(
-  customerId: string,
-  items: OrderBody['items'],
-  couponCode?: string
-) {
-  const event: IEvent<OrderBody, OrderPathParams, OrderQueryParams> = {
-    body: JSON.stringify({ items }),
-    pathParameters: { customerId },
-    queryStringParameters: couponCode ? { couponCode } : {},
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Request-ID': crypto.randomUUID(),
-    },
-    requestContext: {
-      authorizer: {
-        claims: {
-          sub: customerId,
-          'custom:role': 'premium-customer',
-        },
-      },
-    },
-  };
-
-  const order = await this.lambdaService.invoke(
-    event,
-    'complex-order-processor'
-  );
-
-  return order;
-}
-```
-
-### Error Handling
-
-```typescript
-async safeInvoke(event: any, functionName: string) {
-  try {
-    const result = await this.lambdaService.invoke(event, functionName);
-    
-    // Note: invoke returns null if response parsing fails
-    if (result === null) {
-      throw new Error('Failed to parse Lambda response');
-    }
-    
-    return result;
-  } catch (error) {
-    // Handle AWS SDK errors (network, permissions, etc.)
-    console.error('Lambda invocation failed:', error);
-    throw new InternalServerErrorException('Service temporarily unavailable');
-  }
-}
-```
-
-## API Reference
-
-### LambdaService
-
-The main service for invoking Lambda functions.
-
-#### Methods
-
-##### `invoke<TEvent>(event: TEvent, lambdaName: string, invocationType?: InvocationType): Promise<any>`
-
-Invokes a Lambda function with the specified event.
-
-- `event`: The event payload to send to the Lambda function
-- `lambdaName`: The name or ARN of the Lambda function to invoke
-- `invocationType`: Optional invocation type (default: `RequestResponse`)
-  - `RequestResponse`: Synchronous invocation
-  - `Event`: Asynchronous invocation
-  - `DryRun`: Validate parameters and permissions without invoking
-
-Returns the parsed response body or `null` if parsing fails.
-
-### Event Interfaces
-
-#### `IEvent<TBody, TPathParameters, TQueryStringParameters>`
-
-Base event interface supporting multiple parameter types.
-
-```typescript
-interface IEvent<TBody = any, TPathParameters = any, TQueryStringParameters = any> {
-  body?: string;
-  headers?: { [key: string]: string };
-  pathParameters?: TPathParameters;
-  queryStringParameters?: TQueryStringParameters;
-  requestContext?: {
-    authorizer?: {
-      claims?: { [key: string]: string };
-    };
-  };
-  Records?: any[];
-  userPoolId?: string;
-  request?: any;
-}
-```
-
-#### Specialized Event Types
-
-- `IEventWithBody<TBody>`: Events with JSON body payload
-- `IEventWithPathParams<TPathParameters>`: Events with path parameters
-- `IEventWithQueryParams<TQueryStringParameters>`: Events with query string parameters
-- `IPreTokenGenerationEvent`: Cognito pre-token generation trigger events
-
-### Configuration Classes
-
-#### `ServerAwsLambdaConfig`
-
-Configuration class for the Lambda module.
-
-```typescript
-export class ServerAwsLambdaConfig {
-  constructor(public AWS_REGION: string) {}
-}
-```
+- Only supports synchronous invocation (RequestResponse)
+- No built-in retry logic
+- Assumes JSON payloads and responses
+- For advanced invocation options, use the exposed `lambdaClient` directly
 
 ## Best Practices
 
-1. **Type Your Events**: Always use the provided TypeScript interfaces for type safety
-2. **Handle Null Responses**: The `invoke` method returns `null` on parsing errors - always check for this
-3. **Use Appropriate Invocation Types**: Use `Event` type for fire-and-forget operations to avoid timeouts
-4. **Structure Lambda Responses**: Ensure your Lambda functions return API Gateway-style responses with a `body` property
-5. **Implement Retry Logic**: Add retry mechanisms for transient failures
-6. **Monitor Invocation Metrics**: Track Lambda invocation success rates and latencies
-7. **Set Appropriate Timeouts**: Configure Lambda timeouts based on expected execution time
-8. **Use Environment-Specific Function Names**: Parameterize Lambda function names for different environments
-
-## Testing
-
-Example test setup:
-
-```typescript
-import { Test } from '@nestjs/testing';
-import { LambdaService } from '@onivoro/server-aws-lambda';
-
-describe('UserService', () => {
-  let userService: UserService;
-  let lambdaService: jest.Mocked<LambdaService>;
-
-  beforeEach(async () => {
-    const module = await Test.createTestingModule({
-      providers: [
-        UserService,
-        {
-          provide: LambdaService,
-          useValue: {
-            invoke: jest.fn(),
-          },
-        },
-      ],
-    }).compile();
-
-    userService = module.get(UserService);
-    lambdaService = module.get(LambdaService);
-  });
-
-  it('should invoke user processor lambda', async () => {
-    const mockResponse = { userId: '123', status: 'processed' };
-    lambdaService.invoke.mockResolvedValue(mockResponse);
-
-    const result = await userService.processUser('123');
-
-    expect(lambdaService.invoke).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: JSON.stringify({ userId: '123' }),
-      }),
-      'user-processor-lambda'
-    );
-    expect(result).toEqual(mockResponse);
-  });
-});
-```
+1. **Function Naming**: Use consistent naming conventions for Lambda functions
+2. **Error Handling**: Always handle potential Lambda errors and timeouts
+3. **Payload Size**: Keep payloads under 6 MB (synchronous invocation limit)
+4. **Timeouts**: Set appropriate timeouts for your Lambda functions
+5. **Monitoring**: Use CloudWatch Logs and X-Ray for debugging
 
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT
