@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/isomorphic-fhir",
-  "version": "24.30.14",
+  "version": "24.30.15",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",

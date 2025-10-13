@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-aws-sqs",
-  "version": "24.30.14",
+  "version": "24.30.15",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -10,8 +10,8 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/server-aws-credential-providers": "24.30.14",
-    "@onivoro/server-common": "24.30.14",
+    "@onivoro/server-aws-credential-providers": "24.30.15",
+    "@onivoro/server-common": "24.30.15",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
