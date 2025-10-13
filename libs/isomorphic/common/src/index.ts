@@ -1,6 +1,5 @@
 export * from './lib/constants/api-id-header.constant';
 export * from './lib/constants/api-key-header.constant';
-export * from './lib/constants/auth-cookie-name.constant';
 export * from './lib/constants/regexes.constant';
 
 export * from './lib/functions/arrange-act-assert.function';
@@ -30,7 +29,6 @@ export * from './lib/functions/split-date-range-into-days.function';
 export * from './lib/functions/use-date.function';
 
 export * from './lib/types/access-token.interface';
-export * from './lib/types/company.type';
 export * from './lib/types/createable.type';
 export * from './lib/types/keys-of.type';
 export * from './lib/types/lookup.interface';
