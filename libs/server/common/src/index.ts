@@ -10,12 +10,14 @@ export * from './lib/constants/api-key-header.constant';
 
 export * from './lib/decorators/api-body-unspecified.decorator';
 export * from './lib/decorators/api-query-paged-params.decorator';
+export * from './lib/decorators/api-query-sort-params.decorator';
 export * from './lib/decorators/api-response-paged.decorator';
 export * from './lib/decorators/api-response-unspecified.decorator';
 export * from './lib/decorators/api-response-unspecified-array.decorator';
 export * from './lib/decorators/default-api-controller.decorator';
 export * from './lib/decorators/environment-class.decorator';
 export * from './lib/decorators/query-paged-params.decorator';
+export * from './lib/decorators/query-sort-params.decorator';
 
 export * from './lib/dtos/account-user.dto';
 export * from './lib/dtos/body.dto';

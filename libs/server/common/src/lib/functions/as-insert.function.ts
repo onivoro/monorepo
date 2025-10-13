@@ -1,3 +1,4 @@
+// TODO: DEPRECATE THIS
 export function asInsert(table: string, objects: Array<Record<string, any>>) {
     const statements: string[] = [];
 
