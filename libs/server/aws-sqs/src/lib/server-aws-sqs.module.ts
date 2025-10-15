@@ -22,7 +22,6 @@ export class ServerAwsSqsModule {
             ? sqsClient
             : sqsClient = new SQSClient({
               region: config.AWS_REGION,
-              logger: console,
               credentials
             }),
             inject: [AwsCredentials]

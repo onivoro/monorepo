@@ -17,7 +17,8 @@ export class SqsService {
 
       await this.sqs.send(command);
     } catch (err) {
-      console.error(`Error sending data to SQS:`, event, err);
+      console.error(`Error sending data to SQS:`, err);
+      throw err;
     }
   }
 
@@ -84,8 +85,6 @@ export class SqsService {
         console.log(`Received ${messages.length} messages`);
 
         const parsedMessages: Event[] = messages.map(({ Body }: any) => JSON.parse(Body || '{}'));
-
-        console.log(parsedMessages);
 
         if (parsedMessages?.length) {
           console.log(`processing messages iteration ${iteration}`);
