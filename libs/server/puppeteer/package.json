@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-puppeteer",
-  "version": "24.30.15",
+  "version": "24.30.16",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -10,8 +10,8 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/isomorphic-common": "24.30.15",
-    "@onivoro/server-common": "24.30.15",
+    "@onivoro/isomorphic-common": "24.30.16",
+    "@onivoro/server-common": "24.30.16",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
