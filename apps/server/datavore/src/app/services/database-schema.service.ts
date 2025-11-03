@@ -78,11 +78,9 @@ export class DatabaseSchemaService {
     const tables = await dataSource.query(query);
 
     return tables.map(table => ({
-      tableName: table.table_name || table.name // Handle both standard and SQLite formats
+      tableName: table.table_name || table.TABLE_NAME || table.name
     }));
-  }
-
-  /**
+  }  /**
    * Get data from a specific table
    */
   async getTableData(dataSource: DataSource, tableName: string): Promise<any[]> {
@@ -107,26 +105,33 @@ export class DatabaseSchemaService {
       dataSource.query(this.getIndicesQuery(dbType), [tableName])
     ]);
 
+    console.info('Raw columns result:', JSON.stringify(columns.slice(0, 2)));
+    console.info('Raw primaryKeys result:', JSON.stringify(primaryKeys.slice(0, 2)));
+
     return {
-      columns: columns.map(col => ({
-        columnName: col.column_name,
-        dataType: col.data_type,
-        isNullable: col.is_nullable,
-        columnDefault: col.column_default
-      })),
+      columns: columns.map(col => {
+        const mapped = {
+          columnName: col.column_name || col.COLUMN_NAME,
+          dataType: col.data_type || col.DATA_TYPE,
+          isNullable: col.is_nullable || col.IS_NULLABLE,
+          columnDefault: col.column_default || col.COLUMN_DEFAULT
+        };
+        console.info('Mapping column:', JSON.stringify(col), '->', JSON.stringify(mapped));
+        return mapped;
+      }),
       primaryKeys: primaryKeys.map(pk => ({
-        columnName: pk.column_name
+        columnName: pk.column_name || pk.COLUMN_NAME
       })),
       foreignKeys: foreignKeys.map(fk => ({
-        columnName: fk.column_name,
-        foreignTableName: fk.foreign_table_name,
-        foreignColumnName: fk.foreign_column_name,
-        constraintName: fk.constraint_name
+        columnName: fk.column_name || fk.COLUMN_NAME,
+        foreignTableName: fk.foreign_table_name || fk.FOREIGN_TABLE_NAME,
+        foreignColumnName: fk.foreign_column_name || fk.FOREIGN_COLUMN_NAME,
+        constraintName: fk.constraint_name || fk.CONSTRAINT_NAME
       })),
       indices: indices.map(idx => ({
-        indexName: idx.index_name,
-        columnName: idx.column_name,
-        isUnique: idx.is_unique
+        indexName: idx.index_name || idx.INDEX_NAME,
+        columnName: idx.column_name || idx.COLUMN_NAME,
+        isUnique: idx.is_unique || idx.IS_UNIQUE
       }))
     };
   }

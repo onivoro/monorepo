@@ -83,18 +83,7 @@ export class AppController {
                     $div({
                       className: 'sidebar-header',
                       children: [
-                        $h2({ textContent: '📋 Tables' }),
-                        $div({
-                          className: 'search-box',
-                          children: [
-                            $input({
-                              type: 'text',
-                              placeholder: '🔍 Search tables...',
-                              'x-model': 'searchQuery',
-                              '@input': 'filterTables()'
-                            })
-                          ]
-                        })
+                        $h2({ textContent: '📋 Tables' })
                       ]
                     }),
                     $div({
@@ -150,18 +139,29 @@ export class AppController {
                           children: [
                             $div({
                               className: 'tabs',
+                              'x-show': 'selectedTable',
+                              style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
                               children: [
-                                $button({
-                                  className: 'tab',
-                                  ':class': "{ 'active': activeTab === 'data' }",
-                                  '@click': "switchTab('data')",
-                                  textContent: '📊 Data'
+                                $div({
+                                  style: { display: 'flex', gap: '0.5rem' },
+                                  children: [
+                                    $button({
+                                      className: 'tab',
+                                      ':class': "{ 'active': activeTab === 'data' }",
+                                      '@click': "switchTab('data')",
+                                      textContent: '📊 Data'
+                                    }),
+                                    $button({
+                                      className: 'tab',
+                                      ':class': "{ 'active': activeTab === 'structure' }",
+                                      '@click': "switchTab('structure')",
+                                      textContent: '🏗️ Structure'
+                                    })
+                                  ]
                                 }),
-                                $button({
-                                  className: 'tab',
-                                  ':class': "{ 'active': activeTab === 'structure' }",
-                                  '@click': "switchTab('structure')",
-                                  textContent: '🏗️ Structure'
+                                $div({
+                                  style: { fontSize: '1.25rem', fontWeight: 'bold', color: '#2c3e50' },
+                                  'x-text': 'selectedTable'
                                 })
                               ]
                             }),
@@ -185,7 +185,6 @@ export class AppController {
               return {
                 query: '',
                 selectedTable: '',
-                searchQuery: '',
                 activeTab: 'data',
                 isConnected: true,
                 tableCount: 0,
@@ -206,23 +205,10 @@ export class AppController {
                     const html = await response.text();
                     this.allTables = html;
                     this.tableCount = (html.match(/data-table/g) || []).length;
-                    this.filterTables();
+                    this.filteredTablesHtml = this.allTables;
                   } catch (error) {
                     this.isConnected = false;
                     this.filteredTablesHtml = '<div class="error">Error loading tables</div>';
-                  }
-                },
-
-                filterTables() {
-                  if (!this.searchQuery.trim()) {
-                    this.filteredTablesHtml = this.allTables;
-                  } else {
-                    const query = this.searchQuery.toLowerCase();
-                    const lines = this.allTables.split('\\n');
-                    const filtered = lines.filter(line =>
-                      line.toLowerCase().includes(query) || line.includes('data-table')
-                    ).join('\\n');
-                    this.filteredTablesHtml = filtered || '<div class="empty-state"><p>No tables found</p></div>';
                   }
                 },
 
