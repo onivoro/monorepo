@@ -6,75 +6,65 @@ import { TableInfo, ColumnInfo, PrimaryKeyInfo, ForeignKeyInfo, IndexInfo, Table
 export class HtmlGeneratorService {
 
   /**
-   * Generate HTML for table list
+   * Generate HTML for table list with improved styling
    */
   generateTablesListHtml(tables: TableInfo[]): string {
     if (!tables || tables.length === 0) {
       return $div({
-        className: 'info',
-        style: { padding: '2rem', textAlign: 'center', color: '#666' },
-        textContent: 'No tables found in the database.'
+        className: 'empty-state',
+        children: [
+          $p({ textContent: 'No tables found in the database.' })
+        ]
       });
     }
 
-    const tableElements = tables.map(table =>
-      $div({
+    const tableElements = tables.map(table => {
+      const rowCount = (table as any).rowCount ? ` (${(table as any).rowCount.toLocaleString()})` : '';
+      return $div({
         className: 'table-item',
         'data-table': table.tableName,
         '@click': `selectTable('${table.tableName}')`,
-        textContent: table.tableName
-      })
-    );
+        children: [
+          $div({
+            className: 'table-item-icon',
+            textContent: '📋'
+          }),
+          $div({
+            className: 'table-item-name',
+            textContent: table.tableName
+          }),
+          $div({
+            className: 'table-item-count',
+            'x-show': `'${rowCount}' !== ''`,
+            textContent: rowCount.replace(/\s/g, '')
+          })
+        ]
+      });
+    });
 
     return tableElements.join('');
   }
 
   /**
-   * Generate HTML for table data with tabs
+   * Generate HTML for table data (content only, tabs are in main layout)
    */
   generateTableDataHtml(tableName: string, data: any[]): string {
-    const tabs = this.generateTabsHtml();
-
     if (data.length === 0) {
-      const dataContent = $div({
-        id: 'data-content',
-        className: 'tab-content active',
+      return $div({
+        className: 'empty-state',
         children: [
-          $p({
-            style: { padding: '2rem', textAlign: 'center', color: '#666' },
-            textContent: `No data found in table "${tableName}"`
-          })
+          $p({ textContent: `No data found in table "${tableName}"` })
         ]
       });
-
-      const structureContent = $div({
-        id: 'structure-content',
-        className: 'tab-content'
-      });
-
-      return tabs + dataContent + structureContent;
     }
 
     const columns = Object.keys(data[0]);
     const tableHtml = this.generateDataTableHtml(columns, data);
 
-    const dataContent = $div({
-      id: 'data-content',
-      className: 'tab-content active',
-      children: [
-        $div({
-          className: 'table-container',
-          children: [tableHtml]
-        })
-      ]
+    return $div({
+      className: 'table-container',
+      children: [tableHtml]
     });
-
-    const structureContent = $div({
-      id: 'structure-content',
-      className: 'tab-content'
-    });
-
-    return tabs + dataContent + structureContent;
   }
 
   /**
@@ -130,13 +120,13 @@ export class HtmlGeneratorService {
           className: 'tab active',
           'data-tab': 'data',
           '@click': "switchTab('data')",
-          textContent: 'Data'
+          textContent: '📊 Data'
         }),
         $div({
           className: 'tab',
           'data-tab': 'structure',
           '@click': "switchTab('structure')",
-          textContent: 'Structure'
+          textContent: '🏗️ Structure'
         })
       ]
     });
