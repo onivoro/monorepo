@@ -40,6 +40,7 @@ export * from './lib/guards/has-access-token.guard';
 export * from './lib/guards/has-token.guard';
 export * from './lib/guards/has-id-token.guard';
 
+export * from './lib/middlewares/oidc-auth.middleware';
 export * from './lib/middlewares/oidc-id-token.middleware';
 
 export * from './lib/services/cognito-refresh-token.service';
