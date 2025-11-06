@@ -9,6 +9,7 @@ import { ServerAwsCognitoModule } from './server-aws-cognito.module';
 import { UserHydraterService } from './services/user-hydrater.service';
 import { CookieService } from './services/cookie.service';
 import { DefaultController } from './controllers/default.controller';
+import { OidcAuthMiddleware } from './middlewares/oidc-auth.middleware';
 
 @Module({})
 export class ServerAwsCognitoOidcModule {
@@ -20,6 +21,7 @@ export class ServerAwsCognitoOidcModule {
       ],
       providers: [
         CookieService,
+        OidcAuthMiddleware,
         OidcIdTokenMiddleware,
         UserHydraterService,
         {
