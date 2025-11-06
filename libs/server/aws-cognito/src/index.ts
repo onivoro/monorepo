@@ -37,6 +37,7 @@ export * from './lib/functions/oidc-client-config-factory.function';
 export * from './lib/functions/oidc-entra-config-factory.function';
 
 export * from './lib/guards/has-access-token.guard';
+export * from './lib/guards/has-token.guard';
 export * from './lib/guards/has-id-token.guard';
 
 export * from './lib/middlewares/oidc-id-token.middleware';
