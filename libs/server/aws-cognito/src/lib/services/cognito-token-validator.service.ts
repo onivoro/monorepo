@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
-import { JwtHeader, decode, verify } from 'jsonwebtoken';
+import { JwtHeader, JwtPayload, decode, verify } from 'jsonwebtoken';
 import jwkToPem from 'jwk-to-pem';
 import { ServerAwsCognitoConfig } from "../server-aws-cognito-config.class";
 import { CognitoJWK } from "../types/cognito-jwk.type";
@@ -27,7 +27,9 @@ export class CognitoTokenValidatorService implements OnModuleInit {
         try {
             const token = _token?.replace('Bearer ', '');
 
-            const decodedHeader = decode(token, { complete: true })?.header as JwtHeader;
+            const decoded = decode(token, { complete: true }) as JwtPayload;
+            const decodedHeader = decoded?.header as JwtHeader;
+            const token_use = decoded?.payload?.token_use;
 
             if (!decodedHeader?.kid) {
                 console.error(`Invalid/missing token header`);
@@ -43,7 +45,7 @@ export class CognitoTokenValidatorService implements OnModuleInit {
 
             const verifiedToken = verify(token, pem, {
                 issuer: this.issuer,
-                audience: this.config.COGNITO_USER_POOL_CLIENT_ID,
+                [token_use === 'access' ? 'client_id' : 'audience']: this.config.COGNITO_USER_POOL_CLIENT_ID,
                 algorithms: ['RS256']
             });
 

@@ -5,6 +5,7 @@ export * from './lib/server-aws-cognito-oidc.module';
 
 export * from './lib/classes/abstract-auth-guard.class';
 
+export * from './lib/constants/access-token-key.constant';
 export * from './lib/constants/id-token-key.constant';
 export * from './lib/constants/request-user-key.constant';
 
