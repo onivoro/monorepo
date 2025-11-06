@@ -4,7 +4,6 @@ import { Response, Request } from "express";
 import { extractOrigin } from "../functions/extract-origin.function";
 import { ServerAwsCognitoOidcConfig } from "../server-aws-cognito-oidc-config.class";
 import jwt from 'jsonwebtoken';
-import { TKeysOf } from "@onivoro/isomorphic-common";
 
 const isLocalhost = (origin: string) => /^localhost(:\d+)?$/.test(origin) || /^127\.0\.0\.1(:\d+)?$/.test(origin);
 
@@ -12,7 +11,7 @@ const isLocalhost = (origin: string) => /^localhost(:\d+)?$/.test(origin) || /^1
 export class CookieService {
     constructor(private config: ServerAwsCognitoOidcConfig) { }
 
-    setCookies(res: Response<any, Record<string, any>>, tokens: TKeysOf<TokensDto, string | undefined>) {
+    setCookies(res: Response<any, Record<string, any>>, tokens: TokensDto) {
         try {
             let origin: string = extractOrigin(res);
             const originNoProtocol = origin.replace(/^https?:\/\//, '');
@@ -49,7 +48,7 @@ export class CookieService {
             }
 
             ['id_token', 'refresh_token', 'access_token'].forEach(key => {
-                const token = tokens[key as keyof TokensDto];
+                const token: string = tokens[key as keyof TokensDto] as any;
                 if (token) {
                     try {
                         const decoded = jwt.decode(token);

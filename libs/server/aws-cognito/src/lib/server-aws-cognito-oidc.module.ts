@@ -4,7 +4,7 @@ import { JwksClient } from 'jwks-rsa';
 import { ServerAwsCognitoOidcConfig } from './server-aws-cognito-oidc-config.class';
 import { OidcConfigController } from './controllers/oidc-config.controller';
 import { OidcCookieController } from './controllers/oidc-cookie.controller';
-import { OidcAuthMiddleware } from './middlewares/oidc-auth.middleware';
+import { OidcIdTokenMiddleware } from './middlewares/oidc-id-token.middleware';
 import { ServerAwsCognitoModule } from './server-aws-cognito.module';
 import { UserHydraterService } from './services/user-hydrater.service';
 import { CookieService } from './services/cookie.service';
@@ -20,7 +20,7 @@ export class ServerAwsCognitoOidcModule {
       ],
       providers: [
         CookieService,
-        OidcAuthMiddleware,
+        OidcIdTokenMiddleware,
         UserHydraterService,
         {
           provide: JwksClient,

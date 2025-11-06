@@ -1,0 +1,1 @@
+export const xIdTokenKey = 'x-id-token';

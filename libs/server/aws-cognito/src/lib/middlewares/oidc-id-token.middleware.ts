@@ -7,9 +7,10 @@ import { requestUserKey } from "../constants/request-user-key.constant";
 import { ServerAwsCognitoOidcConfig } from "../server-aws-cognito-oidc-config.class";
 import { getTokenSigningUrl } from "../functions/get-token-signing-url.function";
 import { CookieService } from "../services/cookie.service";
+import { TokensDto } from "../dtos/tokens.dto";
 
 @Injectable()
-export class OidcAuthMiddleware {
+export class OidcIdTokenMiddleware {
     static idTokenKey = idTokenKey;
 
     constructor(
@@ -20,7 +21,6 @@ export class OidcAuthMiddleware {
     ) { }
 
     async use(req: Request, res: Response, next: NextFunction) {
-        const startTime = Date.now();
         const logContext = {
             method: req.method,
             url: req.url,
@@ -28,28 +28,9 @@ export class OidcAuthMiddleware {
             ip: req.ip,
         };
 
-        console.debug('Processing request in OIDC auth middleware', logContext);
-
         if (req.url.includes('/api/') && req.url !== '/api/health') {
-            console.log('Request requires authentication, processing OIDC authorization', {
-                ...logContext,
-                requiresAuth: true,
-            });
 
             await this.authorizeAndHydrateUser(req, res);
-
-            const processingTime = Date.now() - startTime;
-            console.debug('OIDC authorization processing completed', {
-                ...logContext,
-                processingTime,
-                hasValidToken: !!(req as any)[idTokenKey],
-                hasUser: !!(req as any)[requestUserKey],
-            });
-        } else {
-            console.debug('Request does not require authentication, skipping OIDC processing', {
-                ...logContext,
-                requiresAuth: false,
-            });
         }
 
         next();
@@ -61,38 +42,10 @@ export class OidcAuthMiddleware {
             url: req.url,
         };
 
-        console.debug('Starting user authorization and hydration process', logContext);
-
         try {
             const id_token = this.get(req, 'id_token');
 
-            if (id_token) {
-                console.debug('ID token found in cookies, validating token', {
-                    ...logContext,
-                    tokenLength: id_token.length,
-                    tokenPrefix: id_token.substring(0, 20) + '...',
-                });
-            } else {
-                console.debug('No ID token found in cookies', logContext);
-            }
-
             (req as any)[idTokenKey] = id_token ? await this.cognitoTokenValidatorService.validate(id_token) : undefined;
-
-            if ((req as any)[idTokenKey]) {
-                console.log('ID token validated successfully', {
-                    ...logContext,
-                    tokenValid: true,
-                    email: (req as any)[idTokenKey]?.email,
-                    sub: (req as any)[idTokenKey]?.sub,
-                    exp: (req as any)[idTokenKey]?.exp,
-                });
-            } else if (id_token) {
-                console.warn('ID token validation failed', {
-                    ...logContext,
-                    tokenValid: false,
-                });
-            }
-
         } catch (error: any) {
             console.error('Error during token validation', {
                 ...logContext,
@@ -111,20 +64,9 @@ export class OidcAuthMiddleware {
                     const refreshToken = this.get(req, 'refresh_token');
 
                     if (refreshToken) {
-                        console.debug('Refresh token found, initiating token refresh', {
-                            ...logContext,
-                            refreshTokenLength: refreshToken.length,
-                            refreshTokenPrefix: refreshToken.substring(0, 20) + '...',
-                        });
 
                         const endpoint = getTokenSigningUrl(this.config);
                         const clientId = this.config.COGNITO_USER_POOL_CLIENT_ID;
-
-                        console.debug('Preparing token refresh request', {
-                            ...logContext,
-                            endpoint,
-                            clientId,
-                        });
 
                         const bodyParams = new URLSearchParams({
                             grant_type: 'refresh_token',
@@ -141,34 +83,18 @@ export class OidcAuthMiddleware {
                         });
 
                         if (response.ok) {
-                            console.log('Token refresh request successful', {
-                                ...logContext,
-                                statusCode: response.status,
-                                refreshSuccessful: true,
-                            });
 
-                            const tokens: { id_token: string | undefined; refresh_token: string | undefined; access_token: string | undefined; } = (await response.json() as any);
+                            const tokens: TokensDto = (await response.json() as any);
 
                             if (tokens.id_token) {
-                                console.debug('New ID token received, validating', {
-                                    ...logContext,
-                                    hasNewIdToken: true,
-                                    hasNewRefreshToken: !!tokens.refresh_token,
-                                    hasNewAccessToken: !!tokens.access_token,
-                                });
 
                                 (req as any)[idTokenKey] = await this.cognitoTokenValidatorService.validate(tokens.id_token);
 
                                 if ((req as any)[idTokenKey]) {
-                                    console.log('New ID token validated successfully, updating cookies', {
-                                        ...logContext,
-                                        newTokenValid: true,
-                                        email: (req as any)[idTokenKey]?.email,
-                                    });
 
                                     this.setCookies(res, tokens);
                                 } else {
-                                    console.error('New ID token validation failed after refresh', {
+                                    console.error('New validation failed after refresh', {
                                         ...logContext,
                                         newTokenValid: false,
                                     });
@@ -205,41 +131,15 @@ export class OidcAuthMiddleware {
                         refreshErrorStack: refreshError.stack,
                     });
                 }
-            } else {
-                console.error('Token validation error (non-expiration)', {
-                    ...logContext,
-                    errorType: 'validation',
-                });
             }
         }
 
-        // User hydration phase
         if ((req as any)[idTokenKey]) {
             const email = (req as any)[idTokenKey]?.email;
-
-            console.debug('Starting user hydration process', {
-                ...logContext,
-                email,
-                hasValidToken: true,
-            });
 
             try {
                 (req as any)[requestUserKey] = await this.userHydraterService.hydrateUserByEmail(email);
 
-                if ((req as any)[requestUserKey]) {
-                    console.log('User hydrated successfully', {
-                        ...logContext,
-                        email,
-                        userHydrated: true,
-                        userId: (req as any)[requestUserKey]?.id,
-                    });
-                } else {
-                    console.warn('User hydration returned null/undefined', {
-                        ...logContext,
-                        email,
-                        userHydrated: false,
-                    });
-                }
             } catch (error: any) {
                 console.error('Failed to hydrate user by email', {
                     ...logContext,
@@ -255,20 +155,9 @@ export class OidcAuthMiddleware {
                 hasValidToken: false,
             });
         }
-
-        // Log final authorization state
-        const finalState = {
-            ...logContext,
-            hasValidToken: !!(req as any)[idTokenKey],
-            hasUser: !!(req as any)[requestUserKey],
-            userEmail: (req as any)[idTokenKey]?.email,
-            userId: (req as any)[requestUserKey]?.id,
-        };
-
-        console.log('Authorization and hydration process completed', finalState);
     }
 
-    setCookies(res: Response<any, Record<string, any>>, tokens: { id_token: string | undefined; refresh_token: string | undefined; access_token: string | undefined; }) {
+    setCookies(res: Response<any, Record<string, any>>, tokens: TokensDto) {
         this.cookieService.setCookies(res, tokens);
     }
 

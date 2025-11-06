@@ -1,3 +1,5 @@
+// deprecated... use the ICognitoIdToken instead
+
 export interface ICognitoIdentityToken {
   at_hash: string;
   sub: string;
