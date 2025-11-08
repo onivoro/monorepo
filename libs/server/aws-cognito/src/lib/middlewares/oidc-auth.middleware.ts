@@ -149,11 +149,6 @@ export class OidcAuthMiddleware {
                     userHydrated: false,
                 });
             }
-        } else {
-            console.debug('Skipping user hydration - no valid token available', {
-                ...logContext,
-                hasValidToken: false,
-            });
         }
     }
 
