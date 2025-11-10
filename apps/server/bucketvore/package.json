@@ -1,0 +1,35 @@
+{
+  "name": "@onivoro/app-server-bucketvore",
+  "version": "1.0.0",
+  "description": "BucketVore NestJS application for S3 bucket management",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "bin": {
+    "bucketvore": "./main.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "nestjs",
+    "s3",
+    "aws",
+    "file-explorer",
+    "server",
+    "onivoro"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "assets/",
+    "package.json",
+    "README.md"
+  ]
+}

@@ -1,0 +1,372 @@
+import { Controller, Get } from '@nestjs/common';
+import { $html, $head, $title, $meta, $script, $style, $body, $div, $h1, $p, $header, $aside, $main, $button, $input } from '@onivoro/server-html';
+import { AppServerBucketvoreConfig } from '../app-server-bucketvore-config.class';
+import { DESIGN_SYSTEM_STYLES } from '../styles/design-system';
+
+@Controller()
+export class AppController {
+  constructor(private config: AppServerBucketvoreConfig) {}
+
+  @Get()
+  get() {
+    return $html({
+      lang: 'en',
+      children: [
+        $head({
+          children: [
+            $meta({ charset: 'UTF-8' }),
+            $meta({ name: 'viewport', content: 'width=device-width, initial-scale=1.0' }),
+            $title({ textContent: 'BucketVore - S3 File Explorer' }),
+            $script({ src: 'https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js', defer: true }),
+            $style({ textContent: DESIGN_SYSTEM_STYLES })
+          ]
+        }),
+        $body({
+          'x-data': 's3Explorer()',
+          'x-init': 'init()',
+          children: [
+            // Header
+            $header({
+              children: [
+                $div({
+                  className: 'header-left',
+                  children: [
+                    $div({
+                      className: 'header-info',
+                      children: [
+                        $h1({ textContent: '🪣 BucketVore' }),
+                        $p({
+                          'x-show': 'selectedBucket',
+                          'x-text': 'selectedBucket',
+                          textContent: 'Select a bucket'
+                        })
+                      ]
+                    })
+                  ]
+                }),
+                $div({
+                  className: 'header-actions',
+                  'x-show': 'selectedBucket',
+                  children: [
+                    $button({
+                      className: 'btn',
+                      '@click': 'showUpload = true',
+                      textContent: '⬆️ Upload'
+                    }),
+                    $button({
+                      className: 'btn secondary',
+                      '@click': 'refresh()',
+                      textContent: '🔄 Refresh'
+                    })
+                  ]
+                })
+              ]
+            }),
+
+            $div({
+              className: 'container',
+              children: [
+                // Sidebar - Bucket List
+                $aside({
+                  children: [
+                    $div({
+                      className: 'sidebar-header',
+                      children: [
+                        $h1({ textContent: '📋 Buckets', style: { fontSize: 'var(--size-sm)' } })
+                      ]
+                    }),
+                    $div({
+                      className: 'bucket-list',
+                      'x-html': 'bucketsHtml'
+                    })
+                  ]
+                }),
+
+                // Main Content - File Explorer
+                $main({
+                  children: [
+                    // Toolbar with breadcrumbs
+                    $div({
+                      className: 'toolbar',
+                      'x-show': 'selectedBucket',
+                      children: [
+                        $div({
+                          'x-html': 'breadcrumbsHtml'
+                        }),
+                        $div({
+                          className: 'toolbar-actions',
+                          children: [
+                            $button({
+                              className: 'btn-icon',
+                              '@click': 'viewMode = viewMode === "list" ? "grid" : "list"',
+                              'x-text': 'viewMode === "list" ? "⊞" : "☰"',
+                              title: 'Toggle view'
+                            })
+                          ]
+                        })
+                      ]
+                    }),
+
+                    // File Explorer
+                    $div({
+                      className: 'file-explorer',
+                      children: [
+                        $div({
+                          className: 'file-list',
+                          'x-html': 'filesHtml'
+                        })
+                      ]
+                    })
+                  ]
+                })
+              ]
+            }),
+
+            // Upload Modal
+            $div({
+              className: 'modal-overlay',
+              'x-show': 'showUpload',
+              '@click.self': 'showUpload = false',
+              style: { display: 'none' },
+              children: [
+                $div({
+                  className: 'modal',
+                  style: { width: '500px' },
+                  children: [
+                    $div({
+                      className: 'preview-header',
+                      children: [
+                        $h1({ textContent: 'Upload Files', style: { fontSize: 'var(--size-lg)', margin: 0 } }),
+                        $button({
+                          className: 'btn-close',
+                          '@click': 'showUpload = false',
+                          textContent: '✕'
+                        })
+                      ]
+                    }),
+                    $div({
+                      className: 'preview-content',
+                      children: [
+                        $div({
+                          className: 'upload-zone',
+                          '@click': '$refs.fileInput.click()',
+                          '@drop.prevent': 'handleDrop($event)',
+                          '@dragover.prevent': '$el.classList.add("drag-over")',
+                          '@dragleave.prevent': '$el.classList.remove("drag-over")',
+                          children: [
+                            $div({ className: 'upload-zone-icon', textContent: '📁' }),
+                            $p({ textContent: 'Click to select files or drag and drop' }),
+                            $input({
+                              type: 'file',
+                              multiple: true,
+                              'x-ref': 'fileInput',
+                              '@change': 'handleFileSelect($event)'
+                            })
+                          ]
+                        }),
+                        $div({
+                          'x-show': 'uploadProgress.length > 0',
+                          style: { marginTop: 'var(--space-4)' },
+                          children: [
+                            $h1({ textContent: 'Uploading...', style: { fontSize: 'var(--size-sm)', marginBottom: 'var(--space-2)' } }),
+                            $div({
+                              'x-html': 'uploadProgressHtml'
+                            })
+                          ]
+                        })
+                      ]
+                    })
+                  ]
+                })
+              ]
+            }),
+
+            // Preview Modal
+            $div({
+              className: 'modal-overlay',
+              'x-show': 'showPreview',
+              '@click.self': 'closePreview()',
+              style: { display: 'none' },
+              children: [
+                $div({
+                  className: 'modal',
+                  style: { maxWidth: '80vw', maxHeight: '90vh' },
+                  'x-html': 'previewHtml'
+                })
+              ]
+            }),
+
+            $script({
+              textContent: `
+                function s3Explorer() {
+                  return {
+                    selectedBucket: '',
+                    currentPrefix: '',
+                    viewMode: 'list',
+                    showUpload: false,
+                    showPreview: false,
+                    uploadProgress: [],
+
+                    bucketsHtml: '<div class="loading"><div class="spinner"></div><p>Loading buckets...</p></div>',
+                    breadcrumbsHtml: '',
+                    filesHtml: '<div class="empty-state"><div class="empty-state-icon">🪣</div><p>Select a bucket to browse files</p></div>',
+                    previewHtml: '',
+
+                    get uploadProgressHtml() {
+                      return this.uploadProgress.map(f =>
+                        \`<div style="margin-bottom: var(--space-2)">
+                          <div style="display: flex; justify-content: space-between; font-size: var(--size-sm); margin-bottom: var(--space-1)">
+                            <span>\${f.name}</span>
+                            <span>\${f.status}</span>
+                          </div>
+                        </div>\`
+                      ).join('');
+                    },
+
+                    async init() {
+                      await this.loadBuckets();
+                    },
+
+                    async loadBuckets() {
+                      try {
+                        const response = await fetch('/api/buckets');
+                        this.bucketsHtml = await response.text();
+                      } catch (error) {
+                        this.bucketsHtml = '<div class="error"><div class="error-icon">⚠️</div><p>Error loading buckets</p></div>';
+                      }
+                    },
+
+                    async selectBucket(bucket) {
+                      this.selectedBucket = bucket;
+                      this.currentPrefix = '';
+                      await this.loadFiles();
+                    },
+
+                    async loadFiles() {
+                      try {
+                        this.filesHtml = '<div class="loading"><div class="spinner"></div><p>Loading files...</p></div>';
+                        const url = \`/api/files?bucket=\${this.selectedBucket}&prefix=\${encodeURIComponent(this.currentPrefix)}\`;
+                        const response = await fetch(url);
+
+                        const data = await response.json();
+                        this.filesHtml = data.filesHtml;
+                        this.breadcrumbsHtml = data.breadcrumbsHtml;
+                      } catch (error) {
+                        this.filesHtml = '<div class="error"><div class="error-icon">⚠️</div><p>Error loading files</p></div>';
+                      }
+                    },
+
+                    async navigateToFolder(prefix) {
+                      this.currentPrefix = prefix;
+                      await this.loadFiles();
+                    },
+
+                    async previewFile(key) {
+                      try {
+                        this.showPreview = true;
+                        this.previewHtml = '<div class="loading"><div class="spinner"></div><p>Loading preview...</p></div>';
+
+                        const response = await fetch(\`/api/files/preview?bucket=\${this.selectedBucket}&key=\${encodeURIComponent(key)}\`);
+                        this.previewHtml = await response.text();
+                      } catch (error) {
+                        this.previewHtml = '<div class="error"><div class="error-icon">⚠️</div><p>Error loading preview</p></div>';
+                      }
+                    },
+
+                    closePreview() {
+                      this.showPreview = false;
+                      this.previewHtml = '';
+                    },
+
+                    async downloadFile(key) {
+                      try {
+                        const response = await fetch(\`/api/files/download?bucket=\${this.selectedBucket}&key=\${encodeURIComponent(key)}\`);
+                        const data = await response.json();
+                        window.open(data.url, '_blank');
+                      } catch (error) {
+                        alert('Error generating download link');
+                      }
+                    },
+
+                    async deleteFile(key) {
+                      if (!confirm(\`Delete \${key}?\`)) return;
+
+                      try {
+                        await fetch(\`/api/files/delete\`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ bucket: this.selectedBucket, key })
+                        });
+                        await this.loadFiles();
+                      } catch (error) {
+                        alert('Error deleting file');
+                      }
+                    },
+
+                    async deleteFolder(prefix) {
+                      if (!confirm(\`Delete folder \${prefix} and all its contents?\`)) return;
+
+                      try {
+                        await fetch(\`/api/files/delete-folder\`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ bucket: this.selectedBucket, prefix })
+                        });
+                        await this.loadFiles();
+                      } catch (error) {
+                        alert('Error deleting folder');
+                      }
+                    },
+
+                    handleFileSelect(event) {
+                      const files = Array.from(event.target.files);
+                      this.uploadFiles(files);
+                    },
+
+                    handleDrop(event) {
+                      event.target.classList.remove('drag-over');
+                      const files = Array.from(event.dataTransfer.files);
+                      this.uploadFiles(files);
+                    },
+
+                    async uploadFiles(files) {
+                      this.uploadProgress = files.map(f => ({ name: f.name, status: 'Uploading...' }));
+
+                      for (let i = 0; i < files.length; i++) {
+                        const file = files[i];
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        formData.append('bucket', this.selectedBucket);
+                        formData.append('prefix', this.currentPrefix);
+
+                        try {
+                          await fetch('/api/upload', {
+                            method: 'POST',
+                            body: formData
+                          });
+                          this.uploadProgress[i].status = '✓ Complete';
+                        } catch (error) {
+                          this.uploadProgress[i].status = '✗ Failed';
+                        }
+                      }
+
+                      setTimeout(async () => {
+                        this.uploadProgress = [];
+                        this.showUpload = false;
+                        await this.loadFiles();
+                      }, 2000);
+                    },
+
+                    async refresh() {
+                      await this.loadFiles();
+                    }
+                  };
+                }
+              `
+            })
+          ]
+        })
+      ]
+    });
+  }
+}
