@@ -72,12 +72,20 @@ export class AppController {
                     $div({
                       className: 'sidebar-header',
                       children: [
-                        $h1({ textContent: '📋 Buckets', style: { fontSize: 'var(--size-sm)' } })
+                        $h1({ textContent: '📋 Buckets', style: { fontSize: 'var(--size-sm)', marginBottom: 'var(--space-3)' } }),
+                        $input({
+                          type: 'text',
+                          placeholder: 'Filter buckets...',
+                          'x-model': 'bucketFilter',
+                          '@input': 'filterBuckets()',
+                          className: 'filter-input',
+                          style: { width: '100%', padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-tertiary)', color: 'var(--color-text-primary)', fontSize: 'var(--size-sm)' }
+                        })
                       ]
                     }),
                     $div({
                       className: 'bucket-list',
-                      'x-html': 'bucketsHtml'
+                      'x-html': 'filteredBucketsHtml'
                     })
                   ]
                 }),
@@ -91,7 +99,20 @@ export class AppController {
                       'x-show': 'selectedBucket',
                       children: [
                         $div({
-                          'x-html': 'breadcrumbsHtml'
+                          style: { flex: '1', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' },
+                          children: [
+                            $div({
+                              'x-html': 'breadcrumbsHtml'
+                            }),
+                            $input({
+                              type: 'text',
+                              placeholder: 'Filter files and folders...',
+                              'x-model': 'fileFilter',
+                              '@input': 'filterFiles()',
+                              className: 'filter-input',
+                              style: { width: '100%', maxWidth: '400px', padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-tertiary)', color: 'var(--color-text-primary)', fontSize: 'var(--size-sm)' }
+                            })
+                          ]
                         }),
                         $div({
                           className: 'toolbar-actions',
@@ -113,7 +134,7 @@ export class AppController {
                       children: [
                         $div({
                           className: 'file-list',
-                          'x-html': 'filesHtml'
+                          'x-html': 'filteredFilesHtml'
                         })
                       ]
                     })
@@ -190,7 +211,7 @@ export class AppController {
               children: [
                 $div({
                   className: 'modal',
-                  style: { maxWidth: '80vw', maxHeight: '90vh' },
+                  style: { maxWidth: '95vw', maxHeight: '95vh', width: '95vw' },
                   'x-html': 'previewHtml'
                 })
               ]
@@ -207,10 +228,65 @@ export class AppController {
                     showPreview: false,
                     uploadProgress: [],
 
+                    bucketFilter: '',
+                    fileFilter: '',
+                    allBuckets: [],
+                    allFilesData: { filesHtml: '', breadcrumbsHtml: '' },
+
                     bucketsHtml: '<div class="loading"><div class="spinner"></div><p>Loading buckets...</p></div>',
                     breadcrumbsHtml: '',
                     filesHtml: '<div class="empty-state"><div class="empty-state-icon">🪣</div><p>Select a bucket to browse files</p></div>',
                     previewHtml: '',
+
+                    get filteredBucketsHtml() {
+                      if (!this.bucketFilter.trim()) {
+                        return this.bucketsHtml;
+                      }
+
+                      const filter = this.bucketFilter.toLowerCase();
+                      const parser = new DOMParser();
+                      const doc = parser.parseFromString(this.bucketsHtml, 'text/html');
+                      const bucketItems = doc.querySelectorAll('.bucket-item');
+
+                      let filtered = '';
+                      bucketItems.forEach(item => {
+                        const bucketName = item.querySelector('.bucket-name')?.textContent?.toLowerCase() || '';
+                        if (bucketName.includes(filter)) {
+                          filtered += item.outerHTML;
+                        }
+                      });
+
+                      if (!filtered) {
+                        return '<div class="empty-state"><div class="empty-state-icon">🔍</div><p>No buckets match your filter</p></div>';
+                      }
+
+                      return filtered;
+                    },
+
+                    get filteredFilesHtml() {
+                      if (!this.fileFilter.trim()) {
+                        return this.filesHtml;
+                      }
+
+                      const filter = this.fileFilter.toLowerCase();
+                      const parser = new DOMParser();
+                      const doc = parser.parseFromString(this.filesHtml, 'text/html');
+                      const fileItems = doc.querySelectorAll('.file-item');
+
+                      let filtered = '';
+                      fileItems.forEach(item => {
+                        const fileName = item.querySelector('.file-name')?.textContent?.toLowerCase() || '';
+                        if (fileName.includes(filter)) {
+                          filtered += item.outerHTML;
+                        }
+                      });
+
+                      if (!filtered) {
+                        return '<div class="empty-state"><div class="empty-state-icon">🔍</div><p>No files match your filter</p></div>';
+                      }
+
+                      return filtered;
+                    },
 
                     get uploadProgressHtml() {
                       return this.uploadProgress.map(f =>
@@ -245,6 +321,7 @@ export class AppController {
                     async loadFiles() {
                       try {
                         this.filesHtml = '<div class="loading"><div class="spinner"></div><p>Loading files...</p></div>';
+                        this.fileFilter = ''; // Reset filter when navigating
                         const url = \`/api/files?bucket=\${this.selectedBucket}&prefix=\${encodeURIComponent(this.currentPrefix)}\`;
                         const response = await fetch(url);
 
@@ -359,6 +436,14 @@ export class AppController {
 
                     async refresh() {
                       await this.loadFiles();
+                    },
+
+                    filterBuckets() {
+                      // Reactive computed property handles this automatically
+                    },
+
+                    filterFiles() {
+                      // Reactive computed property handles this automatically
                     }
                   };
                 }

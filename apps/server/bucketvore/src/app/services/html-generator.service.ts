@@ -246,7 +246,7 @@ export class HtmlGeneratorService {
           children: [
             $iframe({
               src: presignedUrl!,
-              style: { width: '100%', height: '70vh', border: 'none' }
+              style: { width: '100%', height: '85vh', border: 'none' }
             })
           ]
         });
