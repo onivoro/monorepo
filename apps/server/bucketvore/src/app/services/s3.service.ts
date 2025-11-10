@@ -42,8 +42,8 @@ export class S3Service {
         region = response.LocationConstraint || 'us-east-1';
         this.bucketRegionCache.set(bucket, region);
       } catch (error) {
-        console.warn(`Could not get region for bucket ${bucket}, using default region`, error);
-        region = this.config.AWS_REGION;
+        console.warn(`Could not get region for bucket ${bucket}, using us-east-1 as fallback`, error);
+        region = 'us-east-1';
       }
     }
 

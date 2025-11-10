@@ -2,14 +2,13 @@
 
 ## Configuration
 
-BucketVore only requires two environment variables:
+BucketVore only requires one optional environment variable:
 
 ```bash
-AWS_REGION=us-east-1    # AWS region
 AWS_PROFILE=myprofile   # Optional: AWS CLI profile name
 ```
 
-No need to specify a bucket - the app lists all accessible buckets!
+**That's it!** No region configuration needed - bucket regions are auto-detected!
 
 ## How It Works
 
@@ -21,7 +20,7 @@ No need to specify a bucket - the app lists all accessible buckets!
 ## Quick Commands
 
 ```bash
-# Run locally
+# Run locally (minimal)
 PORT=3001 nx serve app-server-bucketvore
 
 # With AWS profile
@@ -31,7 +30,7 @@ PORT=3001 AWS_PROFILE=myprofile nx serve app-server-bucketvore
 nx build app-server-bucketvore --configuration=production
 
 # Run production build
-PORT=3001 AWS_REGION=us-east-1 node dist/apps/server/bucketvore/main.js
+PORT=3001 node dist/apps/server/bucketvore/main.js
 ```
 
 ## User Workflow
@@ -49,7 +48,8 @@ PORT=3001 AWS_REGION=us-east-1 node dist/apps/server/bucketvore/main.js
 ## Features at a Glance
 
 - ✅ Auto-discovers all accessible S3 buckets
-- ✅ No hardcoded bucket names needed
+- ✅ Auto-detects bucket regions (works across all AWS regions!)
+- ✅ No hardcoded bucket names or regions needed
 - ✅ Works with any AWS credential method
 - ✅ Dynamic bucket switching
 - ✅ Full file management capabilities

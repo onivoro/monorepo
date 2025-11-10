@@ -84,13 +84,17 @@ apps/server/bucketvore/
 ```bash
 # Required
 PORT=3001                    # Server port
-AWS_REGION=us-east-1        # AWS region
 
 # Optional
 AWS_PROFILE=my-profile      # AWS CLI profile for credentials
 ```
 
-The application dynamically lists all S3 buckets that are accessible with the provided AWS credentials. Users can then click on any bucket to browse its contents.
+The application dynamically:
+- Lists all S3 buckets that are accessible with the provided AWS credentials
+- Auto-detects each bucket's region using the S3 API
+- Creates region-specific S3 clients as needed for optimal performance
+
+No region configuration needed - it's all automatic!
 
 ### AWS Credentials
 

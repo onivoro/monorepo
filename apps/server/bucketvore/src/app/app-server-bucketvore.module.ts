@@ -29,7 +29,7 @@ const bucketvoreConfig = new AppServerBucketvoreConfig();
       provide: S3Client,
       useFactory: () => {
         const clientConfig: any = {
-          region: bucketvoreConfig.AWS_REGION,
+          region: 'us-east-1', // Default region for initial client (bucket regions are auto-detected)
         };
 
         if (bucketvoreConfig.AWS_PROFILE) {

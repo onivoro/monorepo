@@ -27,13 +27,15 @@ Set the following environment variables:
 ```bash
 # Required
 PORT=3001                    # Server port
-AWS_REGION=us-east-1        # AWS region
 
 # Optional
 AWS_PROFILE=my-profile      # AWS CLI profile for credentials
 ```
 
-The application will automatically list all S3 buckets accessible with the provided credentials.
+The application will automatically:
+- List all S3 buckets accessible with the provided credentials
+- Detect the region for each bucket automatically
+- Work seamlessly across multiple AWS regions
 
 ## Running
 
