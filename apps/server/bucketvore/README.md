@@ -26,7 +26,7 @@ Set the following environment variables:
 
 ```bash
 # Required
-PORT=3001                    # Server port
+HTTP_PORT=3007                    # Server port
 
 # Optional
 AWS_PROFILE=my-profile      # AWS CLI profile for credentials

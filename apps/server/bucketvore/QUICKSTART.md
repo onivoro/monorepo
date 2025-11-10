@@ -21,16 +21,16 @@ AWS_PROFILE=myprofile   # Optional: AWS CLI profile name
 
 ```bash
 # Run locally (minimal)
-PORT=3001 nx serve app-server-bucketvore
+HTTP_PORT=3007 nx serve app-server-bucketvore
 
 # With AWS profile
-PORT=3001 AWS_PROFILE=myprofile nx serve app-server-bucketvore
+HTTP_PORT=3007 AWS_PROFILE=myprofile nx serve app-server-bucketvore
 
 # Build
 nx build app-server-bucketvore --configuration=production
 
 # Run production build
-PORT=3001 node dist/apps/server/bucketvore/main.js
+HTTP_PORT=3007 node dist/apps/server/bucketvore/main.js
 ```
 
 ## User Workflow

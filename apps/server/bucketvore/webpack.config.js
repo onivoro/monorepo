@@ -61,7 +61,7 @@ async function bootstrap() {
     });
 
     const app = await NestFactory.create(AppServerBucketvoreModule, { logger: console });
-    const port = process.env.PORT || 3001;
+    const port = process.env.HTTP_PORT || 3007;
     await app.listen(port);
     console.log(\`BucketVore available at: http://localhost:\${port}\`);
     return app;

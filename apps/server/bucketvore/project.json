@@ -49,7 +49,7 @@
     "local": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "PORT=3001 nx serve app-server-bucketvore"
+        "command": "PORT=3007 nx serve app-server-bucketvore"
       }
     }
   },

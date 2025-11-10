@@ -83,7 +83,7 @@ apps/server/bucketvore/
 
 ```bash
 # Required
-PORT=3001                    # Server port
+HTTP_PORT=3007                    # Server port
 
 # Optional
 AWS_PROFILE=my-profile      # AWS CLI profile for credentials
@@ -133,7 +133,7 @@ nx serve app-server-bucketvore
 nx run app-server-bucketvore:local
 
 # Or set environment variables
-PORT=3001 nx serve app-server-bucketvore
+HTTP_PORT=3007 nx serve app-server-bucketvore
 ```
 
 ### Build for Production
