@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/app-server-bucketvore",
-  "version": "1.0.0",
+  "version": "24.31.1",
   "description": "BucketVore NestJS application for S3 bucket management",
   "license": "MIT",
   "type": "commonjs",
