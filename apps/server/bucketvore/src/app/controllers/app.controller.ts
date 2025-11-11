@@ -380,6 +380,38 @@ export class AppController {
                       }
                     },
 
+                    async copyS3Path(key, target) {
+                      try {
+                        // First fetch the bucket region
+                        const regionResponse = await fetch(\`/api/buckets/\${this.selectedBucket}/region\`);
+                        const regionData = await regionResponse.json();
+                        console.warn({regionData});
+                        const region = regionData.region || 'us-east-1';
+
+                        // Construct proper HTTPS S3 URL
+                        const httpsUrl = \`https://s3.\${region}.amazonaws.com/\${this.selectedBucket}/\${key}\`;
+
+                        await navigator.clipboard.writeText(httpsUrl);
+
+                        // Show temporary success feedback
+                        const event = {target};
+                        const originalText = event.target.textContent;
+                        const originalBg = event.target.style.backgroundColor;
+                        event.target.textContent = '✓ Copied!';
+                        event.target.style.backgroundColor = 'var(--color-success)';
+
+                        setTimeout(() => {
+                          event.target.textContent = originalText;
+                          event.target.style.backgroundColor = originalBg;
+                        }, 1500);
+                      } catch (error) {
+                        console.error('Error copying S3 path:', error);
+                        // Fallback to s3:// protocol
+                        const s3Path = \`s3://\${this.selectedBucket}/\${key}\`;
+                        prompt('Copy S3 path (fallback):', s3Path);
+                      }
+                    },
+
                     async deleteFolder(prefix) {
                       if (!confirm(\`Delete folder \${prefix} and all its contents?\`)) return;
 

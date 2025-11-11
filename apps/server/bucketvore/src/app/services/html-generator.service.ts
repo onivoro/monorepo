@@ -158,6 +158,13 @@ export class HtmlGeneratorService {
               $button({
                 className: 'btn-icon',
                 'data-file-key': obj.Key,
+                '@click.stop': 'copyS3Path($el.dataset.fileKey, $el)',
+                title: 'Copy S3 path (s3://bucket/key)',
+                textContent: '📋'
+              }),
+              $button({
+                className: 'btn-icon',
+                'data-file-key': obj.Key,
                 '@click.stop': 'downloadFile($el.dataset.fileKey)',
                 title: 'Download',
                 textContent: '⬇️'
@@ -304,6 +311,12 @@ export class HtmlGeneratorService {
         $div({
           className: 'preview-actions',
           children: [
+            $button({
+              className: 'btn',
+              'data-file-key': key,
+              '@click': 'copyS3Path($el.dataset.fileKey, $el)',
+              textContent: '📋 Copy S3 Path'
+            }),
             $button({
               className: 'btn',
               'data-file-key': key,

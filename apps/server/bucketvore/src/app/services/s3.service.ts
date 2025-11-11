@@ -222,4 +222,26 @@ export class S3Service {
     const parts = prefix.replace(/\/$/, '').split('/');
     return parts[parts.length - 1] || prefix;
   }
+
+  /**
+   * Get the AWS region for a specific bucket
+   */
+  async getBucketRegion(bucket: string): Promise<string> {
+    let region = this.bucketRegionCache.get(bucket);
+
+    if (!region) {
+      try {
+        const command = new GetBucketLocationCommand({ Bucket: bucket });
+        const response = await this.s3Client.send(command);
+        // LocationConstraint is null for us-east-1
+        region = response.LocationConstraint || 'us-east-1';
+        this.bucketRegionCache.set(bucket, region);
+      } catch (error) {
+        console.warn(`Could not get region for bucket ${bucket}, using us-east-1 as fallback`, error);
+        region = 'us-east-1';
+      }
+    }
+
+    return region;
+  }
 }
