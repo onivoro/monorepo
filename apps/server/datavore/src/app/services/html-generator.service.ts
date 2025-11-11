@@ -22,8 +22,8 @@ export class HtmlGeneratorService {
       const rowCount = (table as any).rowCount ? ` (${(table as any).rowCount.toLocaleString()})` : '';
       return $div({
         className: 'table-item',
-        'data-table': table.tableName,
-        '@click': `selectTable('${table.tableName}')`,
+        'data-table-name': table.tableName,
+        '@click': 'selectTable($el.dataset.tableName)',
         children: [
           $div({
             className: 'table-item-icon',
