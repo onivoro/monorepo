@@ -21,7 +21,8 @@ export class HtmlGeneratorService {
     const bucketElements = buckets.map(bucket =>
       $div({
         className: 'bucket-item',
-        '@click': `selectBucket('${bucket.name}')`,
+        'data-bucket-name': bucket.name,
+        '@click': 'selectBucket($el.dataset.bucketName)',
         children: [
           $div({ className: 'bucket-icon', textContent: '🪣' }),
           $div({
@@ -47,7 +48,7 @@ export class HtmlGeneratorService {
     const breadcrumbs = [
       $button({
         className: 'breadcrumb-item',
-        '@click': "navigateToFolder('')",
+        '@click': 'navigateToFolder(\'\')',
         textContent: '🪣 ' + bucket
       })
     ];
@@ -61,7 +62,8 @@ export class HtmlGeneratorService {
       breadcrumbs.push(
         $button({
           className: 'breadcrumb-item',
-          '@click': `navigateToFolder('${currentPath}')`,
+          'data-path': currentPath,
+          '@click': 'navigateToFolder($el.dataset.path)',
           textContent: part
         })
       );
@@ -93,7 +95,8 @@ export class HtmlGeneratorService {
       const folderName = s3Service.getFolderName(folderPrefix);
       return $div({
         className: 'file-item folder',
-        '@click': `navigateToFolder('${folderPrefix}')`,
+        'data-folder-path': folderPrefix,
+        '@click': 'navigateToFolder($el.dataset.folderPath)',
         children: [
           $div({ className: 'file-icon', textContent: '📁' }),
           $div({
@@ -108,7 +111,8 @@ export class HtmlGeneratorService {
             children: [
               $button({
                 className: 'btn-icon',
-                '@click.stop': `deleteFolder('${folderPrefix}')`,
+                'data-folder-path': folderPrefix,
+                '@click.stop': 'deleteFolder($el.dataset.folderPath)',
                 title: 'Delete folder',
                 textContent: '🗑️'
               })
@@ -126,7 +130,8 @@ export class HtmlGeneratorService {
 
       return $div({
         className: 'file-item',
-        '@click': canPreview ? `previewFile('${obj.Key}')` : '',
+        'data-file-key': obj.Key,
+        '@click': canPreview ? 'previewFile($el.dataset.fileKey)' : '',
         style: { cursor: canPreview ? 'pointer' : 'default' },
         children: [
           $div({ className: 'file-icon', textContent: icon }),
@@ -145,19 +150,22 @@ export class HtmlGeneratorService {
             children: [
               canPreview ? $button({
                 className: 'btn-icon',
-                '@click.stop': `previewFile('${obj.Key}')`,
+                'data-file-key': obj.Key,
+                '@click.stop': 'previewFile($el.dataset.fileKey)',
                 title: 'Preview',
                 textContent: '👁️'
               }) : '',
               $button({
                 className: 'btn-icon',
-                '@click.stop': `downloadFile('${obj.Key}')`,
+                'data-file-key': obj.Key,
+                '@click.stop': 'downloadFile($el.dataset.fileKey)',
                 title: 'Download',
                 textContent: '⬇️'
               }),
               $button({
                 className: 'btn-icon',
-                '@click.stop': `deleteFile('${obj.Key}')`,
+                'data-file-key': obj.Key,
+                '@click.stop': 'deleteFile($el.dataset.fileKey)',
                 title: 'Delete',
                 textContent: '🗑️'
               })
@@ -259,7 +267,8 @@ export class HtmlGeneratorService {
             $p({ textContent: 'Preview not available for this file type' }),
             $button({
               className: 'btn',
-              '@click': `downloadFile('${key}')`,
+              'data-file-key': key,
+              '@click': 'downloadFile($el.dataset.fileKey)',
               textContent: '⬇️ Download File'
             })
           ]
@@ -297,7 +306,8 @@ export class HtmlGeneratorService {
           children: [
             $button({
               className: 'btn',
-              '@click': `downloadFile('${key}')`,
+              'data-file-key': key,
+              '@click': 'downloadFile($el.dataset.fileKey)',
               textContent: '⬇️ Download'
             }),
             $button({

@@ -17,7 +17,7 @@ export class AppController {
             $meta({ charset: 'UTF-8' }),
             $meta({ name: 'viewport', content: 'width=device-width, initial-scale=1.0' }),
             $title({ textContent: 'BucketVore - S3 File Explorer' }),
-            $script({ src: 'https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js', defer: true }),
+            $script({ src: 'https://unpkg.com/alpinejs@3.13.5/dist/cdn.js', defer: true }),
             $style({ textContent: DESIGN_SYSTEM_STYLES })
           ]
         }),
@@ -119,8 +119,8 @@ export class AppController {
                           children: [
                             $button({
                               className: 'btn-icon',
-                              '@click': 'viewMode = viewMode === "list" ? "grid" : "list"',
-                              'x-text': 'viewMode === "list" ? "⊞" : "☰"',
+                              '@click': "viewMode = viewMode === 'list' ? 'grid' : 'list'",
+                              'x-text': "viewMode === 'list' ? '⊞' : '☰'",
                               title: 'Toggle view'
                             })
                           ]
@@ -172,8 +172,8 @@ export class AppController {
                           className: 'upload-zone',
                           '@click': '$refs.fileInput.click()',
                           '@drop.prevent': 'handleDrop($event)',
-                          '@dragover.prevent': '$el.classList.add("drag-over")',
-                          '@dragleave.prevent': '$el.classList.remove("drag-over")',
+                          '@dragover.prevent': "$el.classList.add('drag-over')",
+                          '@dragleave.prevent': "$el.classList.remove('drag-over')",
                           children: [
                             $div({ className: 'upload-zone-icon', textContent: '📁' }),
                             $p({ textContent: 'Click to select files or drag and drop' }),
