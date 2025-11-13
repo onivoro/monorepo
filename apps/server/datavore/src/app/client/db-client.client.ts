@@ -221,8 +221,8 @@ export function dbClient(): DbClientState {
         const html = await response.text();
         this.dataTabContent = html;
 
-        // Save the executed query to localStorage
-        this.saveQueryToLocalStorage(queryToExecute);
+        // Save the entire editor content to localStorage (not just the executed portion)
+        this.saveQueryToLocalStorage(editor.getValue());
       } catch (error: any) {
         console.error('Query execution error:', error);
         this.dataTabContent =
