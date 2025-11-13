@@ -4,9 +4,28 @@
   "sourceRoot": "apps/server/datavore/src",
   "projectType": "application",
   "targets": {
+    "build-client": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{projectRoot}/src/assets/scripts"],
+      "options": {
+        "target": "web",
+        "compiler": "tsc",
+        "outputPath": "apps/server/datavore/src/assets/scripts",
+        "webpackConfig": "apps/server/datavore/webpack.client.config.js"
+      },
+      "configurations": {
+        "development": {
+          "mode": "development"
+        },
+        "production": {
+          "mode": "production"
+        }
+      }
+    },
     "build": {
       "executor": "@nx/webpack:webpack",
       "outputs": ["{options.outputPath}"],
+      "dependsOn": ["build-client"],
       "options": {
         "outputPath": "dist/apps/server/datavore",
         "webpackConfig": "apps/server/datavore/webpack.config.js"

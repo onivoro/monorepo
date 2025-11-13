@@ -19,8 +19,14 @@ export class AppController {
             $meta({ name: 'viewport', content: 'width=device-width, initial-scale=1.0' }),
             $title({ textContent: 'DataVore Database Client' }),
             $link({ rel: 'icon', type: 'image/x-icon', href: '/assets/images/bear.ico' }),
-            $script({ src: 'https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js', defer: true }),
-            $style({ textContent: DESIGN_SYSTEM_STYLES })
+            $link({ rel: 'stylesheet', href: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/editor/editor.main.css' }),
+            $style({ textContent: DESIGN_SYSTEM_STYLES }),
+            // Load Monaco loader first
+            $script({ src: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js' }),
+            // Load our client bundle (registers Alpine component)
+            $script({ src: '/assets/scripts/db-client.bundle.js' }),
+            // Then load Alpine.js (will auto-start after DOM ready)
+            $script({ src: 'https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js', defer: true })
           ]
         }),
         $body({
@@ -122,19 +128,21 @@ export class AppController {
                                       textContent: '▶ Execute (CMD + ENTER)'
                                     })
                                   ]
-                                })
-                              ]
-                            }),
-                            $textarea({
-                              'x-model': 'query',
-                              placeholder: 'SELECT * FROM table_name;',
-                              '@keydown.ctrl.enter': 'executeQuery()',
-                              '@keydown.meta.enter': 'executeQuery()'
                             })
                           ]
                         }),
-
-                        // Results Area
+                        $div({
+                          id: 'editor-container',
+                          style: {
+                            flex: '1',
+                            minHeight: '300px',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-md)',
+                            overflow: 'hidden'
+                          }
+                        })
+                      ]
+                    }),                        // Results Area
                         $div({
                           className: 'results-area',
                           children: [
@@ -178,100 +186,6 @@ export class AppController {
               ]
             })
           ]
-        }),
-
-        $script({
-          textContent: `
-            function dbClient() {
-              return {
-                query: '',
-                selectedTable: '',
-                activeTab: 'data',
-                isConnected: true,
-                tableCount: 0,
-                allTables: [],
-                filteredTablesHtml: '<div class="loading"><div class="spinner"></div>Loading tables...</div>',
-                dataTabContent: '<div class="empty-state"><div class="empty-state-icon">👋</div><p>Select a table or execute a query</p></div>',
-                structureTabContent: '',
-                structureLoaded: false,
-
-                get resultsHtml() {
-                  return this.activeTab === 'data' ? this.dataTabContent : this.structureTabContent;
-                },
-
-                async loadTables() {
-                  try {
-                    this.isConnected = true;
-                    const response = await fetch('/api/tables');
-                    const html = await response.text();
-                    this.allTables = html;
-                    this.tableCount = (html.match(/data-table/g) || []).length;
-                    this.filteredTablesHtml = this.allTables;
-                  } catch (error) {
-                    this.isConnected = false;
-                    this.filteredTablesHtml = '<div class="error">Error loading tables</div>';
-                  }
-                },
-
-                async selectTable(tableName) {
-                  this.selectedTable = tableName;
-                  this.activeTab = 'data';
-                  this.structureLoaded = false;
-                  this.structureTabContent = '';
-
-                  try {
-                    this.dataTabContent = '<div class="loading"><div class="spinner"></div>Loading table data...</div>';
-                    const response = await fetch('/api/table/' + tableName);
-                    const html = await response.text();
-                    this.dataTabContent = html;
-                  } catch (error) {
-                    this.dataTabContent = '<div class="error">Error loading table data</div>';
-                  }
-                },
-
-                async executeQuery() {
-                  if (!this.query.trim()) return;
-
-                  try {
-                    this.dataTabContent = '<div class="loading"><div class="spinner"></div>Executing query...</div>';
-                    this.activeTab = 'data';
-                    const response = await fetch('/api/query', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ query: this.query })
-                    });
-                    const html = await response.text();
-                    this.dataTabContent = html;
-                  } catch (error) {
-                    this.dataTabContent = '<div class="error">Query error: ' + error.message + '</div>';
-                  }
-                },
-
-                switchTab(tabName) {
-                  this.activeTab = tabName;
-                  if (tabName === 'structure' && this.selectedTable && !this.structureLoaded) {
-                    this.loadStructure();
-                  }
-                },
-
-                async loadStructure() {
-                  try {
-                    this.structureTabContent = '<div class="loading"><div class="spinner"></div>Loading structure...</div>';
-                    const response = await fetch('/api/table/' + this.selectedTable + '/structure');
-                    const html = await response.text();
-                    this.structureTabContent = html;
-                    this.structureLoaded = true;
-                  } catch (error) {
-                    this.structureTabContent = '<div class="error">Error loading structure</div>';
-                  }
-                },
-
-                clearQuery() {
-                  this.query = '';
-                }
-              };
-            }
-          `
         })
       ]
     });

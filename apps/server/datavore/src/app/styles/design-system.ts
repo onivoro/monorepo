@@ -350,29 +350,17 @@ export const DESIGN_SYSTEM_STYLES = `
     gap: var(--space-2);
   }
 
-  .query-editor textarea {
-    flex: 1;
-    min-height: 300px;
-    padding: var(--space-4);
+  #editor-container {
     background-color: var(--color-bg-tertiary);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: var(--color-text-primary);
-    font-family: var(--font-mono);
-    font-size: var(--size-sm);
-    resize: none;
-    line-height: 1.6;
   }
 
-  .query-editor textarea::placeholder {
-    color: var(--color-text-tertiary);
+  /* Monaco editor overrides for dark theme consistency */
+  .monaco-editor {
+    background-color: var(--color-bg-tertiary) !important;
   }
 
-  .query-editor textarea:focus {
-    outline: none;
-    border-color: var(--color-accent-primary);
-    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
-    background-color: var(--color-bg-secondary);
+  .monaco-editor .margin {
+    background-color: var(--color-bg-secondary) !important;
   }
 
   /* ====================================================================
