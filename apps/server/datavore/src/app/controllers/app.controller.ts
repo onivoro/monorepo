@@ -119,7 +119,7 @@ export class AppController {
                                     $button({
                                       className: 'btn',
                                       '@click': 'executeQuery()',
-                                      textContent: '▶ Execute'
+                                      textContent: '▶ Execute (CMD + ENTER)'
                                     })
                                   ]
                                 })
