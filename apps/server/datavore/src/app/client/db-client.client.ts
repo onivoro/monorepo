@@ -24,6 +24,8 @@ export function dbClient(): DbClientState {
     structureTabContent: '',
     structureLoaded: false,
     _executing: false, // Prevent multiple simultaneous executions
+    currentQueryId: null,
+    queryStats: null,
 
     get resultsHtml(): string {
       return this.activeTab === 'data' ? this.dataTabContent : this.structureTabContent;
@@ -185,6 +187,8 @@ export function dbClient(): DbClientState {
       }
 
       (this as any)._executing = true;
+      this.currentQueryId = `query-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      this.queryStats = null;
 
       try {
         // Get selected text or full text if no selection
@@ -200,35 +204,80 @@ export function dbClient(): DbClientState {
         // If no text is selected (or selection is collapsed), use entire editor content
         if (!queryToExecute.trim()) {
           queryToExecute = editor.getValue();
-        }        if (!queryToExecute.trim()) return;
+        }
+
+        if (!queryToExecute.trim()) {
+          (this as any)._executing = false;
+          this.currentQueryId = null;
+          return;
+        }
 
         // Show loading state
         this.dataTabContent =
           '<div class="loading"><div class="spinner"></div>Executing query...</div>';
         this.activeTab = 'data';
 
-        // Execute query
+        // Execute query with queryId for cancellation support
         const response = await fetch('/api/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: queryToExecute }),
+          body: JSON.stringify({
+            query: queryToExecute,
+            queryId: this.currentQueryId
+          }),
         });
 
         if (!response.ok) {
           throw new Error(`Query failed: ${response.statusText}`);
         }
 
-        const html = await response.text();
-        this.dataTabContent = html;
+        const result = await response.json();
+        this.dataTabContent = result.html;
+        this.queryStats = {
+          elapsedMs: result.elapsedMs,
+          rowCount: result.rowCount
+        };
 
         // Save the entire editor content to localStorage (not just the executed portion)
         this.saveQueryToLocalStorage(editor.getValue());
       } catch (error: any) {
         console.error('Query execution error:', error);
-        this.dataTabContent =
-          '<div class="error">Query error: ' + (error.message || 'Unknown error') + '</div>';
+
+        // Check if it was a cancellation
+        if (error.name === 'AbortError' || error.message?.includes('cancel')) {
+          this.dataTabContent = '<div class="info">Query cancelled by user</div>';
+        } else {
+          this.dataTabContent =
+            '<div class="error">Query error: ' + (error.message || 'Unknown error') + '</div>';
+        }
+
+        this.queryStats = null;
       } finally {
         (this as any)._executing = false;
+        this.currentQueryId = null;
+      }
+    },
+
+    async cancelQuery(): Promise<void> {
+      if (!this.currentQueryId) {
+        console.log('No active query to cancel');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/query/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ queryId: this.currentQueryId }),
+        });
+
+        const result = await response.json();
+        if (result.cancelled) {
+          this.dataTabContent = '<div class="info">Query cancelled successfully</div>';
+          this.queryStats = null;
+        }
+      } catch (error) {
+        console.error('Error cancelling query:', error);
       }
     },
 

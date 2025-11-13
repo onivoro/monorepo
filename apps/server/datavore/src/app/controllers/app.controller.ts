@@ -126,7 +126,14 @@ export class AppController {
                                     $button({
                                       className: 'btn',
                                       '@click': 'executeQuery()',
+                                      'x-show': '!_executing',
                                       textContent: '▶ Execute (CMD + ENTER)'
+                                    }),
+                                    $button({
+                                      className: 'btn danger',
+                                      '@click': 'cancelQuery()',
+                                      'x-show': '_executing',
+                                      textContent: '⏹ Cancel Query'
                                     })
                                   ]
                             })
@@ -147,6 +154,21 @@ export class AppController {
                         $div({
                           className: 'results-area',
                           children: [
+                            // Query stats bar
+                            $div({
+                              className: 'query-stats',
+                              'x-show': 'queryStats',
+                              'x-html': 'queryStats ? `<span>⏱️ ${queryStats.elapsedMs}ms</span><span style="margin-left: 2rem">📊 ${queryStats.rowCount.toLocaleString()} rows</span>` : ""',
+                              style: {
+                                display: 'flex',
+                                gap: '1rem',
+                                padding: '0.5rem 1rem',
+                                backgroundColor: 'var(--color-bg-tertiary)',
+                                borderBottom: '1px solid var(--color-border)',
+                                fontSize: 'var(--size-sm)',
+                                color: 'var(--color-text-secondary)'
+                              }
+                            }),
                             $div({
                               className: 'tabs',
                               'x-show': 'selectedTable',

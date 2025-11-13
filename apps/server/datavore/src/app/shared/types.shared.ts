@@ -15,6 +15,11 @@ export interface DbClientState {
   structureTabContent: string;
   structureLoaded: boolean;
   _executing: boolean; // Prevent multiple simultaneous executions
+  currentQueryId: string | null; // Track current query for cancellation
+  queryStats: {
+    elapsedMs: number;
+    rowCount: number;
+  } | null;
 
   // Computed properties
   resultsHtml: string;
@@ -30,6 +35,7 @@ export interface DbClientState {
   loadTables(): Promise<void>;
   selectTable(tableName: string): Promise<void>;
   executeQuery(): Promise<void>;
+  cancelQuery(): Promise<void>;
   switchTab(tabName: 'data' | 'structure'): void;
   loadStructure(): Promise<void>;
   clearQuery(): void;

@@ -10,7 +10,18 @@ export class QueryController {
   ) { }
 
   @Post()
-  async get(@Body() body: { query: string }) {
-    return await this.tableService.executeQuery(this.dataSource, body.query);
+  async execute(@Body() body: { query: string; queryId?: string }) {
+    const result = await this.tableService.executeQuery(
+      this.dataSource,
+      body.query,
+      body.queryId
+    );
+    return result;
+  }
+
+  @Post('cancel')
+  async cancel(@Body() body: { queryId: string }) {
+    const cancelled = await this.tableService.cancelQuery(body.queryId);
+    return { cancelled };
   }
 }

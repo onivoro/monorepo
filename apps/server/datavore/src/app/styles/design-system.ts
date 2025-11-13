@@ -408,6 +408,17 @@ export const DESIGN_SYSTEM_STYLES = `
     background-color: var(--color-border);
   }
 
+  .btn.danger {
+    background-color: #dc3545;
+    border: 1px solid #c82333;
+    color: white;
+  }
+
+  .btn.danger:hover:not(:disabled) {
+    background-color: #c82333;
+    border-color: #bd2130;
+  }
+
   /* ====================================================================
      Results Area
      ==================================================================== */
@@ -620,6 +631,19 @@ export const DESIGN_SYSTEM_STYLES = `
     border: 1px solid rgba(239, 68, 68, 0.3);
     border-radius: var(--radius-md);
     color: var(--color-status-error);
+    font-size: var(--size-sm);
+  }
+
+  /* ====================================================================
+     Info State
+     ==================================================================== */
+
+  .info {
+    padding: var(--space-4);
+    background-color: rgba(14, 165, 233, 0.1);
+    border: 1px solid rgba(14, 165, 233, 0.3);
+    border-radius: var(--radius-md);
+    color: var(--color-accent-primary);
     font-size: var(--size-sm);
   }
 
