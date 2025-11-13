@@ -324,7 +324,8 @@ export const DESIGN_SYSTEM_STYLES = `
     background-color: var(--color-bg-secondary);
     border-bottom: 1px solid var(--color-border);
     flex-shrink: 0;
-    max-height: 50%;
+    min-height: 300px;
+    max-height: 70%;
     overflow: hidden;
   }
 
@@ -351,6 +352,7 @@ export const DESIGN_SYSTEM_STYLES = `
 
   .query-editor textarea {
     flex: 1;
+    min-height: 300px;
     padding: var(--space-4);
     background-color: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
