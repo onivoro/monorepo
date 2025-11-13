@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-html",
-  "version": "24.31.3",
+  "version": "24.31.4",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
