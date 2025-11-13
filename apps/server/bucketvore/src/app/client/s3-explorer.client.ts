@@ -89,6 +89,47 @@ export function s3Explorer(): S3ClientState & Record<string, any> {
     // Initialization
     async init(): Promise<void> {
       await this.loadBuckets();
+      this.restoreStateFromUrl();
+      this.setupUrlSync();
+    },
+
+    // Deep linking: restore state from URL
+    restoreStateFromUrl(): void {
+      const params = new URLSearchParams(window.location.search);
+      const bucket = params.get('bucket');
+      const prefix = params.get('prefix') || '';
+
+      if (bucket) {
+        this.selectedBucket = bucket;
+        this.currentPrefix = prefix;
+        this.loadFiles();
+      }
+    },
+
+    // Deep linking: update URL when state changes
+    updateUrl(): void {
+      const params = new URLSearchParams();
+
+      if (this.selectedBucket) {
+        params.set('bucket', this.selectedBucket);
+
+        if (this.currentPrefix) {
+          params.set('prefix', this.currentPrefix);
+        }
+      }
+
+      const newUrl = params.toString()
+        ? `${window.location.pathname}?${params.toString()}`
+        : window.location.pathname;
+
+      window.history.pushState({}, '', newUrl);
+    },
+
+    // Setup browser back/forward button support
+    setupUrlSync(): void {
+      window.addEventListener('popstate', () => {
+        this.restoreStateFromUrl();
+      });
     },
 
     // API Methods
@@ -105,6 +146,7 @@ export function s3Explorer(): S3ClientState & Record<string, any> {
       this.selectedBucket = bucketName;
       this.currentPrefix = '';
       this.fileFilter = '';
+      this.updateUrl();
       await this.loadFiles();
     },
 
@@ -128,6 +170,7 @@ export function s3Explorer(): S3ClientState & Record<string, any> {
     async navigateToFolder(prefix: string): Promise<void> {
       this.currentPrefix = prefix;
       this.fileFilter = '';
+      this.updateUrl();
       await this.loadFiles();
     },
 
