@@ -4,9 +4,27 @@
   "sourceRoot": "apps/server/bucketvore/src",
   "projectType": "application",
   "targets": {
+    "build-client": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{projectRoot}/src/assets/scripts"],
+      "options": {
+        "outputPath": "apps/server/bucketvore/src/assets/scripts",
+        "webpackConfig": "apps/server/bucketvore/webpack.client.config.js",
+        "watch": false
+      },
+      "configurations": {
+        "development": {
+          "mode": "development"
+        },
+        "production": {
+          "mode": "production"
+        }
+      }
+    },
     "build": {
       "executor": "@nx/webpack:webpack",
       "outputs": ["{options.outputPath}"],
+      "dependsOn": ["build-client"],
       "options": {
         "outputPath": "dist/apps/server/bucketvore",
         "webpackConfig": "apps/server/bucketvore/webpack.config.js"

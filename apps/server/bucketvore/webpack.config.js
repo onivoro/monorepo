@@ -19,6 +19,8 @@ module.exports = (env, argv) => {
         optimization: isProduction,
         outputHashing: 'none',
         generatePackageJson: true,
+        // Exclude client-side TypeScript files from server bundle
+        exclude: ['**/*.client.ts'],
       }),
       // Add shebang to the main.js file
       {
