@@ -139,11 +139,24 @@ export class HtmlGeneratorService {
 
     const rows = data.map(row =>
       $tr({
-        children: columns.map(col =>
-          $td({
-            innerHTML: row[col] !== null ? String(row[col]) : '<em>NULL</em>'
-          })
-        )
+        children: columns.map(col => {
+          const cellValue = this.serializeCellValue(row[col]);
+          return $td({
+            innerHTML: cellValue.html,
+            'data-copy-value': cellValue.raw,
+            '@click': `navigator.clipboard.writeText($el.dataset.copyValue).then(() => {
+              const original = $el.style.backgroundColor;
+              $el.style.backgroundColor = '#4CAF50';
+              $el.style.transition = 'background-color 0.3s';
+              setTimeout(() => {
+                $el.style.backgroundColor = original;
+                setTimeout(() => $el.style.transition = '', 300);
+              }, 300);
+            })`,
+            style: { cursor: 'pointer' },
+            title: 'Click to copy'
+          });
+        })
       })
     );
 
@@ -153,6 +166,45 @@ export class HtmlGeneratorService {
         $tbody({ children: rows })
       ]
     });
+  }
+
+  /**
+   * Serialize cell values for display, handling objects/arrays (JSONB) properly
+   */
+  private serializeCellValue(value: any): { html: string; raw: string } {
+    if (value === null || value === undefined) {
+      return { html: '<em>NULL</em>', raw: 'NULL' };
+    }
+
+    // Check if value is an object or array (JSONB column)
+    if (typeof value === 'object') {
+      const jsonString = JSON.stringify(value, null, 2);
+      return {
+        html: `<pre style="margin: 0; font-family: monospace; white-space: pre-wrap; word-break: break-all;">${this.escapeHtml(jsonString)}</pre>`,
+        raw: jsonString
+      };
+    }
+
+    // For primitive values
+    const stringValue = String(value);
+    return {
+      html: this.escapeHtml(stringValue),
+      raw: stringValue
+    };
+  }
+
+  /**
+   * Escape HTML to prevent XSS
+   */
+  private escapeHtml(text: string): string {
+    const map: { [key: string]: string } = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
   }
 
   private generateColumnsTableHtml(columns: ColumnInfo[], pkSet: Set<string>): string {

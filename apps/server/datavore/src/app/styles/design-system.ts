@@ -518,6 +518,19 @@ export const DESIGN_SYSTEM_STYLES = `
     color: var(--color-text-primary);
   }
 
+  td[data-copy-value] {
+    cursor: pointer;
+    position: relative;
+  }
+
+  td[data-copy-value]:hover {
+    background-color: rgba(14, 165, 233, 0.1) !important;
+  }
+
+  td[data-copy-value]:active {
+    background-color: rgba(14, 165, 233, 0.2) !important;
+  }
+
   /* ====================================================================
      Type Badges
      ==================================================================== */
