@@ -1,5 +1,5 @@
 import { Controller, Get, Res } from '@nestjs/common';
-import { $html, $head, $title, $meta, $script, $style, $body, $div, $h1, $h3, $textarea, $button, $table, $thead, $tbody, $tr, $th, $td, $p, $em, $h2, $input, $header, $aside, $main, $span, $strong } from '@onivoro/server-html';
+import { $html, $head, $title, $meta, $script, $style, $body, $div, $h1, $h3, $textarea, $button, $table, $thead, $tbody, $tr, $th, $td, $p, $em, $h2, $input, $header, $aside, $main, $span, $strong, $link } from '@onivoro/server-html';
 import { AppServerDatavoreConfig } from '../app-server-datavore-config.class';
 import { DESIGN_SYSTEM_STYLES } from '../styles/design-system';
 
@@ -18,6 +18,7 @@ export class AppController {
             $meta({ charset: 'UTF-8' }),
             $meta({ name: 'viewport', content: 'width=device-width, initial-scale=1.0' }),
             $title({ textContent: 'DataVore Database Client' }),
+            $link({ rel: 'icon', type: 'image/x-icon', href: '/assets/images/bear.ico' }),
             $script({ src: 'https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js', defer: true }),
             $style({ textContent: DESIGN_SYSTEM_STYLES })
           ]

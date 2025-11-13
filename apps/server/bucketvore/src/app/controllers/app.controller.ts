@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { $html, $head, $title, $meta, $script, $style, $body, $div, $h1, $p, $header, $aside, $main, $button, $input } from '@onivoro/server-html';
+import { $html, $head, $title, $meta, $script, $style, $body, $div, $h1, $p, $header, $aside, $main, $button, $input, $link } from '@onivoro/server-html';
 import { AppServerBucketvoreConfig } from '../app-server-bucketvore-config.class';
 import { DESIGN_SYSTEM_STYLES } from '../styles/design-system';
 
@@ -17,6 +17,7 @@ export class AppController {
             $meta({ charset: 'UTF-8' }),
             $meta({ name: 'viewport', content: 'width=device-width, initial-scale=1.0' }),
             $title({ textContent: 'BucketVore - S3 File Explorer' }),
+            $link({ rel: 'icon', type: 'image/x-icon', href: '/assets/images/bear.ico' }),
             $style({ textContent: DESIGN_SYSTEM_STYLES }),
             // Load our Alpine component first
             $script({ src: '/assets/scripts/s3-explorer.bundle.js' }),
