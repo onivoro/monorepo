@@ -21,6 +21,10 @@ export interface DbClientState {
 
   // Methods
   init(): void;
+  getConnectionString(): string;
+  getStorageKey(): string;
+  saveQueryToLocalStorage(query: string): void;
+  loadQueryFromLocalStorage(): string;
   initMonaco(): void;
   createEditor(container: HTMLElement): void;
   loadTables(): Promise<void>;

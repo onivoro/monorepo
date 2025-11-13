@@ -35,6 +35,32 @@ export function dbClient(): DbClientState {
       setTimeout(() => this.initMonaco(), 300);
     },
 
+    getConnectionString(): string {
+      const body = document.querySelector('body');
+      return body?.getAttribute('data-connection-string') || 'default';
+    },
+
+    getStorageKey(): string {
+      return `datavore-query-${this.getConnectionString()}`;
+    },
+
+    saveQueryToLocalStorage(query: string): void {
+      try {
+        localStorage.setItem(this.getStorageKey(), query);
+      } catch (error) {
+        console.warn('Failed to save query to localStorage:', error);
+      }
+    },
+
+    loadQueryFromLocalStorage(): string {
+      try {
+        return localStorage.getItem(this.getStorageKey()) || 'SELECT * FROM table_name;';
+      } catch (error) {
+        console.warn('Failed to load query from localStorage:', error);
+        return 'SELECT * FROM table_name;';
+      }
+    },
+
     initMonaco(): void {
       // Check if already initialized for this instance
       if (this.editor) {
@@ -78,20 +104,22 @@ export function dbClient(): DbClientState {
         return;
       }
 
-      // Create editor and store it globally, outside Alpine's reactivity
+            // Load saved query from localStorage
+      const savedQuery = this.loadQueryFromLocalStorage();
+
+      // Create the Monaco editor instance with better state management
       const editor = window.monaco.editor.create(container, {
-        value: 'SELECT * FROM table_name;',
+        value: savedQuery,
         language: 'sql',
         theme: 'vs-dark',
-        automaticLayout: false, // Disable to prevent issues with Alpine DOM updates
+        automaticLayout: false, // Critical: prevents layout thrashing
         minimap: { enabled: false },
         fontSize: 14,
         lineNumbers: 'on',
+        roundedSelection: false,
         scrollBeyondLastLine: false,
-        wordWrap: 'on',
-        wrappingIndent: 'indent',
-        suggestOnTriggerCharacters: true,
-        quickSuggestions: true,
+        readOnly: false,
+        tabSize: 2,
       });
 
       window.__monacoEditor = editor;
@@ -192,6 +220,9 @@ export function dbClient(): DbClientState {
 
         const html = await response.text();
         this.dataTabContent = html;
+
+        // Save the executed query to localStorage
+        this.saveQueryToLocalStorage(queryToExecute);
       } catch (error: any) {
         console.error('Query execution error:', error);
         this.dataTabContent =

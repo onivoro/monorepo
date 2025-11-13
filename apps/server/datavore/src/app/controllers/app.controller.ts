@@ -31,6 +31,7 @@ export class AppController {
         }),
         $body({
           'x-data': 'dbClient()',
+          'data-connection-string': `${this.config.username}@${this.config.host}:${this.config.port}/${this.config.database}`,
           children: [
             // Header
             $header({
