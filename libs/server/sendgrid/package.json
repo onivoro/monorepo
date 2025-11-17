@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-sendgrid",
-  "version": "24.31.4",
+  "version": "24.31.5",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -10,7 +10,7 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/server-common": "24.31.4",
+    "@onivoro/server-common": "24.31.5",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
