@@ -70,6 +70,8 @@ export * from './lib/functions/to-decimal-base.function';
 export * from './lib/functions/to-dollars-and-cents.function';
 export * from './lib/functions/to-unique-array.function';
 export * from './lib/functions/to-words.function';
+export * from './lib/functions/try-json-parse';
+export * from './lib/functions/try-json-stringify';
 export * from './lib/functions/try-parse-date.function';
 export * from './lib/functions/unicode-words.const';
 export * from './lib/functions/upper-first.function';

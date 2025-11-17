@@ -1,5 +1,6 @@
 import { PipeTransform, Injectable, ArgumentMetadata, BadRequestException } from '@nestjs/common';
 import { ZodSchema } from 'zod';
+import { tryJsonParse } from '@onivoro/isomorphic-common';
 
 @Injectable()
 export class ZodValidationPipe implements PipeTransform {
@@ -8,7 +9,8 @@ export class ZodValidationPipe implements PipeTransform {
   transform(value: any, metadata: ArgumentMetadata) {
     const result = this.schema.safeParse(value);
     if (!result.success) {
-      throw new BadRequestException(result.error.errors[0].message);
+      const message = tryJsonParse(result?.error as any);
+      throw new BadRequestException(message || 'Validation failed');
     }
     return result.data;
   }
