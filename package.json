@@ -94,7 +94,7 @@
     "twilio": "~5.3.5",
     "typeorm": "^0.3.22",
     "typeorm-naming-strategies": "~4.1.0",
-    "zod": "~3.23.8"
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@aws-sdk/client-cloudfront": "^3.808.0",
