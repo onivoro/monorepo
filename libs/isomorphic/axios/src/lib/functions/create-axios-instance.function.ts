@@ -3,7 +3,7 @@ import { TApiConfig } from '../types/api-config.type';
 
 export function createAxiosInstance(config: TApiConfig) {
 
-  const { onError, on401, on403, on400, on500, addHeaders, onRequest, onResponse } = config;
+  const { onError, addHeaders, onRequest, onResponse } = config;
 
   const instance = axios.create();
 
@@ -39,23 +39,16 @@ export function createAxiosInstance(config: TApiConfig) {
         onError(err?.response || defaultError);
       }
 
-      if (err?.response?.status === 400) {
-        if (typeof on400 === 'function') {
-          on400(err?.response || defaultError);
+      const status = Number(err?.response?.status);
+
+      if (status) {
+        const handler = config[`on${status}`];
+        if (handler && (typeof handler === 'function')) {
+          handler(err?.response || defaultError);
         }
-      } else if (err?.response?.status === 401) {
-        if (typeof on401 === 'function') {
-          on401(err?.response || defaultError);
-        }
-      } else if (err?.response?.status === 403) {
-        if (typeof on403 === 'function') {
-          on403(err?.response || defaultError);
-        }
-      } else if (err?.response?.status === 500) {
-        if (typeof on500 === 'function') {
-          on500(err?.response || defaultError);
-        }
-      } else {
+      }
+
+      if (!config.swallowErrors) {
         throw err;
       }
     }
