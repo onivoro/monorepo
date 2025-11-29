@@ -102,7 +102,7 @@ describe('createAxiosInstance - Integration Tests', () => {
 
       const instance = createAxiosInstance(config);
 
-      await expect(instance.get(INVALID_ENDPOINT)).rejects.toThrowErrorMatchingSnapshot();
+      await expect(instance.get(INVALID_ENDPOINT)).rejects.toThrow();
     });
 
     it('should call onError handler when a 404 error occurs', async () => {
@@ -193,6 +193,16 @@ describe('createAxiosInstance - Integration Tests', () => {
       expect(on400Mock).not.toHaveBeenCalled();
     });
 
+    it('should not swallow errors when swallowErrors is undefined', async () => {
+      const config: TApiConfig = {
+        apiUrl: INVALID_ENDPOINT,
+      };
+
+      const instance = createAxiosInstance(config);
+
+      await expect(instance.get(INVALID_ENDPOINT)).rejects.toThrowErrorMatchingSnapshot();
+    });
+
     it('should swallow errors when swallowErrors is true', async () => {
       const onErrorMock = jest.fn();
       const config: TApiConfig = {
@@ -203,9 +213,15 @@ describe('createAxiosInstance - Integration Tests', () => {
 
       const instance = createAxiosInstance(config);
 
-      // Should not throw
-      await instance.get(INVALID_ENDPOINT);
+      // Should not throw - this should complete without error
+      let error: any;
+      try {
+        await instance.get(INVALID_ENDPOINT);
+      } catch (e) {
+        error = e;
+      }
 
+      expect(error).toBeUndefined();
       expect(onErrorMock).toHaveBeenCalled();
     });
 

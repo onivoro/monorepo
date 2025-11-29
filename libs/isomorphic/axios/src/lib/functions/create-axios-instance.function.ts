@@ -1,9 +1,9 @@
 import axios from 'axios';
 import { TApiConfig } from '../types/api-config.type';
 
-export function createAxiosInstance(config: TApiConfig) {
+export function createAxiosInstance(_: TApiConfig) {
 
-  const { onError, addHeaders, onRequest, onResponse } = config;
+  const { onError, addHeaders, onRequest, onResponse } = _;
 
   const instance = axios.create();
 
@@ -42,13 +42,13 @@ export function createAxiosInstance(config: TApiConfig) {
       const status = Number(err?.response?.status);
 
       if (status) {
-        const handler = config[`on${status}`];
+        const handler = _[`on${status}`];
         if (handler && (typeof handler === 'function')) {
           handler(err?.response || defaultError);
         }
       }
 
-      if (!config.swallowErrors) {
+      if (!_.swallowErrors) {
         throw err;
       }
     }
