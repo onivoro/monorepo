@@ -11,4 +11,5 @@ export interface ICognitoAccessToken {
     iat: number;
     jti: string;
     username: string;
+    'cognito:username': string;
 }
