@@ -8,5 +8,6 @@ export const AccessTokenUsername = createParamDecorator(function (
 ) {
   const request = ctx.switchToHttp().getRequest();
 
-  return (request[accessTokenKey] as ICognitoAccessToken)?.username;
+  const cognitoAccessToken: ICognitoAccessToken = request[accessTokenKey];
+  return cognitoAccessToken.username ?? cognitoAccessToken['cognito:username'];
 });
