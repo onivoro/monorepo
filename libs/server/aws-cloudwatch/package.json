@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-aws-cloudwatch",
-  "version": "24.33.2",
+  "version": "24.33.3",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -10,8 +10,8 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/server-aws-credential-providers": "24.33.2",
-    "@onivoro/server-common": "24.33.2",
+    "@onivoro/server-aws-credential-providers": "24.33.3",
+    "@onivoro/server-common": "24.33.3",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
