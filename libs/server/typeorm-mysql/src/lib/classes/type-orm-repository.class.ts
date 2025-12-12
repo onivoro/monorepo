@@ -66,8 +66,8 @@ export class TypeOrmRepository<TEntity> implements IEntityProvider<
     return await (this.repo.softDelete as any)(options);
   }
 
-  async put(options: FindOptionsWhere<TEntity>, body: QueryDeepPartialEntity<TEntity>) {
-    await this.repo.save(options, body);
+  async put(body: QueryDeepPartialEntity<TEntity>) {
+    await this.repo.save(body);
   }
 
   async patch(options: FindOptionsWhere<TEntity>, body: QueryDeepPartialEntity<TEntity>) {

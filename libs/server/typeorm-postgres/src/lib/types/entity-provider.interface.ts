@@ -4,6 +4,6 @@ export interface IEntityProvider<TEntity, TFindOneOptions, TFindManyOptions, TFi
     postOne: (body: Partial<TEntity>) => Promise<TEntity>;
     postMany: (body: Partial<TEntity>[]) => Promise<TEntity[]>;
     delete: (options: TFindOptionsWhere) => Promise<void>;
-    put: (options: TFindOptionsWhere, body: TQueryDeepPartialEntity) => Promise<void>;
+    put: (body: TQueryDeepPartialEntity) => Promise<void>;
     patch: (options: TFindOptionsWhere, body: TQueryDeepPartialEntity) => Promise<void>;
 }

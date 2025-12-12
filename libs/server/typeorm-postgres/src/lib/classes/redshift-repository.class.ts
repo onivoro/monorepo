@@ -83,7 +83,7 @@ export class RedshiftRepository<TEntity> extends TypeOrmRepository<TEntity> {
     return [];
   }
 
-  override async put(options: FindOptionsWhere<TEntity>, body: QueryDeepPartialEntity<TEntity>): Promise<void> {
+  override async put(body: QueryDeepPartialEntity<TEntity>): Promise<void> {
     this.throwNotImplemented('put');
   }
 
