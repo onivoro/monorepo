@@ -1,0 +1,9 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`money worx 1`] = `"$1,234.57"`;
+
+exports[`money worx 2`] = `"$987.65"`;
+
+exports[`money worx 3`] = `"$337.65"`;
+
+exports[`money worx 4`] = `"$1,234.56"`;

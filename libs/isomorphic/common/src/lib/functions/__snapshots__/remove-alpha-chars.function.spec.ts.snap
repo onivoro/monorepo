@@ -1,0 +1,11 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`removeAlphaChars worx 1`] = `"1234.567"`;
+
+exports[`removeAlphaChars worx 2`] = `"987.65"`;
+
+exports[`removeAlphaChars worx 3`] = `"337.65"`;
+
+exports[`removeAlphaChars worx 4`] = `"1234.56"`;
+
+exports[`removeAlphaChars worx 5`] = `"1234.5"`;

@@ -1,0 +1,3 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`tryJsonStringify GIVEN input is not stringifiable WHEN input is circular returns null 1`] = `null`;

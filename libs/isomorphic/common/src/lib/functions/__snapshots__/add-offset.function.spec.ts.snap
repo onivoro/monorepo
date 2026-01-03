@@ -1,0 +1,5 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`addOffset GIVEN input is partial or full ISO8601 "2023-12-23" 1`] = `2023-12-23T06:00:00.000Z`;
+
+exports[`addOffset GIVEN input is partial or full ISO8601 "2023-12-23T00:00:00.000" 1`] = `2023-12-23T12:00:00.000Z`;

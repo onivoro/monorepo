@@ -68,6 +68,8 @@ export * from './lib/functions/to-calendar-date.function';
 export * from './lib/functions/to-csv-string.function';
 export * from './lib/functions/to-decimal-base.function';
 export * from './lib/functions/to-dollars-and-cents.function';
+export * from './lib/functions/to-end-of-day.function';
+export * from './lib/functions/to-start-of-day.function';
 export * from './lib/functions/to-unique-array.function';
 export * from './lib/functions/to-words.function';
 export * from './lib/functions/try-json-parse';

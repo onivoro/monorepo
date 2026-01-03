@@ -1,0 +1,3 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`toWords worx 1`] = `"three hundred thirty-seven"`;

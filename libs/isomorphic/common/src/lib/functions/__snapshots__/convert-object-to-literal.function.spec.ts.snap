@@ -1,0 +1,3 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`convertObjectToLiteral converts an object to a string 1`] = `"qty=337 AND price=100 AND product=flux-capacitor"`;
