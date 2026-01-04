@@ -83,6 +83,10 @@ export class TypeOrmRepository<TEntity> implements IEntityProvider<
     await this.repo.update(options, body);
   }
 
+  async head(options: FindOptionsWhere<TEntity>): Promise<boolean> {
+    return await this.repo.existsBy(options);
+  }
+
   get repo() {
     return this.entityManager.getRepository(this.entityType as any);
   }
