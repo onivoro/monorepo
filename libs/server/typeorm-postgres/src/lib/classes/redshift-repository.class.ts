@@ -1,5 +1,5 @@
 import { Injectable, NotImplementedException } from '@nestjs/common';
-import { DataSource, EntityManager, FindManyOptions, FindOneOptions, FindOptionsWhere } from 'typeorm';
+import { DataSource, DeepPartial, EntityManager, FindManyOptions, FindOneOptions, FindOptionsWhere, SaveOptions } from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { TypeOrmRepository } from './type-orm-repository.class';
 import { TTableMeta } from '../types/table-meta.type';
@@ -83,8 +83,18 @@ export class RedshiftRepository<TEntity> extends TypeOrmRepository<TEntity> {
     return [];
   }
 
-  override async put(body: QueryDeepPartialEntity<TEntity>): Promise<void> {
+  override put<T extends DeepPartial<TEntity>>(entities: T[], options: SaveOptions & { reload: false }): Promise<T[]>;
+  override put<T extends DeepPartial<TEntity>>(entities: T[], options?: SaveOptions): Promise<(T & TEntity)[]>;
+  override put<T extends DeepPartial<TEntity>>(entity: T, options: SaveOptions & { reload: false }): Promise<T>;
+  override put<T extends DeepPartial<TEntity>>(entity: T, options?: SaveOptions): Promise<T & TEntity>;
+  override async put<T extends DeepPartial<TEntity>>(entityOrEntities: T | T[], options?: SaveOptions): Promise<T | T[] | (T & TEntity) | (T & TEntity)[]> {
     this.throwNotImplemented('put');
+    return entityOrEntities as any;
+  }
+
+  async head(options: FindOptionsWhere<TEntity>, withDeleted = true): Promise<boolean> {
+    this.throwNotImplemented('head');
+    return undefined as any;
   }
 
   override forTransaction(entityManager: EntityManager): TypeOrmRepository<TEntity> {

@@ -1,10 +1,12 @@
 import {
+  DeepPartial,
   EntityManager,
   FindManyOptions,
   FindOneOptions,
   FindOptionsWhere,
   ILike,
   QueryRunner,
+  SaveOptions,
 } from 'typeorm';
 
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
@@ -66,16 +68,20 @@ export class TypeOrmRepository<TEntity> implements IEntityProvider<
     return await (this.repo.softDelete as any)(options);
   }
 
-  async put(body: QueryDeepPartialEntity<TEntity>) {
-    await this.repo.save(body);
+  put<T extends DeepPartial<TEntity>>(entities: T[], options: SaveOptions & { reload: false }): Promise<T[]>;
+  put<T extends DeepPartial<TEntity>>(entities: T[], options?: SaveOptions): Promise<(T & TEntity)[]>;
+  put<T extends DeepPartial<TEntity>>(entity: T, options: SaveOptions & { reload: false }): Promise<T>;
+  put<T extends DeepPartial<TEntity>>(entity: T, options?: SaveOptions): Promise<T & TEntity>;
+  async put<T extends DeepPartial<TEntity>>(entityOrEntities: T | T[], options?: SaveOptions): Promise<T | T[] | (T & TEntity) | (T & TEntity)[]> {
+    return await this.repo.save(entityOrEntities as any, options);
   }
 
   async patch(options: FindOptionsWhere<TEntity>, body: QueryDeepPartialEntity<TEntity>) {
     await this.repo.update(options, body);
   }
 
-  async head(options: FindOptionsWhere<TEntity>): Promise<boolean> {
-    return await this.repo.existsBy(options);
+  async head(options: FindOptionsWhere<TEntity>, withDeleted = true): Promise<boolean> {
+    return await this.repo.exists({ where: options, withDeleted });
   }
 
   get repo() {
