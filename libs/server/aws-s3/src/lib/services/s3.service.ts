@@ -4,6 +4,8 @@ import { ServerAwsS3Config } from '../server-aws-s3-config.class';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { IS3UploadResponse } from '../interfaces/s3-upload-response.interface';
 import { resolveUrl } from '../functions/resolve-url.function';
+import { createInterface } from 'node:readline/promises';
+import { Readable } from 'node:stream';
 
 export type TS3Params = {
   Key: string,
@@ -34,6 +36,24 @@ export class S3Service {
       ...resolvedParams,
       ETag,
     };
+  }
+
+  async *streamFromS3<T>(s3FileKey: string) {
+    const result = await this.getFile({
+      Key: s3FileKey,
+    });
+
+    if (!(result.Body instanceof Readable)) {
+      throw new Error(
+        `File not readable -> key:${s3FileKey}, type:${Object.getPrototypeOf(
+          result.Body
+        )}`
+      );
+    }
+
+    for await (const line of createInterface(result.Body)) {
+      yield JSON.parse(line) as T;
+    }
   }
 
   async uploadPublic(params: TS3Params & { Body: PutObjectRequest['Body'], ContentType?: PutObjectRequest['ContentType'] }): Promise<IS3UploadResponse> {
