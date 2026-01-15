@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import { Injectable, OnModuleInit, UnauthorizedException } from "@nestjs/common";
 import { JwtHeader, JwtPayload, decode, verify } from 'jsonwebtoken';
 import jwkToPem from 'jwk-to-pem';
 import { ServerAwsCognitoConfig } from "../server-aws-cognito-config.class";
@@ -52,7 +52,7 @@ export class CognitoTokenValidatorService implements OnModuleInit {
             return verifiedToken;
         } catch (error: any) {
             if (error?.name === 'TokenExpiredError') {
-                throw error;
+                console.warn({ detail: 'Token expired', error });
             }
             console.error({ detail: 'Token validation failed', error });
             return;
