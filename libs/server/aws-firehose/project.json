@@ -1,0 +1,25 @@
+{
+  "name": "lib-server-aws-firehose",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/aws-firehose/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/aws-firehose",
+        "main": "libs/server/aws-firehose/src/index.ts",
+        "tsConfig": "libs/server/aws-firehose/tsconfig.lib.json",
+        "assets": [
+          "libs/server/aws-firehose/README.md",
+          "libs/server/aws-firehose/LICENSE",
+          "libs/server/aws-firehose/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+  "nx-release-publish": {"executor": "@nx/js:release-publish"}
+  },
+  "tags": []
+}
