@@ -1,10 +1,12 @@
 import {
   DeepPartial,
   EntityManager,
+  EntityTarget,
   FindManyOptions,
   FindOneOptions,
   FindOptionsWhere,
   ILike,
+  ObjectLiteral,
   QueryRunner,
   SaveOptions,
 } from 'typeorm';
@@ -21,14 +23,14 @@ export type TQueryStreamParams<TRecord = any> = {
   onEnd?: (stream: ReadStream, count: number) => Promise<any | void>,
 };
 
-export class TypeOrmRepository<TEntity> implements IEntityProvider<
+export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntityProvider<
   TEntity,
   FindOneOptions<TEntity>,
   FindManyOptions<TEntity>,
   FindOptionsWhere<TEntity>,
   QueryDeepPartialEntity<TEntity>
 > {
-  constructor(private entityType: any, public entityManager: EntityManager) { }
+  constructor(private entityType: EntityTarget<TEntity>, public entityManager: EntityManager) { }
 
   forTransaction(entityManager: EntityManager): TypeOrmRepository<TEntity> {
     return {...this, entityManager};
