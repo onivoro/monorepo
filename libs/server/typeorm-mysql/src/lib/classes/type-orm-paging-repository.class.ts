@@ -1,5 +1,7 @@
 import {
   EntityManager,
+  EntityTarget,
+  ObjectLiteral,
 } from 'typeorm';
 
 import { TypeOrmRepository } from './type-orm-repository.class';
@@ -9,12 +11,12 @@ import { removeFalseyKeys } from '../functions/remove-falsey-keys.function';
 import { getPagingKey } from '../functions/get-paging-key.function';
 import { IPageParams } from '../types/page-params.interface';
 
-export abstract class TypeOrmPagingRepository<TEntity, TEntityParams> extends TypeOrmRepository<TEntity> {
+export abstract class TypeOrmPagingRepository<TEntity extends ObjectLiteral, TEntityParams> extends TypeOrmRepository<TEntity> {
   protected getPagingKey = getPagingKey;
   protected getSkip = getSkip;
   protected removeFalseyKeys = removeFalseyKeys;
 
-  constructor(entityType: any, entityManager: EntityManager) {
+  constructor(entityType: EntityTarget<TEntity>, entityManager: EntityManager) {
     super(entityType, entityManager);
   }
 

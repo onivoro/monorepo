@@ -2,10 +2,12 @@ import {
   DataSource,
   DeepPartial,
   EntityManager,
+  EntityTarget,
   FindManyOptions,
   FindOneOptions,
   FindOptionsWhere,
   ILike,
+  ObjectLiteral,
   SaveOptions,
 } from 'typeorm';
 
@@ -14,7 +16,7 @@ import { IEntityProvider } from '../types/entity-provider.interface';
 import { TKeysOf } from '@onivoro/isomorphic-common';
 import { TTableMeta } from '../types/table-meta.type';
 
-export class TypeOrmRepository<TEntity> implements IEntityProvider<
+export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntityProvider<
   TEntity,
   FindOneOptions<TEntity>,
   FindManyOptions<TEntity>,
@@ -26,8 +28,7 @@ export class TypeOrmRepository<TEntity> implements IEntityProvider<
   schema: string;
   debug = false;
 
-  constructor(public entityType: any, public entityManager: EntityManager) {
-
+  constructor(public entityType: EntityTarget<TEntity>, public entityManager: EntityManager) {
     const { tableName, schema } = this.repo.metadata;
 
     this.table = tableName;
@@ -66,15 +67,15 @@ export class TypeOrmRepository<TEntity> implements IEntityProvider<
   }
 
   async postMany(body: Partial<TEntity>[]): Promise<TEntity[]> {
-    return (await this.insertAndReturnMany(body as TEntity[])) as  any;
+    return this.insertAndReturnMany(body as TEntity[]);
   }
 
   async delete(options: FindOptionsWhere<TEntity>): Promise<void> {
-    return await (this.repo.delete as any)(options);
+    await this.repo.delete(options);
   }
 
   async softDelete(options: FindOptionsWhere<TEntity>): Promise<void> {
-    return await (this.repo.softDelete as any)(options);
+    await this.repo.softDelete(options);
   }
 
   put<T extends DeepPartial<TEntity>>(entities: T[], options: SaveOptions & { reload: false }): Promise<T[]>;
@@ -94,7 +95,7 @@ export class TypeOrmRepository<TEntity> implements IEntityProvider<
   }
 
   get repo() {
-    return this.entityManager.getRepository(this.entityType as any);
+    return this.entityManager.getRepository(this.entityType);
   }
 
   protected async insertAndReturn(entityToInsert: TEntity): Promise<TEntity> {
@@ -269,8 +270,7 @@ export class TypeOrmRepository<TEntity> implements IEntityProvider<
     return result?.map((_: any) => this.map(_)) as TEntity[];
   }
 
-  static buildFromMetadata<TGenericEntity>(dataSource: DataSource, _: {schema: string, table: string, columns: TKeysOf<TGenericEntity, TTableMeta>}) {
-
+  static buildFromMetadata<TGenericEntity extends ObjectLiteral>(dataSource: DataSource, _: {schema: string, table: string, columns: TKeysOf<TGenericEntity, TTableMeta>}) {
     class GenericRepository extends TypeOrmRepository<TGenericEntity> {
       constructor() {
         const entityManager = dataSource.createEntityManager();

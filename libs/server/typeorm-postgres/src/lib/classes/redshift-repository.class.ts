@@ -1,14 +1,23 @@
 import { Injectable, NotImplementedException } from '@nestjs/common';
-import { DataSource, DeepPartial, EntityManager, FindManyOptions, FindOneOptions, FindOptionsWhere, SaveOptions } from 'typeorm';
+import {
+  DataSource,
+  DeepPartial,
+  EntityManager,
+  EntityTarget,
+  FindManyOptions,
+  FindOneOptions,
+  FindOptionsWhere,
+  ObjectLiteral,
+  SaveOptions,
+} from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { TypeOrmRepository } from './type-orm-repository.class';
 import { TTableMeta } from '../types/table-meta.type';
 import { TKeysOf } from '@onivoro/isomorphic-common';
 
 @Injectable()
-export class RedshiftRepository<TEntity> extends TypeOrmRepository<TEntity> {
-
-  constructor(public entityType: any, public entityManager: EntityManager) {
+export class RedshiftRepository<TEntity extends ObjectLiteral> extends TypeOrmRepository<TEntity> {
+  constructor(public entityType: EntityTarget<TEntity>, public entityManager: EntityManager) {
     super(entityType, entityManager);
   }
 
@@ -125,7 +134,7 @@ export class RedshiftRepository<TEntity> extends TypeOrmRepository<TEntity> {
   }
 
   private throwNotImplemented(feature: string) {
-    throw new NotImplementedException(`RedshiftRepository of type "${this.entityType?.name}" has no implementation for "${feature}"`);
+    throw new NotImplementedException(`RedshiftRepository of type "${this.entityType}" has no implementation for "${feature}"`);
   }
 
   protected override mapPlaceholderExpression(length: number, index: number, column: string) {
@@ -134,7 +143,7 @@ export class RedshiftRepository<TEntity> extends TypeOrmRepository<TEntity> {
     return meta.type === 'jsonb' ? `JSON_PARSE(${exp})` : exp;
   }
 
-  static buildFromMetadata<TGenericEntity>(dataSource: DataSource, _: {schema: string, table: string, columns: TKeysOf<TGenericEntity, TTableMeta>}) {
+  static buildFromMetadata<TGenericEntity extends ObjectLiteral>(dataSource: DataSource, _: {schema: string, table: string, columns: TKeysOf<TGenericEntity, TTableMeta>}) {
 
       class GenericRepository extends RedshiftRepository<TGenericEntity> {
         constructor() {

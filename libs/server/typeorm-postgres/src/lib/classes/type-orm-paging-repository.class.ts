@@ -1,6 +1,4 @@
-import {
-  EntityManager,
-} from 'typeorm';
+import { EntityManager, ObjectLiteral } from 'typeorm';
 
 import { TypeOrmRepository } from './type-orm-repository.class';
 import { IPagedData } from '../types/paged-data.interface';
@@ -9,7 +7,7 @@ import { removeFalseyKeys } from '../functions/remove-falsey-keys.function';
 import { getPagingKey } from '../functions/get-paging-key.function';
 import { IPageParams } from '../types/page-params.interface';
 
-export abstract class TypeOrmPagingRepository<TEntity, TEntityParams> extends TypeOrmRepository<TEntity> {
+export abstract class TypeOrmPagingRepository<TEntity extends ObjectLiteral, TEntityParams> extends TypeOrmRepository<TEntity> {
   protected getPagingKey = getPagingKey;
   protected getSkip = getSkip;
   protected removeFalseyKeys = removeFalseyKeys;
