@@ -57,7 +57,7 @@ export class CloudwatchHippaService {
         this.existingLogStreams.add(cacheKey);
     }
 
-    async writeHippaEvent(event: { accessPoint: string, resourceType: string, resourceIds: string[], accessEmail: string }): Promise<PutLogEventsCommandOutput> {
+    async writeHippaEvent(event: { accessPoint: string, resourceType: string, resourceIds: string[], accessEmail: string, operation?: string }): Promise<PutLogEventsCommandOutput> {
         const logGroupName = this.config.LOG_GROUP;
         const logStreamName = `${CloudwatchHippaService.LOG_STREAM_PREFIX}${new Date().toISOString().split('T')[0]}`;
 
@@ -69,6 +69,7 @@ export class CloudwatchHippaService {
             resourceType: event.resourceType,
             resourceIds: event.resourceIds,
             accessEmail: event.accessEmail,
+            operation: event.operation,
         };
 
         const input: PutLogEventsCommandInput = {
