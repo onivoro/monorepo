@@ -2,12 +2,12 @@ import { Injectable } from '@nestjs/common';
 import {
     CloudWatchLogsClient,
     CreateLogStreamCommand,
+    DescribeLogStreamsCommand,
     PutLogEventsCommand,
     PutLogEventsCommandInput,
     PutLogEventsCommandOutput,
 } from '@aws-sdk/client-cloudwatch-logs';
 
-import { ServerAwsCloudwatchConfig } from '../classes/server-aws-cloudwatch-config.class';
 import { ServerAwsCloudwatchHippaConfig } from '../classes/server-aws-cloudwatch-hippa-config.class';
 
 @Injectable()
@@ -42,14 +42,14 @@ export class CloudwatchHippaService {
             return;
         }
 
-        try {
+        const { logStreams } = await this.cloudwatchLogsClient.send(
+            new DescribeLogStreamsCommand({ logGroupName, logStreamNamePrefix: logStreamName, limit: 1 })
+        );
+
+        if (!logStreams?.some(s => s.logStreamName === logStreamName)) {
             await this.cloudwatchLogsClient.send(
                 new CreateLogStreamCommand({ logGroupName, logStreamName })
             );
-        } catch (err: any) {
-            if (err?.name !== 'ResourceAlreadyExistsException') {
-                throw err;
-            }
         }
 
         const currentDate = new Date(logStreamName.replace(CloudwatchHippaService.LOG_STREAM_PREFIX, ''));
@@ -57,7 +57,7 @@ export class CloudwatchHippaService {
         this.existingLogStreams.add(cacheKey);
     }
 
-    async writeHippaEvent(event: { accessPoint: string, resourceType: string, resourceIds: string[], accessEmail: string, operation?: string }): Promise<PutLogEventsCommandOutput> {
+    async writeHippaEvent(event: { accessPoint: string, resourceType: string, resourceIds: string[], accessEmail: string, operation: string }): Promise<PutLogEventsCommandOutput> {
         const logGroupName = this.config.LOG_GROUP;
         const logStreamName = `${CloudwatchHippaService.LOG_STREAM_PREFIX}${new Date().toISOString().split('T')[0]}`;
 
