@@ -1,0 +1,27 @@
+{
+  "name": "lib-bun-typeorm-postgres",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/bun/typeorm-postgres/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/bun/typeorm-postgres",
+        "main": "libs/bun/typeorm-postgres/src/index.ts",
+        "tsConfig": "libs/bun/typeorm-postgres/tsconfig.lib.json",
+        "assets": [
+          "libs/bun/typeorm-postgres/README.md",
+          "libs/bun/typeorm-postgres/LICENSE",
+          "libs/bun/typeorm-postgres/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

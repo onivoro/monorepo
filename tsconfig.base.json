@@ -18,6 +18,7 @@
     "strictNullChecks": true,
     "baseUrl": ".",
     "paths": {
+      "@onivoro/bun-typeorm-postgres": ["libs/bun/typeorm-postgres/src/index.ts"],
       "@onivoro/isomorphic-axios": ["libs/isomorphic/axios/src/index.ts"],
       "@onivoro/isomorphic-common": ["libs/isomorphic/common/src/index.ts"],
       "@onivoro/isomorphic-fhir": ["libs/isomorphic/fhir/src/index.ts"],
@@ -57,6 +58,9 @@
   },
   "exclude": ["node_modules", "tmp", "_tmp"],
   "references": [
+    {
+      "path": "./tsconfig.bun.json"
+    },
     {
       "path": "./tsconfig.isomorphic.json"
     },
