@@ -2,11 +2,9 @@
 
 ## Overview
 
-BucketVore is an S3 file explorer application that mirrors the architecture of DataVore. It provides a modern web interface for browsing, uploading, downloading, and previewing files in AWS S3 buckets.
+BucketVore is an S3 file explorer application that provides a modern web interface for browsing, uploading, downloading, and previewing files in AWS S3 buckets.
 
 ## Architecture
-
-### Similarities to DataVore
 
 1. **Server-Side Rendering**: Uses `@onivoro/server-html` for type-safe HTML generation
 2. **Alpine.js Frontend**: Reactive UI without build step, loaded from CDN
