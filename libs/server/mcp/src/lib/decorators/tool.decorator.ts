@@ -4,7 +4,7 @@ import { z } from 'zod';
 export interface ToolMetadata {
   name: string;
   description: string;
-  schema?: Record<string, z.ZodTypeAny>;
+  schema?: Record<string, z.ZodType>;
 }
 
 export const MCP_TOOL_METADATA = 'mcp:tool';
@@ -19,7 +19,7 @@ export const MCP_TOOL_METADATA = 'mcp:tool';
 export const Tool = (
   name: string, 
   description: string, 
-  schema?: Record<string, z.ZodTypeAny>
+  schema?: Record<string, z.ZodType>
 ) => {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
     SetMetadata(MCP_TOOL_METADATA, { name, description, schema })(target, propertyKey, descriptor);

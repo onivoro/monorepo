@@ -8,7 +8,7 @@ import { TOpenAiAnswer } from '../types/open-ai-answer.type';
 import { TOpenAiData } from '../types/open-ai-data.type';
 import { ServerOpenAiConfig } from '../server-open-ai-config.class';
 import { randomUUID as v4 } from 'node:crypto';
-import { APIPromise } from 'openai/core';
+import { APIPromise } from 'openai';
 import { unlink } from 'node:fs/promises';
 import { TEmbeddingOptions } from '../types/embedding-options.type';
 import { ChatCompletion } from 'openai/resources/chat/completions/completions';

@@ -34,10 +34,6 @@ export class McpCoreService implements OnModuleInit {
         name: this.serverConfig.name,
         version: this.serverConfig.version,
         description: this.serverConfig.description || 'MCP Server',
-        author: this.serverConfig.author,
-        homepage: this.serverConfig.homepage,
-        authentication: this.serverConfig.authentication,
-        requiredHeaders: this.serverConfig.requiredHeaders || apiKeyHeader,
       },
       {
         capabilities: {
@@ -70,7 +66,7 @@ export class McpCoreService implements OnModuleInit {
   registerTool(
     name: string,
     description: string,
-    schema: Record<string, z.ZodTypeAny>,
+    schema: Record<string, z.ZodType>,
     handler: (params: any) => Promise<any>
   ) {
     if (!this.mcpServer) {
