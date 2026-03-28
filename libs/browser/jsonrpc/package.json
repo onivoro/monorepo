@@ -1,6 +1,5 @@
 {
   "name": "@onivoro/browser-jsonrpc",
-  "public": true,
   "version": "24.33.14",
   "license": "MIT",
   "type": "commonjs",
