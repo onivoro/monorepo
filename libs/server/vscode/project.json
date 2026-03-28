@@ -1,0 +1,27 @@
+{
+  "name": "lib-server-vscode",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/vscode/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/vscode",
+        "main": "libs/server/vscode/src/index.ts",
+        "tsConfig": "libs/server/vscode/tsconfig.lib.json",
+        "assets": [
+          "libs/server/vscode/README.md",
+          "libs/server/vscode/LICENSE",
+          "libs/server/vscode/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

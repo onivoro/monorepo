@@ -1,0 +1,27 @@
+{
+  "name": "lib-browser-redux",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/browser/redux/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/browser/redux",
+        "main": "libs/browser/redux/src/index.ts",
+        "tsConfig": "libs/browser/redux/tsconfig.lib.json",
+        "assets": [
+          "libs/browser/redux/README.md",
+          "libs/browser/redux/LICENSE",
+          "libs/browser/redux/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

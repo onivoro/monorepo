@@ -1,0 +1,27 @@
+{
+  "name": "lib-browser-jsonrpc",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/browser/jsonrpc/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/browser/jsonrpc",
+        "main": "libs/browser/jsonrpc/src/index.ts",
+        "tsConfig": "libs/browser/jsonrpc/tsconfig.lib.json",
+        "assets": [
+          "libs/browser/jsonrpc/README.md",
+          "libs/browser/jsonrpc/LICENSE",
+          "libs/browser/jsonrpc/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

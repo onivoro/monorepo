@@ -1,0 +1,27 @@
+{
+  "name": "lib-isomorphic-jsonrpc",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/isomorphic/jsonrpc/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/isomorphic/jsonrpc",
+        "main": "libs/isomorphic/jsonrpc/src/index.ts",
+        "tsConfig": "libs/isomorphic/jsonrpc/tsconfig.lib.json",
+        "assets": [
+          "libs/isomorphic/jsonrpc/README.md",
+          "libs/isomorphic/jsonrpc/LICENSE",
+          "libs/isomorphic/jsonrpc/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

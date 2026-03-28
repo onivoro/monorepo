@@ -1,0 +1,27 @@
+{
+  "name": "lib-server-stdio",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/stdio/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/stdio",
+        "main": "libs/server/stdio/src/index.ts",
+        "tsConfig": "libs/server/stdio/tsconfig.lib.json",
+        "assets": [
+          "libs/server/stdio/README.md",
+          "libs/server/stdio/LICENSE",
+          "libs/server/stdio/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

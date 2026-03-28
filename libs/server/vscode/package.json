@@ -1,0 +1,30 @@
+{
+  "name": "@onivoro/server-vscode",
+  "version": "24.33.12",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "dependencies": {
+    "@onivoro/isomorphic-jsonrpc": "24.33.12",
+    "@onivoro/server-stdio": "24.33.12",
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "*",
+    "@nestjs/core": "*",
+    "reflect-metadata": "*",
+    "rxjs": "*",
+    "vscode": "^1.74.0"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}

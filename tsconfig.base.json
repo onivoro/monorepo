@@ -52,7 +52,12 @@
       ],
       "@onivoro/server-typeorm-postgres": [
         "libs/server/typeorm-postgres/src/index.ts"
-      ]
+      ],
+      "@onivoro/isomorphic-jsonrpc": ["libs/isomorphic/jsonrpc/src/index.ts"],
+      "@onivoro/browser-jsonrpc": ["libs/browser/jsonrpc/src/index.ts"],
+      "@onivoro/browser-redux": ["libs/browser/redux/src/index.ts"],
+      "@onivoro/server-stdio": ["libs/server/stdio/src/index.ts"],
+      "@onivoro/server-vscode": ["libs/server/vscode/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp", "_tmp"],
