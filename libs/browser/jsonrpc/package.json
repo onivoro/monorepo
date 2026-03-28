@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/browser-jsonrpc",
-  "version": "24.33.14",
+  "version": "24.33.15",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -10,7 +10,7 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/isomorphic-jsonrpc": "24.33.14",
+    "@onivoro/isomorphic-jsonrpc": "24.33.15",
     "tslib": "^2.3.0"
   },
   "files": [
