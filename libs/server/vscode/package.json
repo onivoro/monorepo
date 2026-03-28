@@ -1,5 +1,6 @@
 {
   "name": "@onivoro/server-vscode",
+  "public": true,
   "version": "24.33.13",
   "license": "MIT",
   "type": "commonjs",
