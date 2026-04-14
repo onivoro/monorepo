@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/browser-redux",
-  "version": "24.33.15",
+  "version": "24.33.16",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
