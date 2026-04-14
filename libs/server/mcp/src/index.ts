@@ -1,29 +1,5 @@
-export * from './lib/server-mcp.module';
-
-// Classes
-export * from './lib/classes/mcp-error';
-
-// Controllers
-export * from './lib/controllers/mcp.controller';
-
-// Decorators
-export * from './lib/decorators/tool.decorator';
-
-// DTOs
-export * from './lib/dtos/mcp-server-info.dto';
-
-// Functions
-export * from './lib/functions/mcp-helper.function';
-
-// Interfaces
-export * from './lib/interfaces/mcp-config.interface';
-
-// Pipes
-export * from './lib/pipes/mcp-validation.pipe';
-
-// Providers
-export * from './lib/providers/mcp-config.provider';
-
-// Services
-export * from './lib/services/mcp-core.service';
-export * from './lib/services/tool-discovery.service';
+export { McpModule } from './lib/mcp.module';
+export { McpService } from './lib/mcp.service';
+export { McpModuleConfig, McpServerMetadata } from './lib/mcp-config.interface';
+export { MCP_MODULE_CONFIG, MCP_TOOL_METADATA, MCP_RESOURCE_METADATA, MCP_PROMPT_METADATA, MCP_CORS_ALLOWED_HEADERS, MCP_CORS_EXPOSED_HEADERS } from './lib/mcp.constants';
+export { McpTool, McpResource, McpPrompt, McpToolMetadata, McpResourceMetadata, McpPromptMetadata } from './lib/mcp.decorator';

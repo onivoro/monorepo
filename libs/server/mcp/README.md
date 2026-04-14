@@ -1,320 +1,273 @@
 # @onivoro/server-mcp
 
-A Model Context Protocol (MCP) server implementation for NestJS applications, enabling AI models to interact with your application through standardized tool interfaces.
+A NestJS module for building MCP (Model Context Protocol) servers using the decorator pattern.
 
-## Installation
+## What this library does
 
-```bash
-npm install @onivoro/server-mcp @modelcontextprotocol/sdk
-```
+This library handles the infrastructure required to run an MCP server inside a NestJS application: Streamable HTTP transport, session lifecycle management, JSON-RPC 2.0 protocol compliance, automatic tool/resource/prompt discovery, error handling, and graceful shutdown.
 
-## Overview
+On top of that infrastructure, it provides a decorator-based convention for exposing MCP tools, resources, and prompts. The pattern mirrors how NestJS controllers work: you write thin adapter services that map MCP input/output to your existing business logic. The decorators handle registration and protocol wiring.
 
-This library provides:
-- MCP server integration for NestJS
-- HTTP transport for MCP requests
-- Tool registration and discovery
-- Built-in authentication support
-- Server info and health endpoints
+## What this library is not
 
-## Module Setup
+This is not a zero-boilerplate "decorate any method and it becomes an MCP tool" solution. MCP tools receive a single `params` object and return structured `content` arrays. Existing service methods have their own signatures and return types. You will need adapter methods that bridge between the two, the same way a NestJS controller bridges between HTTP requests and service calls.
+
+The value is **consistency across MCP servers** (every server in the org works the same way) and **infrastructure you don't think about** (sessions, transport, discovery, cleanup). The decorator pattern is more about convention enforcement than boilerplate elimination.
+
+## Quick start
+
+### 1. Import the module
 
 ```typescript
-import { ServerMcpModule } from '@onivoro/server-mcp';
+// app.module.ts
+import { Module } from '@nestjs/common';
+import { McpModule } from '@onivoro/server-mcp';
+import { MyMcpService } from './services/my-mcp.service';
+import { MyService } from './services/my.service';
 
 @Module({
   imports: [
-    ServerMcpModule.configure({
-      name: 'My MCP Server',
-      version: '1.0.0',
-      description: 'MCP server for my application',
-      author: 'Your Name',
-      homepage: 'https://example.com',
-      authentication: {
-        type: 'api-key',
-        description: 'API key required',
-        required: true
-      }
-    })
-  ]
+    McpModule.configure({
+      metadata: {
+        name: 'my-mcp',
+        version: '1.0.0',
+        description: 'My MCP server',
+      },
+    }),
+  ],
+  providers: [MyMcpService, MyService],
 })
 export class AppModule {}
 ```
 
-## Configuration
+### 2. Write an MCP adapter service
 
-The `McpServerConfig` interface accepts:
-
-```typescript
-interface McpServerConfig {
-  name: string;                // Server name
-  version: string;             // Server version
-  description?: string;        // Server description
-  author?: string;             // Author name
-  homepage?: string;           // Homepage URL
-  authentication?: {           // Authentication configuration
-    type: string;
-    description: string;
-    required: boolean;
-  };
-  requiredHeaders?: string;    // Required headers (defaults to API key header)
-}
-```
-
-## Using MCP Tools
-
-### Tool Decorator
-
-Mark methods as MCP tools using the `@Tool` decorator:
+The adapter service sits between MCP and your existing business logic. Each `@McpTool` method destructures the MCP params, calls your real service, and formats the result.
 
 ```typescript
+// services/my-mcp.service.ts
 import { Injectable } from '@nestjs/common';
-import { Tool } from '@onivoro/server-mcp';
+import { McpTool } from '@onivoro/server-mcp';
 import { z } from 'zod';
+import { MyService } from './my.service';
 
 @Injectable()
-export class CalculatorService {
-  @Tool(
-    'add',
-    'Add two numbers together',
-    {
-      a: z.number().describe('First number'),
-      b: z.number().describe('Second number')
-    }
+export class MyMcpService {
+  constructor(private readonly myService: MyService) {}
+
+  @McpTool(
+    'find-item',
+    'Look up an item by ID',
+    { id: z.string().describe('Item ID') },
   )
-  async add(a: number, b: number): Promise<number> {
-    return a + b;
-  }
+  async findItem(params: { id: string }) {
+    const item = await this.myService.findById(params.id);
 
-  @Tool(
-    'multiply',
-    'Multiply two numbers',
-    {
-      x: z.number(),
-      y: z.number()
+    if (!item) {
+      return { content: [{ type: 'text', text: `No item found with ID ${params.id}` }] };
     }
-  )
-  async multiply(x: number, y: number): Promise<number> {
-    return x * y;
-  }
-}
-```
 
-### Tool Registration
-
-Tools must be registered with the MCP server. Use the `ToolDiscoveryService`:
-
-```typescript
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { ToolDiscoveryService } from '@onivoro/server-mcp';
-
-@Injectable()
-export class ToolRegistrationService implements OnModuleInit {
-  constructor(
-    private toolDiscovery: ToolDiscoveryService,
-    private calculatorService: CalculatorService
-  ) {}
-
-  async onModuleInit() {
-    // Register tools from services
-    await this.toolDiscovery.registerToolsFromService(this.calculatorService);
-  }
-}
-```
-
-## API Endpoints
-
-The MCP controller provides these endpoints:
-
-### /mcp (ALL methods)
-Main MCP endpoint for handling MCP protocol requests. This is where AI models connect.
-
-### GET /info
-Get server information:
-```json
-{
-  "name": "My MCP Server",
-  "version": "1.0.0",
-  "description": "MCP server for my application"
-}
-```
-
-### GET /mcp-test
-Test endpoint to verify MCP is available:
-```json
-{
-  "message": "MCP endpoint available at /mcp",
-  "note": "Use the /mcp endpoint for MCP requests"
-}
-```
-
-### GET /api/health
-Health check endpoint:
-```json
-{
-  "status": "healthy",
-  "transport": "HTTP",
-  "timestamp": "2024-01-15T10:30:00.000Z"
-}
-```
-
-## Services
-
-### McpCoreService
-
-Core service handling MCP requests:
-
-```typescript
-import { Injectable } from '@nestjs/common';
-import { McpCoreService } from '@onivoro/server-mcp';
-
-@Injectable()
-export class MyService {
-  constructor(private mcpCore: McpCoreService) {}
-
-  getServerInfo() {
-    return this.mcpCore.getServerInfo();
-  }
-
-  async handleCustomMcpRequest(req: any, res: any) {
-    await this.mcpCore.handleMcpRequest(req, res);
-  }
-}
-```
-
-### ToolDiscoveryService
-
-Service for tool registration and discovery:
-
-```typescript
-import { ToolDiscoveryService } from '@onivoro/server-mcp';
-
-// Register a tool manually
-await this.toolDiscovery.registerTool({
-  name: 'custom-tool',
-  description: 'A custom tool',
-  parameters: {
-    input: 'string input parameter'
-  }
-});
-
-// Get registered tools
-const tools = this.toolDiscovery.getRegisteredTools();
-```
-
-## Error Handling
-
-Use the `McpError` class for consistent error responses:
-
-```typescript
-import { McpError } from '@onivoro/server-mcp';
-
-@Tool('divide', 'Divide two numbers')
-async divide(a: number, b: number): Promise<number> {
-  if (b === 0) {
-    throw new McpError('Division by zero is not allowed');
-  }
-  return a / b;
-}
-```
-
-## Helper Functions
-
-The library includes helper functions in `mcp-helper.function`:
-
-```typescript
-import { createMcpResponse, createMcpContent } from '@onivoro/server-mcp';
-
-// Create MCP content
-const textContent = createMcpContent('text', 'Hello, world!');
-const imageContent = createMcpContent('image', base64Data, 'image/png');
-
-// Create MCP response
-const response = createMcpResponse([textContent]);
-```
-
-## Complete Example
-
-```typescript
-import { Module, Injectable, OnModuleInit } from '@nestjs/common';
-import { ServerMcpModule, Tool, ToolDiscoveryService, McpError } from '@onivoro/server-mcp';
-import { z } from 'zod';
-
-@Injectable()
-export class WeatherService {
-  @Tool(
-    'get-weather',
-    'Get current weather for a location',
-    {
-      location: z.string().describe('City name or coordinates')
-    }
-  )
-  async getWeather(location: string) {
-    // Simulated weather data
-    if (!location) {
-      throw new McpError('Location is required');
-    }
-    
     return {
-      location,
-      temperature: 72,
-      condition: 'Sunny',
-      humidity: 45
+      content: [{
+        type: 'text',
+        text: `**${item.name}** - ${item.description}`,
+      }],
     };
   }
 }
-
-@Injectable()
-export class ToolLoader implements OnModuleInit {
-  constructor(
-    private toolDiscovery: ToolDiscoveryService,
-    private weatherService: WeatherService
-  ) {}
-
-  async onModuleInit() {
-    await this.toolDiscovery.registerToolsFromService(this.weatherService);
-  }
-}
-
-@Module({
-  imports: [
-    ServerMcpModule.configure({
-      name: 'Weather API Server',
-      version: '1.0.0',
-      description: 'MCP server providing weather data'
-    })
-  ],
-  providers: [WeatherService, ToolLoader]
-})
-export class AppModule {}
 ```
 
-## Authentication
-
-By default, the server expects an API key in the header specified by `requiredHeaders` (defaults to the value from `@onivoro/isomorphic-common`'s `apiKeyHeader`).
-
-Configure authentication in the server config:
+### 3. Bootstrap the app with CORS
 
 ```typescript
-ServerMcpModule.configure({
-  // ... other config
-  authentication: {
-    type: 'api-key',
-    description: 'Requires API key in x-api-key header',
-    required: true
-  },
-  requiredHeaders: 'x-api-key'
-})
+// main.ts
+import { NestFactory } from '@nestjs/core';
+import { MCP_CORS_ALLOWED_HEADERS, MCP_CORS_EXPOSED_HEADERS } from '@onivoro/server-mcp';
+import { AppModule } from './app/app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  app.enableCors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: MCP_CORS_ALLOWED_HEADERS,
+    exposedHeaders: MCP_CORS_EXPOSED_HEADERS,
+  });
+
+  await app.listen(3000);
+}
+
+bootstrap();
 ```
 
-## Important Notes
+The MCP endpoint is available at `POST /mcp`.
 
-1. This library implements the Model Context Protocol for AI model interactions
-2. The `/mcp` endpoint handles raw HTTP requests/responses for MCP transport compatibility
-3. Tools must be registered with the server to be available to AI models
-4. Zod schemas are used for parameter validation
-5. The transport layer uses the MCP SDK's StreamableHTTPServerTransport
+## Configuration
 
-## License
+```typescript
+McpModule.configure({
+  metadata: {
+    name: 'my-server',        // Required. Server name reported to clients.
+    version: '1.0.0',         // Required. Server version reported to clients.
+    description: 'Optional',  // Optional. Human-readable description.
+  },
+  routePrefix: 'api/v1',      // Optional. Prefixes the /mcp route (becomes /api/v1/mcp).
+  sessionTtlMinutes: 30,      // Optional. Idle session timeout in minutes. Default: 30.
+  serverOptions: {},           // Optional. Passed directly to McpServer from @modelcontextprotocol/sdk.
+});
+```
 
-MIT
+## Decorators
+
+### @McpTool(name, description, schema?)
+
+Registers a method as an MCP tool. The method receives a single `params` object and should return an MCP content response.
+
+```typescript
+@McpTool(
+  'tool-name',
+  'Human-readable description of what this tool does',
+  {
+    requiredParam: z.string().describe('Explain the parameter'),
+    optionalParam: z.number().optional().describe('This one is optional'),
+  },
+)
+async myTool(params: { requiredParam: string; optionalParam?: number }) {
+  return {
+    content: [{ type: 'text', text: 'result' }],
+  };
+}
+```
+
+If your method returns a plain string or object instead of `{ content: [...] }`, the library auto-wraps it:
+- Strings become `{ content: [{ type: 'text', text: theString }] }`
+- Objects become `{ content: [{ type: 'text', text: JSON.stringify(theObject) }] }`
+
+### @McpResource(metadata)
+
+Registers a method as an MCP resource.
+
+```typescript
+@McpResource({
+  name: 'config',
+  uri: 'app://config',
+  description: 'Application configuration',
+  mimeType: 'application/json',
+})
+async getConfig() {
+  return {
+    contents: [{
+      uri: 'app://config',
+      text: JSON.stringify(this.configService.getAll()),
+    }],
+  };
+}
+```
+
+For URI templates, set `isTemplate: true`:
+
+```typescript
+@McpResource({
+  name: 'item-detail',
+  uri: 'item://{id}/detail',
+  description: 'Item detail',
+  isTemplate: true,
+})
+async getItemDetail(uri: URL, params: { id: string }) {
+  // ...
+}
+```
+
+### @McpPrompt(metadata)
+
+Registers a method as an MCP prompt template.
+
+```typescript
+@McpPrompt({
+  name: 'summarize',
+  description: 'Generate a summary prompt',
+  argsSchema: {
+    itemId: z.string().describe('Item ID'),
+  },
+})
+async summarize(params: { itemId: string }) {
+  const item = await this.itemService.find(params.itemId);
+  return {
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: `Summarize: ${item.content}`,
+      },
+    }],
+  };
+}
+```
+
+## Adding authentication
+
+Authentication is handled by standard NestJS middleware, not by this library. Apply middleware to the `mcp` route in your app module:
+
+```typescript
+@Module({
+  imports: [McpModule.configure({ ... })],
+  providers: [MyAuthMiddleware, MyMcpService],
+})
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(MyAuthMiddleware).forRoutes('mcp');
+  }
+}
+```
+
+## CORS
+
+The library exports header constants for MCP protocol compliance. Use them when calling `app.enableCors()`:
+
+| Export | Headers |
+|--------|---------|
+| `MCP_CORS_ALLOWED_HEADERS` | `Content-Type`, `Accept`, `Authorization`, `x-api-key`, `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Last-Event-ID` |
+| `MCP_CORS_EXPOSED_HEADERS` | `Mcp-Session-Id`, `Mcp-Protocol-Version` |
+
+## Session management
+
+Each MCP client connection creates a session. Sessions are identified by the `Mcp-Session-Id` header and tracked server-side.
+
+- Sessions are created on the first `POST /mcp` (the `initialize` handshake).
+- Sessions are destroyed on `DELETE /mcp` or when the idle TTL expires.
+- The default idle TTL is 30 minutes, configurable via `sessionTtlMinutes`.
+- All sessions are cleaned up on application shutdown.
+
+## Duplicate detection
+
+Tool, resource, and prompt names must be unique across all providers in the module. Registering a duplicate name throws at startup with a clear error message, rather than failing silently at request time.
+
+## Exports
+
+```typescript
+// Module and service
+McpModule                    // NestJS dynamic module — use McpModule.configure()
+McpService                   // Injectable service (rarely needed directly)
+
+// Decorators
+McpTool                      // Method decorator for tools
+McpResource                  // Method decorator for resources
+McpPrompt                    // Method decorator for prompts
+
+// Interfaces
+McpModuleConfig              // Configuration for McpModule.configure()
+McpServerMetadata            // Server name/version/description
+McpToolMetadata              // Tool registration metadata
+McpResourceMetadata          // Resource registration metadata
+McpPromptMetadata            // Prompt registration metadata
+
+// Constants
+MCP_MODULE_CONFIG            // DI token (internal use)
+MCP_TOOL_METADATA            // Reflect metadata key (internal use)
+MCP_RESOURCE_METADATA        // Reflect metadata key (internal use)
+MCP_PROMPT_METADATA          // Reflect metadata key (internal use)
+MCP_CORS_ALLOWED_HEADERS     // CORS allowed headers array
+MCP_CORS_EXPOSED_HEADERS     // CORS exposed headers array
+```
