@@ -4,9 +4,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { SqsService } from './services/sqs.service';
 import { SqsConsumerFactoryService } from './services/sqs-consumer-factory.service';
 import { ServerAwsSqsConfig } from './classes/server-aws-sqs-config.class';
-import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
-
-let sqsClient: SQSClient | null = null;
+import { awsClientProvider, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
 
 @Module({
 })
@@ -16,16 +14,7 @@ export class ServerAwsSqsModule {
       module: ServerAwsSqsModule,
       imports: [ServerAwsCredentialProvidersModule.configure(config)],
       providers: [
-        {
-          provide: SQSClient,
-          useFactory: (credentials: AwsCredentials) => sqsClient
-            ? sqsClient
-            : sqsClient = new SQSClient({
-              region: config.AWS_REGION,
-              credentials
-            }),
-            inject: [AwsCredentials]
-        },
+        awsClientProvider(SQSClient, config),
         { provide: ServerAwsSqsConfig, useValue: config },
         SqsService,
         SqsConsumerFactoryService

@@ -132,9 +132,78 @@ aws_access_key_id = AKIAIOSFODNN7EXAMPLE2
 aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY2
 ```
 
+## AWS Client Provider Helper
+
+The `awsClientProvider` function eliminates boilerplate when registering AWS SDK v3 clients as NestJS providers. It creates a provider that injects `AwsCredentials` and instantiates the client with the correct region and credentials.
+
+```typescript
+import { awsClientProvider } from '@onivoro/server-aws-credential-providers';
+```
+
+### Basic usage
+
+```typescript
+import { Module } from '@nestjs/common';
+import { S3Client } from '@aws-sdk/client-s3';
+import { awsClientProvider, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
+
+@Module({})
+export class ServerAwsS3Module {
+  static configure(config: ServerAwsS3Config) {
+    return {
+      module: ServerAwsS3Module,
+      imports: [ServerAwsCredentialProvidersModule.configure(config)],
+      providers: [
+        awsClientProvider(S3Client, config),
+        S3Service,
+      ],
+    };
+  }
+}
+```
+
+### Multiple clients in one module
+
+```typescript
+import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
+import { CloudWatchLogsClient } from '@aws-sdk/client-cloudwatch-logs';
+
+// ...
+providers: [
+  awsClientProvider(CloudWatchClient, config),
+  awsClientProvider(CloudWatchLogsClient, config),
+],
+```
+
+### Passing extra client options
+
+Use the optional third argument to pass additional properties to the client constructor:
+
+```typescript
+import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
+
+// ...
+providers: [
+  awsClientProvider(CognitoIdentityProviderClient, config, {
+    apiVersion: config.COGNITO_API_VERSION,
+  }),
+],
+```
+
+### Config requirements
+
+The `config` object must have an `AWS_REGION` property (and `AWS_PROFILE` if using profile-based credentials):
+
+```typescript
+export class ServerAwsS3Config {
+  AWS_REGION: string;
+  AWS_PROFILE?: string;
+}
+```
+
 ## Integration with AWS SDK
 
-Use the resolved credentials with AWS SDK v3:
+Use the resolved credentials directly with AWS SDK v3:
 
 ```typescript
 import { S3Client } from '@aws-sdk/client-s3';

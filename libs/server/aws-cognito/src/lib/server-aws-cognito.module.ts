@@ -5,9 +5,7 @@ import { ServerAwsCognitoConfig } from './server-aws-cognito-config.class';
 import { CognitoTokenValidatorService } from './services/cognito-token-validator.service';
 import { CognitoRefreshTokenService } from './services/cognito-refresh-token.service';
 import { CognitoUserService } from './services/cognito-user.service';
-import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
-
-let cognitoIdentityProviderClient: CognitoIdentityProviderClient | null = null;
+import { awsClientProvider, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
 
 @Module({})
 export class ServerAwsCognitoModule {
@@ -19,17 +17,7 @@ export class ServerAwsCognitoModule {
           provide: ServerAwsCognitoConfig,
           useValue: config,
         },
-        {
-          provide: CognitoIdentityProviderClient,
-          useFactory: (credentials: AwsCredentials) =>
-            cognitoIdentityProviderClient ||
-            (cognitoIdentityProviderClient = new CognitoIdentityProviderClient({
-              region: config.AWS_REGION,
-              apiVersion: config.COGNITO_API_VERSION,
-              credentials
-            })),
-          inject: [AwsCredentials],
-        },
+        awsClientProvider(CognitoIdentityProviderClient, config, { apiVersion: config.COGNITO_API_VERSION }),
         CognitoTokenValidatorService,
         CognitoRefreshTokenService,
         CognitoUserService,

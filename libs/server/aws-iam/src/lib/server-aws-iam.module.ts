@@ -3,9 +3,7 @@ import { moduleFactory } from '@onivoro/server-common';
 import { IAMClient } from '@aws-sdk/client-iam';
 import { IamService } from './services/iam.service';
 import { ServerAwsIamConfig } from './classes/server-aws-iam-config.class';
-import { AwsCredentials, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
-
-let iamClient: IAMClient | null = null;
+import { awsClientProvider, ServerAwsCredentialProvidersModule } from '@onivoro/server-aws-credential-providers';
 
 @Module({
 })
@@ -15,17 +13,7 @@ export class ServerAwsIamModule {
       module: ServerAwsIamModule,
       imports: [ServerAwsCredentialProvidersModule.configure(config)],
       providers: [
-        {
-          provide: IAMClient,
-          useFactory: (credentials: AwsCredentials) => iamClient
-            ? iamClient
-            : iamClient = new IAMClient({
-              region: config.AWS_REGION,
-              logger: console,
-              credentials
-            }),
-          inject: [AwsCredentials]
-        },
+        awsClientProvider(IAMClient, config),
         { provide: ServerAwsIamConfig, useValue: config },
         IamService
       ],
