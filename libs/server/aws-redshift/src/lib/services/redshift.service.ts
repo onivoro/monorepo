@@ -1,7 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { DescribeStatementCommand, ExecuteStatementCommand, GetStatementResultCommand, RedshiftDataClient } from "@aws-sdk/client-redshift-data";
+import { DescribeStatementCommand, ExecuteStatementCommand, GetStatementResultCommand, RedshiftDataClient, SqlParameter } from "@aws-sdk/client-redshift-data";
 import { GetWorkgroupCommand, GetWorkgroupCommandInput, RedshiftServerlessClient } from '@aws-sdk/client-redshift-serverless';
 import { randomUUID } from 'crypto';
+
+export type RedshiftQueryParameters = Record<string, string | number | boolean | null | undefined>;
+
+function toSqlParameters(parameters?: RedshiftQueryParameters | SqlParameter[]): SqlParameter[] | undefined {
+    if (!parameters) return undefined;
+    if (Array.isArray(parameters)) return parameters;
+    return Object.entries(parameters).map(([name, value]) => ({
+        name,
+        value: value === null || value === undefined ? undefined : String(value),
+    }));
+}
 
 @Injectable()
 export class RedshiftDataService {
@@ -170,23 +181,25 @@ export class RedshiftDataService {
         }
     }
 
-    async queryV1(_: { database: string, workgroupName: string }, Sql: string) {
+    async queryV1(_: { database: string, workgroupName: string }, Sql: string, parameters?: RedshiftQueryParameters | SqlParameter[]) {
         const result = await this.redshiftDataClient.send(new ExecuteStatementCommand({
             Database: _.database,
             Sql,
-            WorkgroupName: _.workgroupName
+            WorkgroupName: _.workgroupName,
+            Parameters: toSqlParameters(parameters),
         }));
 
         return await this.waitForStatement(result.Id!);
     }
 
 
-    async query(_: { database: string, workgroupName: string }, Sql: string) {
+    async query(_: { database: string, workgroupName: string }, Sql: string, parameters?: RedshiftQueryParameters | SqlParameter[]) {
         try {
             const executeCommand = new ExecuteStatementCommand({
                 Database: _.database,
                 Sql,
                 WorkgroupName: _.workgroupName,
+                Parameters: toSqlParameters(parameters),
             });
 
             const { Id } = await this.redshiftDataClient.send(executeCommand);
