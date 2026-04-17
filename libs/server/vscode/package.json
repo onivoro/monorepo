@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-vscode",
-  "version": "24.33.17",
+  "version": "24.33.18",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -10,8 +10,8 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/isomorphic-jsonrpc": "24.33.17",
-    "@onivoro/server-stdio": "24.33.17",
+    "@onivoro/isomorphic-jsonrpc": "24.33.18",
+    "@onivoro/server-stdio": "24.33.18",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
