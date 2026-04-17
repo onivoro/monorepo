@@ -19,7 +19,7 @@
     "@nestjs/core": "*",
     "reflect-metadata": "*",
     "rxjs": "*",
-    "vscode": "^1.74.0"
+    "@types/vscode": "^1.74.0"
   },
   "files": [
     "**/*.js",
