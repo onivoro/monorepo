@@ -1,4 +1,5 @@
 import { McpService } from './mcp.service';
+import { McpToolRegistry } from './mcp-tool-registry';
 import { McpModuleConfig } from './mcp-config.interface';
 
 const mockTransportHandleRequest = jest.fn().mockResolvedValue(undefined);
@@ -34,6 +35,7 @@ jest.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
 
 describe('McpService', () => {
   let service: McpService;
+  let registry: McpToolRegistry;
   const config: McpModuleConfig = {
     metadata: { name: 'test-server', version: '1.0.0' },
   };
@@ -41,66 +43,12 @@ describe('McpService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     capturedOnSessionInitialized = undefined;
-    service = new McpService(config);
+    registry = new McpToolRegistry();
+    service = new McpService(config as any, registry);
   });
 
   afterEach(async () => {
     await service.onModuleDestroy();
-  });
-
-  describe('registerTool', () => {
-    it('should register a tool successfully', () => {
-      const handler = jest.fn();
-      service.registerTool({ name: 'my-tool', description: 'A test tool' }, handler);
-
-      // No throw = success
-      expect(handler).not.toHaveBeenCalled();
-    });
-
-    it('should throw on duplicate tool name', () => {
-      const handler = jest.fn();
-      service.registerTool({ name: 'dup-tool', description: 'First' }, handler);
-
-      expect(() =>
-        service.registerTool({ name: 'dup-tool', description: 'Second' }, handler),
-      ).toThrow(/already registered/);
-    });
-  });
-
-  describe('registerResource', () => {
-    it('should register a resource successfully', () => {
-      const handler = jest.fn();
-      service.registerResource({ name: 'my-resource', uri: 'test://resource' }, handler);
-
-      expect(handler).not.toHaveBeenCalled();
-    });
-
-    it('should throw on duplicate resource name', () => {
-      const handler = jest.fn();
-      service.registerResource({ name: 'dup-res', uri: 'test://a' }, handler);
-
-      expect(() =>
-        service.registerResource({ name: 'dup-res', uri: 'test://b' }, handler),
-      ).toThrow(/already registered/);
-    });
-  });
-
-  describe('registerPrompt', () => {
-    it('should register a prompt successfully', () => {
-      const handler = jest.fn();
-      service.registerPrompt({ name: 'my-prompt' }, handler);
-
-      expect(handler).not.toHaveBeenCalled();
-    });
-
-    it('should throw on duplicate prompt name', () => {
-      const handler = jest.fn();
-      service.registerPrompt({ name: 'dup-prompt' }, handler);
-
-      expect(() =>
-        service.registerPrompt({ name: 'dup-prompt' }, handler),
-      ).toThrow(/already registered/);
-    });
   });
 
   describe('handleRequest', () => {
@@ -141,7 +89,7 @@ describe('McpService', () => {
     });
 
     it('should create a session on POST without session ID', async () => {
-      service.registerTool({ name: 'test', description: 'test' }, jest.fn());
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
 
       const req = mockReq();
       const res = mockRes();
@@ -172,7 +120,7 @@ describe('McpService', () => {
     });
 
     it('should delegate to transport for valid session', async () => {
-      service.registerTool({ name: 'test', description: 'test' }, jest.fn());
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
 
       // Create a session first
       const initReq = mockReq();
@@ -195,7 +143,7 @@ describe('McpService', () => {
     });
 
     it('should clean up session on DELETE even if transport throws', async () => {
-      service.registerTool({ name: 'test', description: 'test' }, jest.fn());
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
 
       // Create session
       const initReq = mockReq();
@@ -224,7 +172,7 @@ describe('McpService', () => {
     });
 
     it('should update lastActivity on valid session requests', async () => {
-      service.registerTool({ name: 'test', description: 'test' }, jest.fn());
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
 
       const initReq = mockReq();
       await service.handleRequest(initReq, mockRes());
@@ -258,10 +206,10 @@ describe('McpService', () => {
 
   describe('session TTL', () => {
     it('should use custom TTL from config', () => {
-      const customService = new McpService({
-        ...config,
-        sessionTtlMinutes: 5,
-      });
+      const customService = new McpService(
+        { ...config, sessionTtlMinutes: 5 } as any,
+        new McpToolRegistry(),
+      );
 
       // Access private field via any to verify
       expect((customService as any).sessionTtlMs).toBe(5 * 60 * 1000);
@@ -277,7 +225,7 @@ describe('McpService', () => {
 
   describe('onModuleDestroy', () => {
     it('should close all sessions and clear the map', async () => {
-      service.registerTool({ name: 'test', description: 'test' }, jest.fn());
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
 
       // Create two sessions
       await service.handleRequest(mockReq(), mockRes());
@@ -295,7 +243,7 @@ describe('McpService', () => {
     });
 
     it('should handle errors during session cleanup gracefully', async () => {
-      service.registerTool({ name: 'test', description: 'test' }, jest.fn());
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
 
       await service.handleRequest(mockReq(), mockRes());
       capturedOnSessionInitialized!('error-session');

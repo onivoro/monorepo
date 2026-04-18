@@ -15,6 +15,7 @@
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "*",
     "@nestjs/common": "*",
+    "@nestjs/core": "*",
     "zod": "*"
   },
   "files": [

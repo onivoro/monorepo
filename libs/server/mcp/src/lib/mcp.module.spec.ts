@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { McpModule } from './mcp.module';
-import { McpService } from './mcp.service';
+import { McpToolRegistry } from './mcp-tool-registry';
 import { McpTool, McpResource, McpPrompt } from './mcp.decorator';
 import { z } from 'zod';
 
@@ -66,8 +66,8 @@ describe('McpModule', () => {
       ],
     }).compile();
 
-    const service = module.get(McpService);
-    expect(service).toBeDefined();
+    const registry = module.get(McpToolRegistry);
+    expect(registry).toBeDefined();
 
     await module.close();
   });
@@ -85,10 +85,8 @@ describe('McpModule', () => {
 
       await module.init();
 
-      const service = module.get(McpService);
-      // Access private registry to verify registration
-      const registry = (service as any).toolRegistry;
-      const toolNames = registry.map((t: any) => t.metadata.name);
+      const registry = module.get(McpToolRegistry);
+      const toolNames = registry.getTools().map((t) => t.metadata.name);
 
       expect(toolNames).toContain('test-tool');
       expect(toolNames).toContain('string-tool');
@@ -96,7 +94,7 @@ describe('McpModule', () => {
       await module.close();
     });
 
-    it('should auto-wrap non-content tool results', async () => {
+    it('should auto-wrap non-content tool results via executeToolMcp', async () => {
       const module = await Test.createTestingModule({
         imports: [
           McpModule.configure({
@@ -108,11 +106,9 @@ describe('McpModule', () => {
 
       await module.init();
 
-      const service = module.get(McpService);
-      const registry = (service as any).toolRegistry;
-      const stringTool = registry.find((t: any) => t.metadata.name === 'string-tool');
+      const registry = module.get(McpToolRegistry);
+      const result = await registry.executeToolMcp('string-tool', {});
 
-      const result = await stringTool.handler({});
       expect(result).toEqual({
         content: [{ type: 'text', text: 'plain string result' }],
       });
@@ -132,11 +128,9 @@ describe('McpModule', () => {
 
       await module.init();
 
-      const service = module.get(McpService);
-      const registry = (service as any).toolRegistry;
-      const testTool = registry.find((t: any) => t.metadata.name === 'test-tool');
+      const registry = module.get(McpToolRegistry);
+      const result = await registry.executeToolMcp('test-tool', { input: 'hello' });
 
-      const result = await testTool.handler({ input: 'hello' });
       expect(result).toEqual({
         content: [{ type: 'text', text: 'echo: hello' }],
       });
@@ -158,10 +152,10 @@ describe('McpModule', () => {
 
       await module.init();
 
-      const service = module.get(McpService);
-      const registry = (service as any).resourceRegistry;
-      expect(registry).toHaveLength(1);
-      expect(registry[0].metadata.name).toBe('test-resource');
+      const registry = module.get(McpToolRegistry);
+      const resources = registry.getResources();
+      expect(resources).toHaveLength(1);
+      expect(resources[0].metadata.name).toBe('test-resource');
 
       await module.close();
     });
@@ -180,10 +174,10 @@ describe('McpModule', () => {
 
       await module.init();
 
-      const service = module.get(McpService);
-      const registry = (service as any).promptRegistry;
-      expect(registry).toHaveLength(1);
-      expect(registry[0].metadata.name).toBe('test-prompt');
+      const registry = module.get(McpToolRegistry);
+      const prompts = registry.getPrompts();
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0].metadata.name).toBe('test-prompt');
 
       await module.close();
     });
@@ -249,11 +243,9 @@ describe('McpModule', () => {
 
       await module.init();
 
-      const service = module.get(McpService);
-      const registry = (service as any).toolRegistry;
-      const failingTool = registry.find((t: any) => t.metadata.name === 'failing-tool');
+      const registry = module.get(McpToolRegistry);
+      const result = await registry.executeToolMcp('failing-tool', {});
 
-      const result = await failingTool.handler({});
       expect(result.content[0].text).toContain('Error executing failing-tool');
       expect(result.content[0].text).toContain('tool exploded');
 

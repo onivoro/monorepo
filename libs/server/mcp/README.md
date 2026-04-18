@@ -1,83 +1,48 @@
 # @onivoro/server-mcp
 
-A NestJS module for building MCP (Model Context Protocol) servers using the decorator pattern.
+A NestJS library for building transport-agnostic MCP tool services. Define tools once with decorators, consume them over HTTP, stdio, or directly via the registry — with automatic format conversion for MCP, Bedrock, and raw execution.
 
-## What this library does
+## Why this library exists
 
-This library handles the infrastructure required to run an MCP server inside a NestJS application: Streamable HTTP transport, session lifecycle management, JSON-RPC 2.0 protocol compliance, automatic tool/resource/prompt discovery, error handling, and graceful shutdown.
+MCP tools are business logic with a protocol wrapper. The problem is that the same tools often need to be consumed in multiple contexts: an MCP HTTP server for Claude Desktop, a stdio process for a VS Code extension calling Bedrock, a direct function call from a test or CLI. Without a shared registry, you end up duplicating tool definitions, schemas, name mappings, and dispatch logic for each transport.
 
-On top of that infrastructure, it provides a decorator-based convention for exposing MCP tools, resources, and prompts. The pattern mirrors how NestJS controllers work: you write thin adapter services that map MCP input/output to your existing business logic. The decorators handle registration and protocol wiring.
+This library solves that by separating **tool definition** (decorators on NestJS services) from **tool consumption** (HTTP sessions, Bedrock tool calls, raw execution). You write your tools once. The registry handles discovery, schema conversion, name mapping, and per-consumer format wrapping automatically.
 
-## What this library is not
+### What you get
 
-This is not a zero-boilerplate "decorate any method and it becomes an MCP tool" solution. MCP tools receive a single `params` object and return structured `content` arrays. Existing service methods have their own signatures and return types. You will need adapter methods that bridge between the two, the same way a NestJS controller bridges between HTTP requests and service calls.
+- **Write once, consume anywhere**: `@McpTool` services work over MCP HTTP, stdio/Bedrock, or direct programmatic access without code changes.
+- **Automatic format wrapping**: The registry provides per-consumer execution methods. Your service methods return whatever is natural — the registry wraps for the target transport.
+- **Schema conversion**: Zod schemas on decorators are converted to JSON Schema automatically. Bedrock tool definitions are generated from the registry with one call.
+- **Name mapping**: Bedrock requires `^[a-zA-Z][a-zA-Z0-9_]*$` names. The library auto-sanitizes (`-` to `_`) or uses explicit aliases you declare on the decorator. Reverse lookup (Bedrock name back to MCP name) is built in.
+- **Consistent infrastructure**: Sessions, transport, discovery, cleanup, duplicate detection, error handling — all handled.
 
-The value is **consistency across MCP servers** (every server in the org works the same way) and **infrastructure you don't think about** (sessions, transport, discovery, cleanup). The decorator pattern is more about convention enforcement than boilerplate elimination.
+## Two entry points
 
-## Quick start
+| Module | Use case | What it provides |
+|--------|----------|------------------|
+| `McpModule.configure()` | MCP HTTP server (Claude Desktop, MCP Inspector, web clients) | Full HTTP transport + session management + tool registry |
+| `McpRegistryModule.forFeature()` | Non-HTTP consumers (stdio, Bedrock, direct calls) | Tool discovery + registry only, no HTTP overhead |
 
-### 1. Import the module
+Both modules auto-discover `@McpTool`, `@McpResource`, and `@McpPrompt` decorated methods from all providers in the NestJS module tree.
+
+## Quick start: MCP HTTP server
 
 ```typescript
 // app.module.ts
 import { Module } from '@nestjs/common';
 import { McpModule } from '@onivoro/server-mcp';
-import { MyMcpService } from './services/my-mcp.service';
-import { MyService } from './services/my.service';
+import { EmojiService } from './services/emoji.service';
 
 @Module({
   imports: [
     McpModule.configure({
-      metadata: {
-        name: 'my-mcp',
-        version: '1.0.0',
-        description: 'My MCP server',
-      },
+      metadata: { name: 'my-mcp-server', version: '1.0.0' },
     }),
   ],
-  providers: [MyMcpService, MyService],
+  providers: [EmojiService],
 })
 export class AppModule {}
 ```
-
-### 2. Write an MCP adapter service
-
-The adapter service sits between MCP and your existing business logic. Each `@McpTool` method destructures the MCP params, calls your real service, and formats the result.
-
-```typescript
-// services/my-mcp.service.ts
-import { Injectable } from '@nestjs/common';
-import { McpTool } from '@onivoro/server-mcp';
-import { z } from 'zod';
-import { MyService } from './my.service';
-
-@Injectable()
-export class MyMcpService {
-  constructor(private readonly myService: MyService) {}
-
-  @McpTool(
-    'find-item',
-    'Look up an item by ID',
-    { id: z.string().describe('Item ID') },
-  )
-  async findItem(params: { id: string }) {
-    const item = await this.myService.findById(params.id);
-
-    if (!item) {
-      return { content: [{ type: 'text', text: `No item found with ID ${params.id}` }] };
-    }
-
-    return {
-      content: [{
-        type: 'text',
-        text: `**${item.name}** - ${item.description}`,
-      }],
-    };
-  }
-}
-```
-
-### 3. Bootstrap the app with CORS
 
 ```typescript
 // main.ts
@@ -87,7 +52,6 @@ import { AppModule } from './app/app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
   app.enableCors({
     origin: true,
     credentials: true,
@@ -95,59 +59,108 @@ async function bootstrap() {
     allowedHeaders: MCP_CORS_ALLOWED_HEADERS,
     exposedHeaders: MCP_CORS_EXPOSED_HEADERS,
   });
-
   await app.listen(3000);
 }
-
 bootstrap();
 ```
 
-The MCP endpoint is available at `POST /mcp`.
+The MCP endpoint is available at `POST /mcp`. Tools are discovered and registered automatically.
 
-## Configuration
+## Quick start: Bedrock via stdio
+
+Use `McpRegistryModule.forFeature()` when you need the tool registry without HTTP transport — for example, in a stdio process that calls AWS Bedrock.
 
 ```typescript
-McpModule.configure({
-  metadata: {
-    name: 'my-server',        // Required. Server name reported to clients.
-    version: '1.0.0',         // Required. Server version reported to clients.
-    description: 'Optional',  // Optional. Human-readable description.
-  },
-  routePrefix: 'api/v1',      // Optional. Prefixes the /mcp route (becomes /api/v1/mcp).
-  sessionTtlMinutes: 30,      // Optional. Idle session timeout in minutes. Default: 30.
-  serverOptions: {},           // Optional. Passed directly to McpServer from @modelcontextprotocol/sdk.
-});
+// app-stdio.module.ts
+import { Module } from '@nestjs/common';
+import { McpRegistryModule } from '@onivoro/server-mcp';
+import { EmojiService } from './services/emoji.service';
+import { ChatService } from './services/chat.service';
+
+@Module({
+  imports: [McpRegistryModule.forFeature()],
+  providers: [EmojiService, ChatService],
+})
+export class AppStdioModule {}
 ```
 
-## Decorators
-
-### @McpTool(name, description, schema?)
-
-Registers a method as an MCP tool. The method receives a single `params` object and should return an MCP content response.
-
 ```typescript
-@McpTool(
-  'tool-name',
-  'Human-readable description of what this tool does',
-  {
-    requiredParam: z.string().describe('Explain the parameter'),
-    optionalParam: z.number().optional().describe('This one is optional'),
-  },
-)
-async myTool(params: { requiredParam: string; optionalParam?: number }) {
-  return {
-    content: [{ type: 'text', text: 'result' }],
-  };
+// chat.service.ts — using the registry with Bedrock
+import { Injectable } from '@nestjs/common';
+import { McpToolRegistry } from '@onivoro/server-mcp';
+
+@Injectable()
+export class ChatService {
+  constructor(private readonly registry: McpToolRegistry) {}
+
+  async chat(userMessage: string) {
+    // Generate Bedrock tool definitions from the registry
+    const toolConfig = { tools: this.registry.toBedrockTools() };
+
+    // ... call Bedrock with toolConfig ...
+
+    // When Bedrock returns a tool_use block, execute it:
+    const result = await this.registry.executeToolBedrock(
+      toolUse.name,  // e.g. 'insert_emojis' (Bedrock-sanitized name)
+      toolUse.input,
+    );
+    // result is a string ready for Bedrock's toolResult content block
+  }
 }
 ```
 
-If your method returns a plain string or object instead of `{ content: [...] }`, the library auto-wraps it:
-- Strings become `{ content: [{ type: 'text', text: theString }] }`
-- Objects become `{ content: [{ type: 'text', text: JSON.stringify(theObject) }] }`
+The same `EmojiService` with `@McpTool` decorators is used in both examples — no duplication.
 
-### @McpResource(metadata)
+## Defining tools
 
-Registers a method as an MCP resource.
+```typescript
+import { Injectable } from '@nestjs/common';
+import { McpTool } from '@onivoro/server-mcp';
+import { z } from 'zod';
+
+@Injectable()
+export class EmojiService {
+  @McpTool(
+    'insert-emojis',
+    'Insert emojis into text based on semantic meaning',
+    {
+      text: z.string().describe('The text to enhance with emojis'),
+      intensity: z.enum(['subtle', 'moderate', 'heavy']).optional().describe('Emoji density'),
+    },
+    { bedrock: 'insert_emojis' },  // explicit Bedrock alias (optional)
+  )
+  async insertEmojis(params: { text: string; intensity?: string }) {
+    const enhanced = this.addEmojis(params.text, params.intensity);
+    return { text: enhanced, emojiCount: 5 };
+  }
+
+  // ...business logic...
+}
+```
+
+### Return value handling
+
+Your `@McpTool` methods can return any of these — the registry wraps automatically based on how the tool is consumed:
+
+| Your method returns | `executeTool()` (raw) | `executeToolMcp()` (MCP) | `executeToolBedrock()` (Bedrock) |
+|---|---|---|---|
+| `{ content: [{ type: 'text', text: '...' }] }` | As-is | Passed through | N/A (use raw) |
+| `'plain string'` | `'plain string'` | `{ content: [{ type: 'text', text: 'plain string' }] }` | `'plain string'` |
+| `{ key: 'value' }` | `{ key: 'value' }` | `{ content: [{ type: 'text', text: '{"key":"value"}' }] }` | `'{"key":"value"}'` |
+
+This means tool authors never think about transport format. Return whatever is natural for your business logic.
+
+### Aliases
+
+Bedrock requires tool names matching `^[a-zA-Z][a-zA-Z0-9_]*$` — no hyphens. By default, the library auto-sanitizes (`-` to `_`). For cases where auto-sanitization would be lossy or ambiguous, declare an explicit alias:
+
+```typescript
+@McpTool('my-tool', 'description', schema, { bedrock: 'my_tool' })
+```
+
+The `aliases` parameter is optional. The `openai` alias key is reserved for future use.
+
+## Defining resources
 
 ```typescript
 @McpResource({
@@ -158,10 +171,7 @@ Registers a method as an MCP resource.
 })
 async getConfig() {
   return {
-    contents: [{
-      uri: 'app://config',
-      text: JSON.stringify(this.configService.getAll()),
-    }],
+    contents: [{ uri: 'app://config', text: JSON.stringify(config) }],
   };
 }
 ```
@@ -172,7 +182,7 @@ For URI templates, set `isTemplate: true`:
 @McpResource({
   name: 'item-detail',
   uri: 'item://{id}/detail',
-  description: 'Item detail',
+  description: 'Item detail by ID',
   isTemplate: true,
 })
 async getItemDetail(uri: URL, params: { id: string }) {
@@ -180,40 +190,87 @@ async getItemDetail(uri: URL, params: { id: string }) {
 }
 ```
 
-### @McpPrompt(metadata)
-
-Registers a method as an MCP prompt template.
+## Defining prompts
 
 ```typescript
 @McpPrompt({
   name: 'summarize',
-  description: 'Generate a summary prompt',
-  argsSchema: {
-    itemId: z.string().describe('Item ID'),
-  },
+  description: 'Generate a summary prompt for an item',
+  argsSchema: { itemId: z.string().describe('Item ID') },
 })
 async summarize(params: { itemId: string }) {
   const item = await this.itemService.find(params.itemId);
   return {
     messages: [{
       role: 'user',
-      content: {
-        type: 'text',
-        text: `Summarize: ${item.content}`,
-      },
+      content: { type: 'text', text: `Summarize: ${item.content}` },
     }],
   };
 }
 ```
 
-## Adding authentication
+## McpToolRegistry API
 
-Authentication is handled by standard NestJS middleware, not by this library. Apply middleware to the `mcp` route in your app module:
+The registry is the core of the library. It is injectable in any NestJS service when either `McpModule.configure()` or `McpRegistryModule.forFeature()` is imported.
+
+### Registration
+
+Called automatically by the module's discovery phase. You don't call these directly unless you're building custom infrastructure.
+
+| Method | Description |
+|--------|-------------|
+| `registerTool(metadata, handler)` | Register a tool. Throws on duplicate name. |
+| `registerResource(metadata, handler)` | Register a resource. Throws on duplicate name. |
+| `registerPrompt(metadata, handler)` | Register a prompt. Throws on duplicate name. |
+
+### Introspection
+
+| Method | Returns |
+|--------|---------|
+| `getTools()` | All registered tools (metadata + handler) |
+| `getResources()` | All registered resources |
+| `getPrompts()` | All registered prompts |
+| `getTool(name)` | Single tool by MCP name, or `undefined` |
+| `hasTool(name)` | `true` if a tool with the given MCP name exists |
+| `resolveBedrockToolName(bedrockName)` | MCP name for a Bedrock name, or `undefined` |
+
+### Execution
+
+| Method | Input name | Returns | Use when |
+|--------|-----------|---------|----------|
+| `executeTool(name, params)` | MCP name | Raw handler result | Direct programmatic access, tests |
+| `executeToolMcp(name, params)` | MCP name | `McpToolResult` (auto-wrapped) | MCP HTTP transport |
+| `executeToolBedrock(bedrockName, params)` | Bedrock name | `string` (stringified) | Bedrock `toolResult` content blocks |
+
+### Schema conversion
+
+| Method | Returns |
+|--------|---------|
+| `toBedrockTools()` | `BedrockToolDefinition[]` — ready for Bedrock's `toolConfig.tools` |
+| `getToolJsonSchemas()` | `Array<{ name, description, jsonSchema }>` — generic JSON Schema |
+
+## Configuration
+
+```typescript
+McpModule.configure({
+  metadata: {
+    name: 'my-server',        // Required. Server name reported to MCP clients.
+    version: '1.0.0',         // Required. Server version.
+    description: 'Optional',  // Optional. Human-readable description.
+  },
+  routePrefix: 'api/v1',      // Optional. Prefixes the /mcp route (becomes /api/v1/mcp).
+  sessionTtlMinutes: 30,      // Optional. Idle session timeout. Default: 30.
+  serverOptions: {},           // Optional. Passed to McpServer from @modelcontextprotocol/sdk.
+});
+```
+
+## Authentication
+
+Authentication is handled by standard NestJS middleware, not by this library:
 
 ```typescript
 @Module({
   imports: [McpModule.configure({ ... })],
-  providers: [MyAuthMiddleware, MyMcpService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
@@ -224,50 +281,72 @@ export class AppModule implements NestModule {
 
 ## CORS
 
-The library exports header constants for MCP protocol compliance. Use them when calling `app.enableCors()`:
+The library exports header constants for MCP protocol compliance:
 
 | Export | Headers |
 |--------|---------|
 | `MCP_CORS_ALLOWED_HEADERS` | `Content-Type`, `Accept`, `Authorization`, `x-api-key`, `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Last-Event-ID` |
 | `MCP_CORS_EXPOSED_HEADERS` | `Mcp-Session-Id`, `Mcp-Protocol-Version` |
 
-## Session management
+## Session management (HTTP only)
 
-Each MCP client connection creates a session. Sessions are identified by the `Mcp-Session-Id` header and tracked server-side.
+Each MCP client connection creates a session, identified by the `Mcp-Session-Id` header.
 
 - Sessions are created on the first `POST /mcp` (the `initialize` handshake).
 - Sessions are destroyed on `DELETE /mcp` or when the idle TTL expires.
 - The default idle TTL is 30 minutes, configurable via `sessionTtlMinutes`.
 - All sessions are cleaned up on application shutdown.
 
-## Duplicate detection
-
-Tool, resource, and prompt names must be unique across all providers in the module. Registering a duplicate name throws at startup with a clear error message, rather than failing silently at request time.
-
 ## Exports
 
 ```typescript
-// Module and service
-McpModule                    // NestJS dynamic module — use McpModule.configure()
-McpService                   // Injectable service (rarely needed directly)
+// Modules
+McpModule                    // Full HTTP transport — use McpModule.configure()
+McpRegistryModule            // Registry only — use McpRegistryModule.forFeature()
+
+// Registry
+McpToolRegistry              // Injectable registry — execution, introspection, schema conversion
+McpToolResult                // { content: Array<{ type: 'text'; text: string }> }
 
 // Decorators
 McpTool                      // Method decorator for tools
 McpResource                  // Method decorator for resources
 McpPrompt                    // Method decorator for prompts
 
+// Schema converters
+mcpSchemaToJsonSchema        // Zod schema → JSON Schema object
+sanitizeToolNameForBedrock   // 'my-tool' → 'my_tool'
+resolveBedrockName           // Uses alias if present, else auto-sanitizes
+toBedrockToolDefinition      // McpToolMetadata → BedrockToolDefinition
+BedrockToolDefinition        // { toolSpec: { name, description, inputSchema: { json } } }
+
 // Interfaces
 McpModuleConfig              // Configuration for McpModule.configure()
-McpServerMetadata            // Server name/version/description
-McpToolMetadata              // Tool registration metadata
-McpResourceMetadata          // Resource registration metadata
-McpPromptMetadata            // Prompt registration metadata
+McpServerMetadata            // { name, version, description? }
+McpToolMetadata              // { name, description, schema?, aliases? }
+McpToolAliases               // { bedrock?, openai? }
+McpResourceMetadata          // { name, uri, description?, mimeType?, isTemplate? }
+McpPromptMetadata            // { name, description?, argsSchema? }
+
+// Service
+McpService                   // HTTP session manager (rarely needed directly)
 
 // Constants
-MCP_MODULE_CONFIG            // DI token (internal use)
-MCP_TOOL_METADATA            // Reflect metadata key (internal use)
-MCP_RESOURCE_METADATA        // Reflect metadata key (internal use)
-MCP_PROMPT_METADATA          // Reflect metadata key (internal use)
+MCP_MODULE_CONFIG            // DI token
+MCP_TOOL_METADATA            // Reflect metadata key
+MCP_RESOURCE_METADATA        // Reflect metadata key
+MCP_PROMPT_METADATA          // Reflect metadata key
 MCP_CORS_ALLOWED_HEADERS     // CORS allowed headers array
 MCP_CORS_EXPOSED_HEADERS     // CORS exposed headers array
+```
+
+## Peer dependencies
+
+```json
+{
+  "@modelcontextprotocol/sdk": "*",
+  "@nestjs/common": "*",
+  "@nestjs/core": "*",
+  "zod": "*"
+}
 ```

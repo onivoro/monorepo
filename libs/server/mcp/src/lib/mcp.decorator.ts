@@ -6,10 +6,16 @@ import {
   MCP_PROMPT_METADATA,
 } from './mcp.constants';
 
+export interface McpToolAliases {
+  bedrock?: string;
+  openai?: string;
+}
+
 export interface McpToolMetadata {
   name: string;
   description: string;
   schema?: Record<string, z.ZodTypeAny>;
+  aliases?: McpToolAliases;
 }
 
 export interface McpResourceMetadata {
@@ -30,9 +36,10 @@ export const McpTool = (
   name: string,
   description: string,
   schema?: Record<string, z.ZodTypeAny>,
+  aliases?: McpToolAliases,
 ) => {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
-    SetMetadata(MCP_TOOL_METADATA, { name, description, schema } as McpToolMetadata)(
+    SetMetadata(MCP_TOOL_METADATA, { name, description, schema, aliases } as McpToolMetadata)(
       target,
       propertyKey,
       descriptor,

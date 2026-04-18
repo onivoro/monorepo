@@ -5,7 +5,7 @@ import * as crypto from 'crypto';
 import * as http from 'http';
 import { McpModuleConfig } from './mcp-config.interface';
 import { MCP_MODULE_CONFIG } from './mcp.constants';
-import type { McpToolMetadata, McpResourceMetadata, McpPromptMetadata } from './mcp.decorator';
+import { McpToolRegistry } from './mcp-tool-registry';
 
 interface SessionEntry {
   server: McpServer;
@@ -17,41 +17,16 @@ interface SessionEntry {
 export class McpService implements OnModuleDestroy {
   private readonly logger = new Logger(McpService.name);
 
-  private readonly toolRegistry: Array<{ metadata: McpToolMetadata; handler: (params: any) => Promise<any> }> = [];
-  private readonly resourceRegistry: Array<{ metadata: McpResourceMetadata; handler: (...args: any[]) => Promise<any> }> = [];
-  private readonly promptRegistry: Array<{ metadata: McpPromptMetadata; handler: (...args: any[]) => Promise<any> }> = [];
-
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly sessionTtlMs: number;
   private readonly sweepInterval: ReturnType<typeof setInterval>;
 
-  constructor(@Inject(MCP_MODULE_CONFIG) private readonly config: McpModuleConfig) {
+  constructor(
+    @Inject(MCP_MODULE_CONFIG) private readonly config: McpModuleConfig,
+    private readonly registry: McpToolRegistry,
+  ) {
     this.sessionTtlMs = (config.sessionTtlMinutes ?? 30) * 60 * 1000;
     this.sweepInterval = setInterval(() => this.sweepStaleSessions(), 60_000);
-  }
-
-  registerTool(metadata: McpToolMetadata, handler: (params: any) => Promise<any>) {
-    if (this.toolRegistry.some(t => t.metadata.name === metadata.name)) {
-      throw new Error(`MCP tool "${metadata.name}" is already registered. Tool names must be unique across all providers.`);
-    }
-    this.toolRegistry.push({ metadata, handler });
-    this.logger.log(`Tool registered: ${metadata.name}`);
-  }
-
-  registerResource(metadata: McpResourceMetadata, handler: (...args: any[]) => Promise<any>) {
-    if (this.resourceRegistry.some(r => r.metadata.name === metadata.name)) {
-      throw new Error(`MCP resource "${metadata.name}" is already registered. Resource names must be unique across all providers.`);
-    }
-    this.resourceRegistry.push({ metadata, handler });
-    this.logger.log(`Resource registered: ${metadata.name}`);
-  }
-
-  registerPrompt(metadata: McpPromptMetadata, handler: (...args: any[]) => Promise<any>) {
-    if (this.promptRegistry.some(p => p.metadata.name === metadata.name)) {
-      throw new Error(`MCP prompt "${metadata.name}" is already registered. Prompt names must be unique across all providers.`);
-    }
-    this.promptRegistry.push({ metadata, handler });
-    this.logger.log(`Prompt registered: ${metadata.name}`);
   }
 
   private createSession(): SessionEntry {
@@ -66,10 +41,14 @@ export class McpService implements OnModuleDestroy {
       },
     });
 
+    const tools = this.registry.getTools();
+    const resources = this.registry.getResources();
+    const prompts = this.registry.getPrompts();
+
     const capabilities: Record<string, unknown> = {};
-    if (this.toolRegistry.length > 0) capabilities['tools'] = {};
-    if (this.resourceRegistry.length > 0) capabilities['resources'] = {};
-    if (this.promptRegistry.length > 0) capabilities['prompts'] = {};
+    if (tools.length > 0) capabilities['tools'] = {};
+    if (resources.length > 0) capabilities['resources'] = {};
+    if (prompts.length > 0) capabilities['prompts'] = {};
 
     const server = new McpServer(
       { name: this.config.metadata.name, version: this.config.metadata.version },
@@ -79,11 +58,16 @@ export class McpService implements OnModuleDestroy {
     entry.server = server;
     entry.transport = transport;
 
-    for (const { metadata, handler } of this.toolRegistry) {
-      server.registerTool(metadata.name, { description: metadata.description, inputSchema: metadata.schema }, handler);
+    for (const { metadata } of tools) {
+      server.registerTool(
+        metadata.name,
+        { description: metadata.description, inputSchema: metadata.schema },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (params: any) => this.registry.executeToolMcp(metadata.name, params) as any,
+      );
     }
 
-    for (const { metadata, handler } of this.resourceRegistry) {
+    for (const { metadata, handler } of resources) {
       const resourceConfig: Record<string, string | undefined> = {};
       if (metadata.description) resourceConfig['description'] = metadata.description;
       if (metadata.mimeType) resourceConfig['mimeType'] = metadata.mimeType;
@@ -95,7 +79,7 @@ export class McpService implements OnModuleDestroy {
       }
     }
 
-    for (const { metadata, handler } of this.promptRegistry) {
+    for (const { metadata, handler } of prompts) {
       server.registerPrompt(metadata.name, { description: metadata.description, argsSchema: metadata.argsSchema }, handler);
     }
 
