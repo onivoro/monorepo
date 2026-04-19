@@ -21,6 +21,19 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     private readonly registry: McpToolRegistry,
   ) {}
 
+  static registerAndServeStdio(config: McpStdioConfig): DynamicModule {
+    return {
+      module: McpStdioModule,
+      imports: [DiscoveryModule],
+      providers: [
+        McpToolRegistry,
+        { provide: MCP_STDIO_CONFIG, useValue: config },
+      ],
+      exports: [McpToolRegistry],
+    };
+  }
+
+  /** @deprecated Use McpStdioModule.registerAndServeStdio() instead */
   static configure(config: McpStdioConfig): DynamicModule {
     return {
       module: McpStdioModule,

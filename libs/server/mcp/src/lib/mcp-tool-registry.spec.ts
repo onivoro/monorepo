@@ -22,19 +22,6 @@ describe('McpToolRegistry', () => {
         registry.registerTool({ name: 'dup', description: 'second' }, jest.fn()),
       ).toThrow(/already registered/);
     });
-
-    it('should populate Bedrock name map with auto-sanitized name', () => {
-      registry.registerTool({ name: 'my-cool-tool', description: 'desc' }, jest.fn());
-      expect(registry.resolveBedrockToolName('my_cool_tool')).toBe('my-cool-tool');
-    });
-
-    it('should populate Bedrock name map with explicit alias', () => {
-      registry.registerTool(
-        { name: 'my-tool', description: 'desc', aliases: { bedrock: 'custom_name' } },
-        jest.fn(),
-      );
-      expect(registry.resolveBedrockToolName('custom_name')).toBe('my-tool');
-    });
   });
 
   describe('registerResource', () => {
@@ -105,7 +92,7 @@ describe('McpToolRegistry', () => {
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       const result = await registry.executeToolMcp('tool', {});
-      expect(result.content[0].text).toContain('"key": "value"');
+      expect((result.content[0] as any).text).toContain('"key": "value"');
     });
 
     it('should catch errors and return error content', async () => {
@@ -113,68 +100,8 @@ describe('McpToolRegistry', () => {
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       const result = await registry.executeToolMcp('tool', {});
-      expect(result.content[0].text).toContain('Error executing tool');
-      expect(result.content[0].text).toContain('boom');
-    });
-  });
-
-  describe('executeToolBedrock', () => {
-    it('should resolve Bedrock name and return stringified result', async () => {
-      const handler = jest.fn().mockResolvedValue({ enhanced: true });
-      registry.registerTool({ name: 'my-tool', description: 'd' }, handler);
-
-      const result = await registry.executeToolBedrock('my_tool', { x: 1 });
-      expect(handler).toHaveBeenCalledWith({ x: 1 });
-      expect(result).toBe('{"enhanced":true}');
-    });
-
-    it('should return strings as-is', async () => {
-      const handler = jest.fn().mockResolvedValue('raw text');
-      registry.registerTool({ name: 'my-tool', description: 'd' }, handler);
-
-      const result = await registry.executeToolBedrock('my_tool', {});
-      expect(result).toBe('raw text');
-    });
-
-    it('should use explicit alias for resolution', async () => {
-      const handler = jest.fn().mockResolvedValue('ok');
-      registry.registerTool(
-        { name: 'tool-x', description: 'd', aliases: { bedrock: 'toolX' } },
-        handler,
-      );
-
-      const result = await registry.executeToolBedrock('toolX', {});
-      expect(result).toBe('ok');
-    });
-
-    it('should throw for unknown Bedrock name', async () => {
-      await expect(registry.executeToolBedrock('unknown', {})).rejects.toThrow(
-        /No MCP tool found/,
-      );
-    });
-  });
-
-  describe('toBedrockTools', () => {
-    it('should convert all tools to Bedrock format', () => {
-      registry.registerTool({ name: 'tool-a', description: 'Desc A' }, jest.fn());
-      registry.registerTool({ name: 'tool-b', description: 'Desc B' }, jest.fn());
-
-      const bedrock = registry.toBedrockTools();
-
-      expect(bedrock).toHaveLength(2);
-      expect(bedrock[0].toolSpec.name).toBe('tool_a');
-      expect(bedrock[0].toolSpec.description).toBe('Desc A');
-      expect(bedrock[1].toolSpec.name).toBe('tool_b');
-    });
-
-    it('should use explicit Bedrock alias', () => {
-      registry.registerTool(
-        { name: 'my-tool', description: 'd', aliases: { bedrock: 'custom_name' } },
-        jest.fn(),
-      );
-
-      const bedrock = registry.toBedrockTools();
-      expect(bedrock[0].toolSpec.name).toBe('custom_name');
+      expect((result.content[0] as any).text).toContain('Error executing tool');
+      expect((result.content[0] as any).text).toContain('boom');
     });
   });
 

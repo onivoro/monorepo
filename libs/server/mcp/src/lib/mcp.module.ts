@@ -25,8 +25,8 @@ function createMcpController(routePrefix?: string) {
 }
 
 @Module({})
-export class McpModule implements OnModuleInit {
-  private readonly logger = new Logger(McpModule.name);
+export class McpHttpModule implements OnModuleInit {
+  private readonly logger = new Logger(McpHttpModule.name);
 
   constructor(
     private readonly discoveryService: DiscoveryService,
@@ -34,9 +34,20 @@ export class McpModule implements OnModuleInit {
     private readonly registry: McpToolRegistry,
   ) {}
 
+  static registerAndServeHttp(config: McpModuleConfig): DynamicModule {
+    return {
+      module: McpHttpModule,
+      imports: [DiscoveryModule],
+      controllers: [createMcpController(config.routePrefix)],
+      providers: [McpToolRegistry, McpService, { provide: MCP_MODULE_CONFIG, useValue: config }],
+      exports: [McpService, McpToolRegistry],
+    };
+  }
+
+  /** @deprecated Use McpHttpModule.registerAndServeHttp() instead */
   static configure(config: McpModuleConfig): DynamicModule {
     return {
-      module: McpModule,
+      module: McpHttpModule,
       imports: [DiscoveryModule],
       controllers: [createMcpController(config.routePrefix)],
       providers: [McpToolRegistry, McpService, { provide: MCP_MODULE_CONFIG, useValue: config }],

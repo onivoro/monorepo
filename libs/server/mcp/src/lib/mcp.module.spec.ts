@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { McpModule } from './mcp.module';
+import { McpHttpModule } from './mcp.module';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpTool, McpResource, McpPrompt } from './mcp.decorator';
 import { z } from 'zod';
@@ -52,7 +52,7 @@ class TestPromptService {
   }
 }
 
-describe('McpModule', () => {
+describe('McpHttpModule', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -60,7 +60,7 @@ describe('McpModule', () => {
   it('should compile the module with configure()', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpModule.configure({
+        McpHttpModule.registerAndServeHttp({
           metadata: { name: 'test', version: '1.0.0' },
         }),
       ],
@@ -76,7 +76,7 @@ describe('McpModule', () => {
     it('should discover @McpTool decorated methods and register them', async () => {
       const module = await Test.createTestingModule({
         imports: [
-          McpModule.configure({
+          McpHttpModule.registerAndServeHttp({
             metadata: { name: 'test', version: '1.0.0' },
           }),
         ],
@@ -97,7 +97,7 @@ describe('McpModule', () => {
     it('should auto-wrap non-content tool results via executeToolMcp', async () => {
       const module = await Test.createTestingModule({
         imports: [
-          McpModule.configure({
+          McpHttpModule.registerAndServeHttp({
             metadata: { name: 'test', version: '1.0.0' },
           }),
         ],
@@ -119,7 +119,7 @@ describe('McpModule', () => {
     it('should pass through results that already have content', async () => {
       const module = await Test.createTestingModule({
         imports: [
-          McpModule.configure({
+          McpHttpModule.registerAndServeHttp({
             metadata: { name: 'test', version: '1.0.0' },
           }),
         ],
@@ -143,7 +143,7 @@ describe('McpModule', () => {
     it('should discover @McpResource decorated methods', async () => {
       const module = await Test.createTestingModule({
         imports: [
-          McpModule.configure({
+          McpHttpModule.registerAndServeHttp({
             metadata: { name: 'test', version: '1.0.0' },
           }),
         ],
@@ -165,7 +165,7 @@ describe('McpModule', () => {
     it('should discover @McpPrompt decorated methods', async () => {
       const module = await Test.createTestingModule({
         imports: [
-          McpModule.configure({
+          McpHttpModule.registerAndServeHttp({
             metadata: { name: 'test', version: '1.0.0' },
           }),
         ],
@@ -187,7 +187,7 @@ describe('McpModule', () => {
     it('should create a controller with default /mcp route when no prefix', async () => {
       const module = await Test.createTestingModule({
         imports: [
-          McpModule.configure({
+          McpHttpModule.registerAndServeHttp({
             metadata: { name: 'test', version: '1.0.0' },
           }),
         ],
@@ -205,7 +205,7 @@ describe('McpModule', () => {
     it('should create a controller with prefixed route when routePrefix is set', async () => {
       const module = await Test.createTestingModule({
         imports: [
-          McpModule.configure({
+          McpHttpModule.registerAndServeHttp({
             metadata: { name: 'test', version: '1.0.0' },
             routePrefix: 'api/v1',
           }),
@@ -234,7 +234,7 @@ describe('McpModule', () => {
 
       const module = await Test.createTestingModule({
         imports: [
-          McpModule.configure({
+          McpHttpModule.registerAndServeHttp({
             metadata: { name: 'test', version: '1.0.0' },
           }),
         ],
@@ -246,8 +246,8 @@ describe('McpModule', () => {
       const registry = module.get(McpToolRegistry);
       const result = await registry.executeToolMcp('failing-tool', {});
 
-      expect(result.content[0].text).toContain('Error executing failing-tool');
-      expect(result.content[0].text).toContain('tool exploded');
+      expect((result.content[0] as any).text).toContain('Error executing failing-tool');
+      expect((result.content[0] as any).text).toContain('tool exploded');
 
       await module.close();
     });

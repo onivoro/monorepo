@@ -15,3 +15,13 @@ export const MCP_CORS_ALLOWED_HEADERS = [
 ];
 
 export const MCP_CORS_EXPOSED_HEADERS = ['Mcp-Session-Id', 'Mcp-Protocol-Version'];
+
+export const MCP_CORS_METHODS = ['GET', 'POST', 'DELETE', 'OPTIONS'];
+
+export const MCP_CORS_CONFIG = {
+  origin: true,
+  credentials: true,
+  methods: MCP_CORS_METHODS,
+  allowedHeaders: MCP_CORS_ALLOWED_HEADERS,
+  exposedHeaders: MCP_CORS_EXPOSED_HEADERS,
+};

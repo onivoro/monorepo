@@ -66,7 +66,7 @@ describe('McpStdioModule', () => {
   it('should compile the module with configure()', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpStdioModule.configure({
+        McpStdioModule.registerAndServeStdio({
           metadata: { name: 'test-stdio', version: '1.0.0' },
           stdin: new PassThrough(),
           stdout: new PassThrough(),
@@ -83,7 +83,7 @@ describe('McpStdioModule', () => {
   it('should discover and register tools on init', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpStdioModule.configure({
+        McpStdioModule.registerAndServeStdio({
           metadata: { name: 'test-stdio', version: '1.0.0' },
           stdin: new PassThrough(),
           stdout: new PassThrough(),
@@ -113,7 +113,7 @@ describe('McpStdioModule', () => {
   it('should discover and register resources on init', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpStdioModule.configure({
+        McpStdioModule.registerAndServeStdio({
           metadata: { name: 'test-stdio', version: '1.0.0' },
           stdin: new PassThrough(),
           stdout: new PassThrough(),
@@ -137,7 +137,7 @@ describe('McpStdioModule', () => {
   it('should discover and register prompts on init', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpStdioModule.configure({
+        McpStdioModule.registerAndServeStdio({
           metadata: { name: 'test-stdio', version: '1.0.0' },
           stdin: new PassThrough(),
           stdout: new PassThrough(),
@@ -163,7 +163,7 @@ describe('McpStdioModule', () => {
 
     const module = await Test.createTestingModule({
       imports: [
-        McpStdioModule.configure({
+        McpStdioModule.registerAndServeStdio({
           metadata: { name: 'my-stdio-server', version: '2.0.0' },
           stdin: new PassThrough(),
           stdout: new PassThrough(),
@@ -189,7 +189,7 @@ describe('McpStdioModule', () => {
 
     const module = await Test.createTestingModule({
       imports: [
-        McpStdioModule.configure({
+        McpStdioModule.registerAndServeStdio({
           metadata: { name: 'test-stdio', version: '1.0.0' },
           stdin,
           stdout,
@@ -207,7 +207,7 @@ describe('McpStdioModule', () => {
   it('should close transport and server on module destroy', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpStdioModule.configure({
+        McpStdioModule.registerAndServeStdio({
           metadata: { name: 'test-stdio', version: '1.0.0' },
           stdin: new PassThrough(),
           stdout: new PassThrough(),
@@ -227,7 +227,7 @@ describe('McpStdioModule', () => {
 
     const module = await Test.createTestingModule({
       imports: [
-        McpStdioModule.configure({
+        McpStdioModule.registerAndServeStdio({
           metadata: { name: 'test-stdio', version: '1.0.0' },
           stdin: new PassThrough(),
           stdout: new PassThrough(),

@@ -1,11 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { McpToolMetadata, McpResourceMetadata, McpPromptMetadata } from './mcp.decorator';
-import {
-  toBedrockToolDefinition,
-  mcpSchemaToJsonSchema,
-  resolveBedrockName,
-  type BedrockToolDefinition,
-} from './mcp-schema-converters';
+import { mcpSchemaToJsonSchema } from './mcp-schema-converters';
 
 interface ToolEntry {
   metadata: McpToolMetadata;
@@ -22,8 +17,50 @@ interface PromptEntry {
   handler: (...args: any[]) => Promise<any>;
 }
 
+export interface McpTextContent {
+  type: 'text';
+  text: string;
+  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
+}
+
+export interface McpImageContent {
+  type: 'image';
+  data: string;
+  mimeType: string;
+  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
+}
+
+export interface McpAudioContent {
+  type: 'audio';
+  data: string;
+  mimeType: string;
+  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
+}
+
+export interface McpEmbeddedResource {
+  type: 'resource';
+  resource: { uri: string; text?: string; blob?: string; mimeType?: string };
+  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
+}
+
+export interface McpResourceLink {
+  type: 'resource_link';
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
+}
+
+export type McpContentBlock =
+  | McpTextContent
+  | McpImageContent
+  | McpAudioContent
+  | McpEmbeddedResource
+  | McpResourceLink;
+
 export interface McpToolResult {
-  content: Array<{ type: 'text'; text: string }>;
+  content: McpContentBlock[];
 }
 
 @Injectable()
@@ -33,9 +70,6 @@ export class McpToolRegistry {
   private readonly tools = new Map<string, ToolEntry>();
   private readonly resources = new Map<string, ResourceEntry>();
   private readonly prompts = new Map<string, PromptEntry>();
-
-  // Reverse map: bedrockName → mcpName
-  private readonly bedrockNameMap = new Map<string, string>();
 
   // -- Registration --
 
@@ -49,9 +83,6 @@ export class McpToolRegistry {
       );
     }
     this.tools.set(metadata.name, { metadata, handler });
-
-    const bedrockName = resolveBedrockName(metadata);
-    this.bedrockNameMap.set(bedrockName, metadata.name);
 
     this.logger.log(`Tool registered: ${metadata.name}`);
   }
@@ -102,10 +133,6 @@ export class McpToolRegistry {
 
   hasTool(name: string): boolean {
     return this.tools.has(name);
-  }
-
-  resolveBedrockToolName(bedrockName: string): string | undefined {
-    return this.bedrockNameMap.get(bedrockName);
   }
 
   // -- Execution --
@@ -160,27 +187,7 @@ export class McpToolRegistry {
     }
   }
 
-  async executeToolBedrock(
-    bedrockName: string,
-    params: Record<string, unknown>,
-  ): Promise<string> {
-    const mcpName = this.bedrockNameMap.get(bedrockName);
-    if (!mcpName) {
-      throw new Error(
-        `No MCP tool found for Bedrock name "${bedrockName}".`,
-      );
-    }
-    const result = await this.executeTool(mcpName, params);
-    return typeof result === 'string' ? result : JSON.stringify(result);
-  }
-
   // -- Schema Conversion --
-
-  toBedrockTools(): BedrockToolDefinition[] {
-    return this.getTools().map((entry) =>
-      toBedrockToolDefinition(entry.metadata),
-    );
-  }
 
   getToolJsonSchemas(): Array<{
     name: string;

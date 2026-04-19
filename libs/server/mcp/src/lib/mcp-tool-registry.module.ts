@@ -14,6 +14,16 @@ export class McpRegistryModule implements OnModuleInit {
     private readonly registry: McpToolRegistry,
   ) {}
 
+  static registerOnly(): DynamicModule {
+    return {
+      module: McpRegistryModule,
+      imports: [DiscoveryModule],
+      providers: [McpToolRegistry],
+      exports: [McpToolRegistry],
+    };
+  }
+
+  /** @deprecated Use McpRegistryModule.registerOnly() instead. Note: McpModule has been renamed to McpHttpModule. */
   static forFeature(): DynamicModule {
     return {
       module: McpRegistryModule,

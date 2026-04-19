@@ -1,0 +1,25 @@
+{
+  "name": "lib-server-mcp-bedrock",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/mcp-bedrock/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/mcp-bedrock",
+        "main": "libs/server/mcp-bedrock/src/index.ts",
+        "tsConfig": "libs/server/mcp-bedrock/tsconfig.lib.json",
+        "assets": [
+          "libs/server/mcp-bedrock/README.md",
+          "libs/server/mcp-bedrock/LICENSE",
+          "libs/server/mcp-bedrock/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": { "executor": "@nx/js:release-publish" }
+  },
+  "tags": []
+}
