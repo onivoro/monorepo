@@ -1,0 +1,25 @@
+{
+  "name": "lib-server-mcp-llm-adapter",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/mcp-llm-adapter/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/mcp-llm-adapter",
+        "main": "libs/server/mcp-llm-adapter/src/index.ts",
+        "tsConfig": "libs/server/mcp-llm-adapter/tsconfig.lib.json",
+        "assets": [
+          "libs/server/mcp-llm-adapter/README.md",
+          "libs/server/mcp-llm-adapter/LICENSE",
+          "libs/server/mcp-llm-adapter/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": { "executor": "@nx/js:release-publish" }
+  },
+  "tags": []
+}
