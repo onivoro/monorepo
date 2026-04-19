@@ -1,12 +1,13 @@
 import { DynamicModule, Inject, Logger, Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DiscoveryModule, DiscoveryService } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { McpStdioConfig } from './mcp-stdio-config.interface';
 import { MCP_STDIO_CONFIG } from './mcp.constants';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
+import { buildCapabilities, wireRegistryToServer } from './wire-registry-to-server';
 
 @Module({})
 export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
@@ -54,44 +55,12 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       this.logger,
     );
 
-    const tools = this.registry.getTools();
-    const resources = this.registry.getResources();
-    const prompts = this.registry.getPrompts();
-
-    const capabilities: Record<string, unknown> = {};
-    if (tools.length > 0) capabilities['tools'] = {};
-    if (resources.length > 0) capabilities['resources'] = {};
-    if (prompts.length > 0) capabilities['prompts'] = {};
-
     this.server = new McpServer(
       { name: this.config.metadata.name, version: this.config.metadata.version },
-      { ...this.config.serverOptions, capabilities },
+      { ...this.config.serverOptions, capabilities: buildCapabilities(this.registry) },
     );
 
-    for (const { metadata } of tools) {
-      this.server.registerTool(
-        metadata.name,
-        { description: metadata.description, inputSchema: metadata.schema?.shape },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (params: any) => this.registry.executeToolMcp(metadata.name, params) as any,
-      );
-    }
-
-    for (const { metadata, handler } of resources) {
-      const resourceConfig: Record<string, string | undefined> = {};
-      if (metadata.description) resourceConfig['description'] = metadata.description;
-      if (metadata.mimeType) resourceConfig['mimeType'] = metadata.mimeType;
-
-      if (metadata.isTemplate) {
-        this.server.registerResource(metadata.name, new ResourceTemplate(metadata.uri, { list: undefined }), resourceConfig, handler);
-      } else {
-        this.server.registerResource(metadata.name, metadata.uri, resourceConfig, handler);
-      }
-    }
-
-    for (const { metadata, handler } of prompts) {
-      this.server.registerPrompt(metadata.name, { description: metadata.description, argsSchema: metadata.argsSchema }, handler);
-    }
+    wireRegistryToServer(this.registry, this.server);
 
     this.transport = new StdioServerTransport(
       this.config.stdin,

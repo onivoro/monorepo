@@ -14,7 +14,7 @@ npm install @onivoro/server-mcp-bedrock
 |---------|---------|
 | `@nestjs/common` | `^10.0.0 \|\| ^11.0.0` |
 
-`@onivoro/server-mcp` (`^24.33.21`) is a hard dependency — installed automatically.
+`@onivoro/server-mcp` is a hard dependency — installed automatically.
 
 ## Usage
 

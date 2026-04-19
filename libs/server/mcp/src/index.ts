@@ -8,3 +8,4 @@ export { McpTool, McpResource, McpPrompt, McpToolMetadata, McpResourceMetadata, 
 export { McpToolRegistry, McpToolResult, McpContentBlock, McpTextContent, McpImageContent, McpAudioContent, McpEmbeddedResource, McpResourceLink } from './lib/mcp-tool-registry';
 export { McpRegistryModule } from './lib/mcp-tool-registry.module';
 export { mcpSchemaToJsonSchema } from './lib/mcp-schema-converters';
+export { wireRegistryToServer, buildCapabilities } from './lib/wire-registry-to-server';

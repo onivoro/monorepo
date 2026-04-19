@@ -135,11 +135,22 @@ For testing or non-standard setups, you can provide custom `stdin`/`stdout` stre
 ```typescript
 import { PassThrough } from 'node:stream';
 
+const stdin = new PassThrough();
+const stdout = new PassThrough();
+
+// Log outgoing MCP messages for debugging
+stdout.on('data', (chunk: Buffer) => {
+  console.debug('[mcp:out]', chunk.toString());
+});
+
 McpStdioModule.registerAndServeStdio({
   metadata: { name: 'test-server', version: '1.0.0' },
-  stdin: new PassThrough(),   // mock stdin for tests
-  stdout: new PassThrough(),  // capture stdout for assertions
-})
+  stdin,
+  stdout,
+});
+
+// Simulate an incoming JSON-RPC request
+stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 1 }) + '\n');
 ```
 
 ## Quick start: Registry only
@@ -174,7 +185,7 @@ See [`@onivoro/server-mcp-bedrock`](../mcp-bedrock/README.md) for Bedrock-specif
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { McpToolRegistry } from '@onivoro/server-mcp';
+import { McpToolRegistry, wireRegistryToServer, buildCapabilities } from '@onivoro/server-mcp';
 
 @Injectable()
 export class CustomTransportService implements OnModuleInit {
@@ -183,17 +194,10 @@ export class CustomTransportService implements OnModuleInit {
   async onModuleInit() {
     const server = new McpServer(
       { name: 'my-server', version: '1.0.0' },
-      { capabilities: { tools: {} } },
+      { capabilities: buildCapabilities(this.registry) },
     );
 
-    // Wire registry tools to the McpServer
-    for (const { metadata } of this.registry.getTools()) {
-      server.registerTool(
-        metadata.name,
-        { description: metadata.description, inputSchema: metadata.schema?.shape },
-        (params: any) => this.registry.executeToolMcp(metadata.name, params) as any,
-      );
-    }
+    wireRegistryToServer(this.registry, server);
 
     // Connect to any transport — SSE, WebSocket, custom protocol, etc.
     const transport = new SSEServerTransport('/messages', response);
@@ -202,7 +206,14 @@ export class CustomTransportService implements OnModuleInit {
 }
 ```
 
-This is the same pattern that `McpHttpModule` and `McpStdioModule` use internally. The registry owns tool discovery and execution; you own the transport.
+`wireRegistryToServer` and `buildCapabilities` are independent — `buildCapabilities` derives capabilities from the registry, and `wireRegistryToServer` registers entries onto the server without touching capabilities. To add capabilities beyond what the registry provides (e.g. `logging`, `experimental`), merge them:
+
+```typescript
+const capabilities = { ...buildCapabilities(this.registry), logging: {} };
+const server = new McpServer({ name: 'my-server', version: '1.0.0' }, { capabilities });
+```
+
+Or skip `buildCapabilities` entirely and pass your own capabilities object. Both helpers are the same ones that `McpHttpModule` and `McpStdioModule` use internally.
 
 ## Defining tools
 
@@ -474,6 +485,10 @@ McpPrompt                    // Method decorator for prompts
 // Schema converters
 mcpSchemaToJsonSchema        // z.ZodObject → JSON Schema object (via zod v4 native z.toJSONSchema)
 
+// Wiring helpers
+wireRegistryToServer         // Register all tools/resources/prompts from registry onto an McpServer
+buildCapabilities            // Build MCP capabilities object from current registry state
+
 // Interfaces
 McpModuleConfig              // Configuration for McpHttpModule.registerAndServeHttp()
 McpStdioConfig               // Configuration for McpStdioModule.registerAndServeStdio()
@@ -537,6 +552,7 @@ export class EmojiService {
 }
 
 // libs/mcp/emojeez — MCP adapter
+// this is optional, but preferred (for larger codebases) instead of just bolting the @McpTool decorator onto an existing service (which IS supported nonetheless)
 @Injectable()
 export class EmojiToolService {
   constructor(private readonly emoji: EmojiService) {}
@@ -549,9 +565,13 @@ export class EmojiToolService {
 }
 ```
 
-### Keep schemas in the business logic library
+### Keep Zod schemas in the business logic library
 
-Define Zod schemas in the business logic library and export them. Both the service (`z.infer`) and the MCP adapter (`@McpTool` decorator) consume the same schema — types and validation can never drift apart.
+Hot take🔥: If you're not using Zod, you should probably start using it and drop all other validation strategies.
+
+If you're already using (isomorphic) Zod schemas for server/client validation, this recommendation won't require any changes at all. If you are not using Zod yet, you will need to create Zod schemas for your MCP server.
+
+Ideally, keep your Zod schemas in the business logic library (or a shared isomorphic library if you also use them in the browser) and export them. Both the service (`z.infer`) and the MCP adapter (`@McpTool` decorator) consume the same schema — types and validation can never drift apart.
 
 ```typescript
 // libs/server/emojeez/src/lib/emoji.schemas.ts
