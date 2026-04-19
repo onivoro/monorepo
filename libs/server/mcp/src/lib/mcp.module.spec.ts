@@ -25,7 +25,7 @@ jest.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
 
 @Injectable()
 class TestToolService {
-  @McpTool('test-tool', 'A test tool', { input: z.string().describe('test input') })
+  @McpTool('test-tool', 'A test tool', z.object({ input: z.string().describe('test input') }))
   async myTool(params: { input: string }) {
     return { content: [{ type: 'text', text: `echo: ${params.input}` }] };
   }

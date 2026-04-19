@@ -6,24 +6,26 @@ A NestJS library for building transport-agnostic MCP tool services. Define tools
 
 MCP tools are business logic with a protocol wrapper. The problem is that the same tools often need to be consumed in multiple contexts: an MCP HTTP server for Claude Desktop, a stdio process for a VS Code extension calling Bedrock, a direct function call from a test or CLI. Without a shared registry, you end up duplicating tool definitions, schemas, name mappings, and dispatch logic for each transport.
 
-This library solves that by separating **tool definition** (decorators on NestJS services) from **tool consumption** (HTTP sessions, Bedrock tool calls, raw execution). You write your tools once. The registry handles discovery, schema conversion, name mapping, and per-consumer format wrapping automatically.
+This library solves that by separating **tool definition** (decorators on NestJS services) from **tool consumption** (HTTP sessions, stdio, Bedrock tool calls, raw execution). You write your tools once. The registry handles discovery, schema conversion, name mapping, and per-consumer format wrapping automatically.
 
 ### What you get
 
-- **Write once, consume anywhere**: `@McpTool` services work over MCP HTTP, stdio/Bedrock, or direct programmatic access without code changes.
+- **Write once, consume anywhere**: `@McpTool` services work over MCP HTTP, MCP stdio, Bedrock, or direct programmatic access without code changes.
+- **Type-safe schemas**: `@McpTool` accepts `z.ZodObject`, enabling `z.infer<typeof schema>` for compile-time type safety on tool parameters.
 - **Automatic format wrapping**: The registry provides per-consumer execution methods. Your service methods return whatever is natural — the registry wraps for the target transport.
-- **Schema conversion**: Zod schemas on decorators are converted to JSON Schema automatically. Bedrock tool definitions are generated from the registry with one call.
+- **Schema conversion**: Zod schemas on decorators are converted to JSON Schema automatically via zod v4's native `z.toJSONSchema()`. Bedrock tool definitions are generated from the registry with one call.
 - **Name mapping**: Bedrock requires `^[a-zA-Z][a-zA-Z0-9_]*$` names. The library auto-sanitizes (`-` to `_`) or uses explicit aliases you declare on the decorator. Reverse lookup (Bedrock name back to MCP name) is built in.
 - **Consistent infrastructure**: Sessions, transport, discovery, cleanup, duplicate detection, error handling — all handled.
 
-## Two entry points
+## Three entry points
 
-| Module | Use case | What it provides |
-|--------|----------|------------------|
-| `McpModule.configure()` | MCP HTTP server (Claude Desktop, MCP Inspector, web clients) | Full HTTP transport + session management + tool registry |
-| `McpRegistryModule.forFeature()` | Non-HTTP consumers (stdio, Bedrock, direct calls) | Tool discovery + registry only, no HTTP overhead |
+| Module | Transport | Use case |
+|--------|-----------|----------|
+| `McpModule.configure()` | Streamable HTTP | MCP clients over network (Claude Desktop remote, MCP Inspector, web clients) |
+| `McpStdioModule.configure()` | Stdio (stdin/stdout) | MCP clients via subprocess (Claude Desktop local, `npx`-style servers) |
+| `McpRegistryModule.forFeature()` | None | In-process consumption (Bedrock tool use, direct calls, tests) |
 
-Both modules auto-discover `@McpTool`, `@McpResource`, and `@McpPrompt` decorated methods from all providers in the NestJS module tree.
+All three modules auto-discover `@McpTool`, `@McpResource`, and `@McpPrompt` decorated methods from all providers in the NestJS module tree.
 
 ## Quick start: MCP HTTP server
 
@@ -66,12 +68,61 @@ bootstrap();
 
 The MCP endpoint is available at `POST /mcp`. Tools are discovered and registered automatically.
 
-## Quick start: Bedrock via stdio
+## Quick start: MCP stdio server
 
-Use `McpRegistryModule.forFeature()` when you need the tool registry without HTTP transport — for example, in a stdio process that calls AWS Bedrock.
+Use `McpStdioModule.configure()` when your MCP server runs as a subprocess — the standard model for Claude Desktop local servers, `npx`-invoked MCP tools, and similar environments where the client spawns your process and communicates over stdin/stdout.
 
 ```typescript
 // app-stdio.module.ts
+import { Module } from '@nestjs/common';
+import { McpStdioModule } from '@onivoro/server-mcp';
+import { EmojiService } from './services/emoji.service';
+
+@Module({
+  imports: [
+    McpStdioModule.configure({
+      metadata: { name: 'my-stdio-server', version: '1.0.0' },
+    }),
+  ],
+  providers: [EmojiService],
+})
+export class AppStdioModule {}
+```
+
+```typescript
+// main.ts
+import { NestFactory } from '@nestjs/core';
+import { AppStdioModule } from './app/app-stdio.module';
+
+async function bootstrap() {
+  await NestFactory.createApplicationContext(AppStdioModule);
+  // No HTTP listener — the module connects to stdin/stdout on init
+}
+bootstrap();
+```
+
+The server starts listening on stdin/stdout as soon as the NestJS application context initializes. Tools, resources, and prompts are discovered and registered automatically.
+
+### Custom streams
+
+For testing or non-standard setups, you can provide custom `stdin`/`stdout` streams:
+
+```typescript
+import { PassThrough } from 'node:stream';
+
+McpStdioModule.configure({
+  metadata: { name: 'test-server', version: '1.0.0' },
+  stdin: new PassThrough(),   // mock stdin for tests
+  stdout: new PassThrough(),  // capture stdout for assertions
+})
+```
+
+## Quick start: Bedrock via registry
+
+Use `McpRegistryModule.forFeature()` when you need the tool registry without any MCP transport — for example, in a stdio process that calls AWS Bedrock directly, or in tests.
+
+```typescript
+// app-bedrock.module.ts
 import { Module } from '@nestjs/common';
 import { McpRegistryModule } from '@onivoro/server-mcp';
 import { EmojiService } from './services/emoji.service';
@@ -81,7 +132,7 @@ import { ChatService } from './services/chat.service';
   imports: [McpRegistryModule.forFeature()],
   providers: [EmojiService, ChatService],
 })
-export class AppStdioModule {}
+export class AppBedrockModule {}
 ```
 
 ```typescript
@@ -109,27 +160,31 @@ export class ChatService {
 }
 ```
 
-The same `EmojiService` with `@McpTool` decorators is used in both examples — no duplication.
+The same `EmojiService` with `@McpTool` decorators is used in all three examples — no duplication.
 
 ## Defining tools
+
+Declare the schema as a `z.ZodObject`, then reuse it with `z.infer` for type-safe params:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { McpTool } from '@onivoro/server-mcp';
 import { z } from 'zod';
 
+const insertEmojisSchema = z.object({
+  text: z.string().describe('The text to enhance with emojis'),
+  intensity: z.enum(['subtle', 'moderate', 'heavy']).optional().describe('Emoji density'),
+});
+
 @Injectable()
 export class EmojiService {
   @McpTool(
     'insert-emojis',
     'Insert emojis into text based on semantic meaning',
-    {
-      text: z.string().describe('The text to enhance with emojis'),
-      intensity: z.enum(['subtle', 'moderate', 'heavy']).optional().describe('Emoji density'),
-    },
+    insertEmojisSchema,
     { bedrock: 'insert_emojis' },  // explicit Bedrock alias (optional)
   )
-  async insertEmojis(params: { text: string; intensity?: string }) {
+  async insertEmojis(params: z.infer<typeof insertEmojisSchema>) {
     const enhanced = this.addEmojis(params.text, params.intensity);
     return { text: enhanced, emojiCount: 5 };
   }
@@ -137,6 +192,8 @@ export class EmojiService {
   // ...business logic...
 }
 ```
+
+The `z.infer<typeof insertEmojisSchema>` resolves to `{ text: string; intensity?: "subtle" | "moderate" | "heavy" }` at compile time — the schema and the params type can never drift apart.
 
 ### Return value handling
 
@@ -155,7 +212,7 @@ This means tool authors never think about transport format. Return whatever is n
 Bedrock requires tool names matching `^[a-zA-Z][a-zA-Z0-9_]*$` — no hyphens. By default, the library auto-sanitizes (`-` to `_`). For cases where auto-sanitization would be lossy or ambiguous, declare an explicit alias:
 
 ```typescript
-@McpTool('my-tool', 'description', schema, { bedrock: 'my_tool' })
+@McpTool('my-tool', 'description', myToolSchema, { bedrock: 'my_tool' })
 ```
 
 The `aliases` parameter is optional. The `openai` alias key is reserved for future use.
@@ -251,6 +308,8 @@ Called automatically by the module's discovery phase. You don't call these direc
 
 ## Configuration
 
+### McpModule (HTTP)
+
 ```typescript
 McpModule.configure({
   metadata: {
@@ -261,6 +320,21 @@ McpModule.configure({
   routePrefix: 'api/v1',      // Optional. Prefixes the /mcp route (becomes /api/v1/mcp).
   sessionTtlMinutes: 30,      // Optional. Idle session timeout. Default: 30.
   serverOptions: {},           // Optional. Passed to McpServer from @modelcontextprotocol/sdk.
+});
+```
+
+### McpStdioModule (Stdio)
+
+```typescript
+McpStdioModule.configure({
+  metadata: {
+    name: 'my-server',        // Required. Server name reported to MCP clients.
+    version: '1.0.0',         // Required. Server version.
+    description: 'Optional',  // Optional. Human-readable description.
+  },
+  serverOptions: {},           // Optional. Passed to McpServer from @modelcontextprotocol/sdk.
+  stdin: process.stdin,        // Optional. Defaults to process.stdin.
+  stdout: process.stdout,      // Optional. Defaults to process.stdout.
 });
 ```
 
@@ -288,7 +362,9 @@ The library exports header constants for MCP protocol compliance:
 | `MCP_CORS_ALLOWED_HEADERS` | `Content-Type`, `Accept`, `Authorization`, `x-api-key`, `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Last-Event-ID` |
 | `MCP_CORS_EXPOSED_HEADERS` | `Mcp-Session-Id`, `Mcp-Protocol-Version` |
 
-## Session management (HTTP only)
+## Transport lifecycle
+
+### HTTP (`McpModule`)
 
 Each MCP client connection creates a session, identified by the `Mcp-Session-Id` header.
 
@@ -297,11 +373,24 @@ Each MCP client connection creates a session, identified by the `Mcp-Session-Id`
 - The default idle TTL is 30 minutes, configurable via `sessionTtlMinutes`.
 - All sessions are cleaned up on application shutdown.
 
+### Stdio (`McpStdioModule`)
+
+A single `McpServer` is created and connected to `StdioServerTransport` during `onModuleInit`. There are no sessions — the server runs for the lifetime of the process.
+
+- The server starts automatically when the NestJS application context initializes.
+- The transport and server are closed on application shutdown (`onModuleDestroy`).
+- Use `NestFactory.createApplicationContext()` instead of `NestFactory.create()` — there's no HTTP listener.
+
+### Registry only (`McpRegistryModule`)
+
+No transport is created. Tools are discovered and registered into `McpToolRegistry` during module init. You call the registry's execution methods directly from your own code.
+
 ## Exports
 
 ```typescript
 // Modules
-McpModule                    // Full HTTP transport — use McpModule.configure()
+McpModule                    // HTTP transport — use McpModule.configure()
+McpStdioModule               // Stdio transport — use McpStdioModule.configure()
 McpRegistryModule            // Registry only — use McpRegistryModule.forFeature()
 
 // Registry
@@ -309,12 +398,12 @@ McpToolRegistry              // Injectable registry — execution, introspection
 McpToolResult                // { content: Array<{ type: 'text'; text: string }> }
 
 // Decorators
-McpTool                      // Method decorator for tools
+McpTool                      // Method decorator for tools (schema: z.ZodObject)
 McpResource                  // Method decorator for resources
 McpPrompt                    // Method decorator for prompts
 
 // Schema converters
-mcpSchemaToJsonSchema        // Zod schema → JSON Schema object
+mcpSchemaToJsonSchema        // z.ZodObject → JSON Schema object (via zod v4 native z.toJSONSchema)
 sanitizeToolNameForBedrock   // 'my-tool' → 'my_tool'
 resolveBedrockName           // Uses alias if present, else auto-sanitizes
 toBedrockToolDefinition      // McpToolMetadata → BedrockToolDefinition
@@ -322,8 +411,9 @@ BedrockToolDefinition        // { toolSpec: { name, description, inputSchema: { 
 
 // Interfaces
 McpModuleConfig              // Configuration for McpModule.configure()
+McpStdioConfig               // Configuration for McpStdioModule.configure()
 McpServerMetadata            // { name, version, description? }
-McpToolMetadata              // { name, description, schema?, aliases? }
+McpToolMetadata              // { name, description, schema?: z.ZodObject, aliases? }
 McpToolAliases               // { bedrock?, openai? }
 McpResourceMetadata          // { name, uri, description?, mimeType?, isTemplate? }
 McpPromptMetadata            // { name, description?, argsSchema? }
@@ -332,7 +422,8 @@ McpPromptMetadata            // { name, description?, argsSchema? }
 McpService                   // HTTP session manager (rarely needed directly)
 
 // Constants
-MCP_MODULE_CONFIG            // DI token
+MCP_MODULE_CONFIG            // DI token for McpModule config
+MCP_STDIO_CONFIG             // DI token for McpStdioModule config
 MCP_TOOL_METADATA            // Reflect metadata key
 MCP_RESOURCE_METADATA        // Reflect metadata key
 MCP_PROMPT_METADATA          // Reflect metadata key

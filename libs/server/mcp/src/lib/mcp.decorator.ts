@@ -14,7 +14,7 @@ export interface McpToolAliases {
 export interface McpToolMetadata {
   name: string;
   description: string;
-  schema?: Record<string, z.ZodTypeAny>;
+  schema?: z.ZodObject<any>;
   aliases?: McpToolAliases;
 }
 
@@ -35,7 +35,7 @@ export interface McpPromptMetadata {
 export const McpTool = (
   name: string,
   description: string,
-  schema?: Record<string, z.ZodTypeAny>,
+  schema?: z.ZodObject<any>,
   aliases?: McpToolAliases,
 ) => {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {

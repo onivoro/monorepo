@@ -14,10 +14,10 @@ describe('mcp-schema-converters', () => {
     });
 
     it('should convert zod schema to JSON Schema', () => {
-      const schema = {
+      const schema = z.object({
         text: z.string().describe('Input text'),
         count: z.number().optional().describe('Count'),
-      };
+      });
 
       const result = mcpSchemaToJsonSchema(schema);
 
@@ -31,7 +31,7 @@ describe('mcp-schema-converters', () => {
     });
 
     it('should strip $schema from output', () => {
-      const schema = { text: z.string() };
+      const schema = z.object({ text: z.string() });
       const result = mcpSchemaToJsonSchema(schema);
       expect(result).not.toHaveProperty('$schema');
     });
@@ -88,10 +88,10 @@ describe('mcp-schema-converters', () => {
       const result = toBedrockToolDefinition({
         name: 'insert-emojis',
         description: 'Insert emojis into text',
-        schema: {
+        schema: z.object({
           text: z.string().describe('The text'),
           intensity: z.enum(['subtle', 'moderate', 'heavy']).optional(),
-        },
+        }),
       });
 
       expect(result.toolSpec.name).toBe('insert_emojis');

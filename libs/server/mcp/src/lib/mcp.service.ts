@@ -61,7 +61,7 @@ export class McpService implements OnModuleDestroy {
     for (const { metadata } of tools) {
       server.registerTool(
         metadata.name,
-        { description: metadata.description, inputSchema: metadata.schema },
+        { description: metadata.description, inputSchema: metadata.schema?.shape },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (params: any) => this.registry.executeToolMcp(metadata.name, params) as any,
       );

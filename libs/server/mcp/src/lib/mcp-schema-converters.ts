@@ -2,12 +2,12 @@ import { z } from 'zod';
 import type { McpToolMetadata } from './mcp.decorator';
 
 export function mcpSchemaToJsonSchema(
-  schema: Record<string, z.ZodTypeAny> | undefined,
+  schema: z.ZodObject<any> | undefined,
 ): Record<string, unknown> {
   if (!schema) {
     return { type: 'object', properties: {} };
   }
-  const result = z.toJSONSchema(z.object(schema));
+  const result = z.toJSONSchema(schema);
   const { $schema, ...rest } = result as Record<string, unknown>;
   return rest;
 }
