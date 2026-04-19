@@ -174,4 +174,3 @@ GeminiToolDefinition             // { name, description, parameters }
 | Library | Purpose |
 |---------|---------|
 | [`@onivoro/server-mcp`](../mcp/README.md) | Transport-agnostic MCP tool registry, decorators, HTTP and stdio transports |
-| [`@onivoro/server-mcp-bedrock`](../mcp-bedrock/README.md) | Standalone Bedrock Converse adapter (predates this library) |

@@ -8,7 +8,7 @@ MCP tools are business logic with a protocol wrapper. The problem is that the sa
 
 This library solves that by separating **tool definition** (decorators on NestJS services) from **tool consumption** (HTTP sessions, stdio, raw execution). You write your tools once. The registry handles discovery, schema conversion, and per-consumer format wrapping automatically.
 
-Consumer-specific formatting (e.g. Bedrock tool definitions, OpenAI function calling) lives in separate libraries that layer on top of the registry. See [`@onivoro/server-mcp-bedrock`](../mcp-bedrock/README.md) for the Bedrock adapter.
+Consumer-specific formatting (e.g. Bedrock Converse tool definitions, OpenAI function calling, Anthropic Messages API) lives in a separate adapter library that layers on top of the registry. See [`@onivoro/server-mcp-llm-adapter`](../mcp-llm-adapter/README.md) for the generic LLM adapter.
 
 ### Design goals
 
@@ -155,27 +155,27 @@ stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 1 }) + '\
 
 ## Quick start: Registry only
 
-Use `McpRegistryModule.registerOnly()` when you need the tool registry without any MCP transport — for example, in a process that calls AWS Bedrock directly (via `@onivoro/server-mcp-bedrock`), or in tests.
+Use `McpRegistryModule.registerOnly()` when you need the tool registry without any MCP transport — for example, in a process that calls an LLM provider directly (via `@onivoro/server-mcp-llm-adapter`), or in tests.
 
 ```typescript
 // app.module.ts
 import { Module } from '@nestjs/common';
 import { McpRegistryModule } from '@onivoro/server-mcp';
-import { BedrockMcpModule } from '@onivoro/server-mcp-bedrock';
+import { LlmAdapterModule } from '@onivoro/server-mcp-llm-adapter';
 import { EmojiService } from './services/emoji.service';
 import { ChatService } from './services/chat.service';
 
 @Module({
   imports: [
     McpRegistryModule.registerOnly(),
-    BedrockMcpModule.forRegistry(),  // adds BedrockToolAdapter
+    LlmAdapterModule.forBedrockConverse(),  // or forOpenAi(), forClaude(), etc.
   ],
   providers: [EmojiService, ChatService],
 })
 export class AppModule {}
 ```
 
-See [`@onivoro/server-mcp-bedrock`](../mcp-bedrock/README.md) for Bedrock-specific usage.
+See [`@onivoro/server-mcp-llm-adapter`](../mcp-llm-adapter/README.md) for provider-specific usage.
 
 ### Custom transport
 
@@ -283,7 +283,7 @@ Consumer-specific libraries may require different tool naming conventions. The `
 @McpTool('my-tool', 'description', myToolSchema, { bedrock: 'my_tool' })
 ```
 
-The `aliases` parameter is optional. Consumer libraries read the alias key they care about (e.g. `@onivoro/server-mcp-bedrock` reads `aliases['bedrock']`) falling back to the first argument provided to the decorator.
+The `aliases` parameter is optional. Consumer libraries read the alias key they care about (e.g. `@onivoro/server-mcp-llm-adapter` reads `aliases['bedrock']` for Bedrock Converse) falling back to the first argument provided to the decorator.
 
 ## Defining resources
 
@@ -457,7 +457,7 @@ A single `McpServer` is created and connected to `StdioServerTransport` during `
 
 ### Registry only (`McpRegistryModule`)
 
-No transport is created. Tools are discovered and registered into `McpToolRegistry` during module init. You call the registry's execution methods directly from your own code, or use consumer-specific adapter libraries like `@onivoro/server-mcp-bedrock`.
+No transport is created. Tools are discovered and registered into `McpToolRegistry` during module init. You call the registry's execution methods directly from your own code, or use the adapter library `@onivoro/server-mcp-llm-adapter`.
 
 ## Exports
 
@@ -516,7 +516,7 @@ MCP_CORS_CONFIG              // Complete CORS config object (methods, allowedHea
 
 | Library | Purpose |
 |---------|---------|
-| [`@onivoro/server-mcp-bedrock`](../mcp-bedrock/README.md) | Bedrock tool definitions, name sanitization, execution adapter |
+| [`@onivoro/server-mcp-llm-adapter`](../mcp-llm-adapter/README.md) | Generic LLM adapter — Bedrock Converse, OpenAI, Anthropic, Gemini, Mistral |
 
 ## Peer dependencies
 
