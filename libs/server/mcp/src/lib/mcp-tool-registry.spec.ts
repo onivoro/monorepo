@@ -52,30 +52,30 @@ describe('McpToolRegistry', () => {
     });
   });
 
-  describe('executeTool', () => {
+  describe('executeToolRaw', () => {
     it('should call the raw handler and return its result', async () => {
       const handler = jest.fn().mockResolvedValue({ data: 'hello' });
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
-      const result = await registry.executeTool('tool', { input: 'x' });
+      const result = await registry.executeToolRaw('tool', { input: 'x' });
 
       expect(handler).toHaveBeenCalledWith({ input: 'x' });
       expect(result).toEqual({ data: 'hello' });
     });
 
     it('should throw for unknown tool', async () => {
-      await expect(registry.executeTool('nope', {})).rejects.toThrow(/not registered/);
+      await expect(registry.executeToolRaw('nope', {})).rejects.toThrow(/not registered/);
     });
   });
 
-  describe('executeToolMcp', () => {
+  describe('executeToolWrapped', () => {
     it('should pass through results with content', async () => {
       const handler = jest.fn().mockResolvedValue({
         content: [{ type: 'text', text: 'hello' }],
       });
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
-      const result = await registry.executeToolMcp('tool', {});
+      const result = await registry.executeToolWrapped('tool', {});
       expect(result).toEqual({ content: [{ type: 'text', text: 'hello' }] });
     });
 
@@ -83,7 +83,7 @@ describe('McpToolRegistry', () => {
       const handler = jest.fn().mockResolvedValue('plain text');
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
-      const result = await registry.executeToolMcp('tool', {});
+      const result = await registry.executeToolWrapped('tool', {});
       expect(result).toEqual({ content: [{ type: 'text', text: 'plain text' }] });
     });
 
@@ -91,7 +91,7 @@ describe('McpToolRegistry', () => {
       const handler = jest.fn().mockResolvedValue({ key: 'value' });
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
-      const result = await registry.executeToolMcp('tool', {});
+      const result = await registry.executeToolWrapped('tool', {});
       expect((result.content[0] as any).text).toContain('"key": "value"');
     });
 
@@ -99,7 +99,7 @@ describe('McpToolRegistry', () => {
       const handler = jest.fn().mockRejectedValue(new Error('boom'));
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
-      const result = await registry.executeToolMcp('tool', {});
+      const result = await registry.executeToolWrapped('tool', {});
       expect((result.content[0] as any).text).toContain('Error executing tool');
       expect((result.content[0] as any).text).toContain('boom');
     });

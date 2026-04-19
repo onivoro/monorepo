@@ -36,7 +36,7 @@ export class LlmToolAdapter<T = unknown> {
     return this.buildNameMap().get(providerName);
   }
 
-  async executeByProviderName(
+  async executeToolForProvider(
     providerName: string,
     params: Record<string, unknown>,
   ): Promise<string> {
@@ -46,7 +46,7 @@ export class LlmToolAdapter<T = unknown> {
         `No MCP tool found for provider name "${providerName}".`,
       );
     }
-    const result = await this.registry.executeTool(mcpName, params);
+    const result = await this.registry.executeToolRaw(mcpName, params);
     return typeof result === 'string' ? result : JSON.stringify(result);
   }
 }

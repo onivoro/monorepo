@@ -25,7 +25,7 @@ export function wireRegistryToServer(registry: McpToolRegistry, server: McpServe
       metadata.name,
       { description: metadata.description, inputSchema: metadata.schema?.shape },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (params: any) => registry.executeToolMcp(metadata.name, params) as any,
+      (params: any) => registry.executeToolWrapped(metadata.name, params) as any,
     );
   }
 

@@ -137,7 +137,7 @@ export class McpToolRegistry {
 
   // -- Execution --
 
-  async executeTool(
+  async executeToolRaw(
     name: string,
     params: Record<string, unknown>,
   ): Promise<unknown> {
@@ -148,12 +148,12 @@ export class McpToolRegistry {
     return entry.handler(params);
   }
 
-  async executeToolMcp(
+  async executeToolWrapped(
     name: string,
     params: Record<string, unknown>,
   ): Promise<McpToolResult> {
     try {
-      const result = await this.executeTool(name, params);
+      const result = await this.executeToolRaw(name, params);
 
       if (
         result &&

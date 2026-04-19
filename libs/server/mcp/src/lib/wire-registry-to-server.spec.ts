@@ -67,7 +67,7 @@ describe('wireRegistryToServer', () => {
     );
   });
 
-  it('should delegate tool callback to registry.executeToolMcp', async () => {
+  it('should delegate tool callback to registry.executeToolWrapped', async () => {
     const handler = jest.fn().mockResolvedValue('result');
     registry.registerTool({ name: 'tool', description: 'd' }, handler);
 

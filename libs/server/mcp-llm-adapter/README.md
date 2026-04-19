@@ -80,7 +80,7 @@ export class ChatService {
     // ... call the LLM provider with tools ...
 
     // When the provider returns a tool call:
-    const result = await this.adapter.executeByProviderName(
+    const result = await this.adapter.executeToolForProvider(
       toolCall.name,
       toolCall.input,
     );
@@ -120,7 +120,7 @@ LlmAdapterModule.forProvider(MY_CONFIG);
 |--------|-------------|
 | `toProviderTools()` | Returns `T[]` — tool definitions in the provider's format |
 | `resolveProviderToolName(providerName)` | Maps a provider-specific tool name back to the MCP tool name, or `undefined` |
-| `executeByProviderName(providerName, params)` | Resolves name, executes tool, returns stringified result |
+| `executeToolForProvider(providerName, params)` | Resolves name, executes tool, returns stringified result |
 
 ## Name handling
 
@@ -148,7 +148,7 @@ Providers that require name sanitization (Bedrock Converse, Gemini) apply it aut
 LlmAdapterModule                // NestJS module — forProvider(), forBedrockConverse(), forOpenAi(), forClaude(), forGemini(), forMistral()
 
 // Adapter
-LlmToolAdapter                  // Injectable — toProviderTools(), resolveProviderToolName(), executeByProviderName()
+LlmToolAdapter                  // Injectable — toProviderTools(), resolveProviderToolName(), executeToolForProvider()
 
 // Config
 LlmAdapterConfig                // Interface for custom provider configs

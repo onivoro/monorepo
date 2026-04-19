@@ -94,7 +94,7 @@ describe('McpHttpModule', () => {
       await module.close();
     });
 
-    it('should auto-wrap non-content tool results via executeToolMcp', async () => {
+    it('should auto-wrap non-content tool results via executeToolWrapped', async () => {
       const module = await Test.createTestingModule({
         imports: [
           McpHttpModule.registerAndServeHttp({
@@ -107,7 +107,7 @@ describe('McpHttpModule', () => {
       await module.init();
 
       const registry = module.get(McpToolRegistry);
-      const result = await registry.executeToolMcp('string-tool', {});
+      const result = await registry.executeToolWrapped('string-tool', {});
 
       expect(result).toEqual({
         content: [{ type: 'text', text: 'plain string result' }],
@@ -129,7 +129,7 @@ describe('McpHttpModule', () => {
       await module.init();
 
       const registry = module.get(McpToolRegistry);
-      const result = await registry.executeToolMcp('test-tool', { input: 'hello' });
+      const result = await registry.executeToolWrapped('test-tool', { input: 'hello' });
 
       expect(result).toEqual({
         content: [{ type: 'text', text: 'echo: hello' }],
@@ -244,7 +244,7 @@ describe('McpHttpModule', () => {
       await module.init();
 
       const registry = module.get(McpToolRegistry);
-      const result = await registry.executeToolMcp('failing-tool', {});
+      const result = await registry.executeToolWrapped('failing-tool', {});
 
       expect((result.content[0] as any).text).toContain('Error executing failing-tool');
       expect((result.content[0] as any).text).toContain('tool exploded');

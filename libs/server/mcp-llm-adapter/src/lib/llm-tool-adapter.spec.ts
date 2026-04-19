@@ -96,13 +96,13 @@ describe('LlmToolAdapter', () => {
     });
   });
 
-  describe('executeByProviderName', () => {
+  describe('executeToolForProvider', () => {
     it('should resolve provider name and return stringified result', async () => {
       const adapter = new LlmToolAdapter(registry, SANITIZING_CONFIG);
       const handler = jest.fn().mockResolvedValue({ enhanced: true });
       registry.registerTool({ name: 'my-tool', description: 'd' }, handler);
 
-      const result = await adapter.executeByProviderName('my_tool', { x: 1 });
+      const result = await adapter.executeToolForProvider('my_tool', { x: 1 });
       expect(handler).toHaveBeenCalledWith({ x: 1 });
       expect(result).toBe('{"enhanced":true}');
     });
@@ -112,7 +112,7 @@ describe('LlmToolAdapter', () => {
       const handler = jest.fn().mockResolvedValue('raw text');
       registry.registerTool({ name: 'my-tool', description: 'd' }, handler);
 
-      const result = await adapter.executeByProviderName('my-tool', {});
+      const result = await adapter.executeToolForProvider('my-tool', {});
       expect(result).toBe('raw text');
     });
 
@@ -124,14 +124,14 @@ describe('LlmToolAdapter', () => {
         handler,
       );
 
-      const result = await adapter.executeByProviderName('toolX', {});
+      const result = await adapter.executeToolForProvider('toolX', {});
       expect(result).toBe('ok');
     });
 
     it('should throw for unknown provider name', async () => {
       const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
       await expect(
-        adapter.executeByProviderName('unknown', {}),
+        adapter.executeToolForProvider('unknown', {}),
       ).rejects.toThrow(/No MCP tool found/);
     });
   });

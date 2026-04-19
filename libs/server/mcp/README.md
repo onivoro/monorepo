@@ -252,10 +252,10 @@ The `z.infer<typeof insertEmojisSchema>` resolves to `{ text: string; intensity?
 
 Your `@McpTool` methods can return any of these — the registry wraps automatically based on how the tool is consumed:
 
-| Your method returns | `executeTool()` (raw) | `executeToolMcp()` (MCP) |
+| Your method returns | `executeToolRaw()` (raw) | `executeToolWrapped()` (MCP) |
 |---|---|---|
-| `{ content: [{ type: 'text', text: '...' }] }` | As-is | Passed through |
-| `{ content: [{ type: 'image', data: '...', mimeType: '...' }] }` | As-is | Passed through |
+| `{ content: [{ type: 'text', text: '...' }] }` | Passed through | Passed through |
+| `{ content: [{ type: 'image', data: '...', mimeType: '...' }] }` | Passed through | Passed through |
 | `'plain string'` | `'plain string'` | `{ content: [{ type: 'text', text: 'plain string' }] }` |
 | `{ key: 'value' }` | `{ key: 'value' }` | `{ content: [{ type: 'text', text: '...' }] }` (JSON-stringified) |
 
@@ -362,8 +362,8 @@ Called automatically by the module's discovery phase. You don't call these direc
 
 | Method | Input name | Returns | Use when |
 |--------|-----------|---------|----------|
-| `executeTool(name, params)` | MCP name | Raw handler result | Direct programmatic access, tests |
-| `executeToolMcp(name, params)` | MCP name | `McpToolResult` (auto-wrapped) | MCP HTTP and stdio transports |
+| `executeToolRaw(name, params)` | MCP name | Raw handler result | Direct programmatic access, tests |
+| `executeToolWrapped(name, params)` | MCP name | `McpToolResult` (auto-wrapped) | MCP HTTP and stdio transports |
 
 ### Schema conversion
 
