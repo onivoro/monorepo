@@ -24,6 +24,8 @@ Consumer-specific formatting (e.g. Bedrock Converse tool definitions, OpenAI fun
 - **Automatic format wrapping**: The registry provides per-consumer execution methods. Your service methods return whatever is natural — the registry wraps for the target transport.
 - **Schema conversion**: Zod schemas on decorators are converted to JSON Schema automatically via zod v4's native `z.toJSONSchema()`.
 - **Consistent infrastructure**: Sessions, transport, discovery, cleanup, duplicate detection, error handling — all handled.
+- **Auth-aware execution**: MCP SDK `authInfo` flows through the registry to tool handlers and hooks. Per-tool authorization is declarative via `@McpGuard`.
+- **Extensible execution pipeline**: Guards run before hooks, hooks run before/after handlers. All three are optional and composable.
 
 ## Three entry points
 
@@ -248,6 +250,41 @@ export class EmojiService {
 
 The `z.infer<typeof insertEmojisSchema>` resolves to `{ text: string; intensity?: "subtle" | "moderate" | "heavy" }` at compile time — the schema and the params type can never drift apart.
 
+### Accessing auth context
+
+Tool handlers receive an optional second parameter — `McpToolContext` — containing the tool name, parameters, metadata, and any `authInfo` from the MCP transport layer:
+
+```typescript
+import { McpTool, McpToolContext } from '@onivoro/server-mcp';
+
+@McpTool('delete-item', 'Delete an item', deleteItemSchema)
+async deleteItem(
+  params: z.infer<typeof deleteItemSchema>,
+  context?: McpToolContext,
+) {
+  // context.authInfo is populated when the MCP client authenticated via OAuth 2.1
+  if (context?.authInfo) {
+    console.log(`Client ${context.authInfo.clientId} with scopes: ${context.authInfo.scopes}`);
+  }
+  return this.itemService.delete(params.id);
+}
+```
+
+The second parameter is entirely optional — existing handlers that only accept `params` continue to work unchanged. For declarative auth, see [Guards](#guards) below.
+
+### Input validation
+
+When a tool has a Zod schema, the registry runs `schema.parse(params)` as the **Pipes** stage of the [execution pipeline](#execution-pipeline) — after guards but before hooks and the handler. This means:
+
+- **Unauthorized calls are rejected before validation** — guards run first, so invalid params never waste time parsing if the call isn't authorized.
+- **Invalid params are rejected** with a `ZodError` before hooks or the handler execute.
+- **Defaults and transforms are applied** — if your schema has `.default()` or `.transform()`, hooks and the handler receive the fully processed params, not the raw input.
+- **Refinements are enforced** — `.refine()` and `.superRefine()` checks run, even though they can't be expressed in JSON Schema.
+
+On the MCP transport path (HTTP/stdio), the MCP SDK also validates incoming params against the JSON Schema representation of the Zod schema. The registry's validation is intentionally redundant on that path — it ensures that the programmatic path (`executeToolRaw`, `executeToolForProvider`) gets the same guarantees without relying on the SDK.
+
+Tools without a schema accept any params without validation.
+
 ### Return value handling
 
 Your `@McpTool` methods can return any of these — the registry wraps automatically based on how the tool is consumed:
@@ -334,6 +371,150 @@ async summarize(params: { itemId: string }) {
 }
 ```
 
+## Execution pipeline
+
+The registry's tool execution pipeline is modeled after the [NestJS HTTP request lifecycle](https://docs.nestjs.com/faq/request-lifecycle). If you're familiar with how NestJS processes an HTTP request through middleware, guards, pipes, interceptors, and exception filters, the same mental model applies here — each stage has a direct analog in the MCP tool pipeline.
+
+| Stage | NestJS HTTP | MCP Registry | Responsibility |
+|:-----:|---|---|---|
+| 1 | Middleware | Transport layer | NestJS middleware on the MCP route (authentication, logging) |
+| 2 | Guards | `@McpGuard` | Authorization — should this call proceed? |
+| 3 | Pipes | `schema.parse()` | Validation and transformation of input params (internally executed based on the Zod schema) |
+| 4 | Interceptors (before) | `beforeToolCall` hooks | Cross-cutting concerns before execution (auditing, metrics) |
+| 5 | Route handler | Tool handler | Business logic |
+| 6 | Interceptors (after) | `afterToolCall` hooks | Cross-cutting concerns after execution (logging, transformation) |
+| 7 | Exception filters | `executeToolWrapped` try/catch | Error wrapping for MCP clients |
+
+```
+Transport middleware → Guards → Validation → beforeToolCall → Handler → afterToolCall
+                                                                              ↓
+                                                            executeToolWrapped catches errors
+```
+
+**Key behaviors at each stage:**
+
+- **Guards** receive raw (unvalidated) params. They check authorization, not input shape. If a guard rejects, validation never runs — an unauthorized caller doesn't get a validation error revealing your schema.
+- **Validation** runs `schema.parse()`, applying Zod defaults, transforms, and refinements. From this point forward, all downstream stages (hooks and handler) see the validated params.
+- **Hooks** see validated params and the full `McpToolContext`. If `beforeToolCall` throws, the handler and `afterToolCall` are skipped.
+- **Handler** receives validated params as the first argument and `McpToolContext` as the optional second argument.
+- **Error handling** in `executeToolWrapped` catches any error from any stage and returns it as MCP error content — guards rejecting, validation failing, hooks throwing, or the handler itself failing all produce structured error responses to the MCP client.
+
+The pipeline runs identically regardless of transport — the same guards, validation, and hooks apply whether the tool is called via MCP HTTP, MCP stdio, `executeToolRaw`, or `executeToolForProvider` from the LLM adapter.
+
+## Guards
+
+Guards provide declarative, per-tool authorization. They are the first stage of the execution pipeline — if a guard rejects, validation, hooks, and the handler never execute.
+
+### Built-in scope guard
+
+The library ships `McpScopeGuard`, which checks `authInfo.scopes` against a required scope list. All modules auto-provide it, so there's nothing to register:
+
+```typescript
+import { McpTool, McpGuard, McpScopeGuard } from '@onivoro/server-mcp';
+
+@Injectable()
+export class ItemService {
+  @McpTool('delete-item', 'Delete an item', deleteItemSchema)
+  @McpGuard(McpScopeGuard, { scopes: ['write'] })
+  async deleteItem(params: z.infer<typeof deleteItemSchema>) {
+    // Only reached if authInfo.scopes includes 'write'
+    return this.items.delete(params.id);
+  }
+}
+```
+
+When the scope check fails, the registry throws `"Access denied by McpScopeGuard for tool "delete-item"."` — which `executeToolWrapped` catches and returns as error content to MCP clients.
+
+### Custom guards
+
+Implement `McpCanActivate` and register as a standard NestJS provider:
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { McpCanActivate, McpToolContext } from '@onivoro/server-mcp';
+
+@Injectable()
+export class RateLimitGuard implements McpCanActivate {
+  constructor(private readonly rateLimiter: RateLimiterService) {}
+
+  async canActivate(
+    context: McpToolContext,
+    config?: Record<string, unknown>,
+  ): Promise<boolean> {
+    const max = (config?.maxPerMinute as number) ?? 60;
+    const key = context.authInfo?.clientId ?? 'anonymous';
+    return this.rateLimiter.check(key, max);
+  }
+}
+```
+
+Then reference it in the decorator:
+
+```typescript
+@McpTool('expensive-op', 'Expensive operation', schema)
+@McpGuard(RateLimitGuard, { maxPerMinute: 10 })
+async expensiveOp(params: z.infer<typeof schema>) { ... }
+```
+
+Custom guards must be registered as providers in the NestJS module tree (so the DI container can resolve them). The built-in `McpScopeGuard` is auto-provided by all MCP modules.
+
+### Stacking guards
+
+Multiple `@McpGuard` decorators stack. They run in top-to-bottom order; the first rejection stops execution:
+
+```typescript
+@McpTool('admin-action', 'Admin only', schema)
+@McpGuard(McpScopeGuard, { scopes: ['admin'] })
+@McpGuard(RateLimitGuard, { maxPerMinute: 5 })
+async adminAction(params: z.infer<typeof schema>) { ... }
+```
+
+## Hooks
+
+Hooks are the interceptor analog in the [execution pipeline](#execution-pipeline) — cross-cutting concerns that apply to all tool calls globally. Unlike guards (which are per-tool via decorators), hooks run for every tool execution.
+
+### Defining a hook
+
+Implement `McpToolHook` as an injectable service:
+
+```typescript
+import { Injectable, Logger } from '@nestjs/common';
+import { McpToolHook, McpToolContext } from '@onivoro/server-mcp';
+
+@Injectable()
+export class AuditHook implements McpToolHook {
+  private readonly logger = new Logger(AuditHook.name);
+
+  async beforeToolCall(context: McpToolContext): Promise<void> {
+    this.logger.log(`Tool call: ${context.toolName} by ${context.authInfo?.clientId ?? 'anonymous'}`);
+  }
+
+  async afterToolCall(context: McpToolContext, result: unknown): Promise<void> {
+    this.logger.log(`Tool completed: ${context.toolName}`);
+  }
+}
+```
+
+### Registering hooks
+
+Register hooks directly on the registry, typically during module init:
+
+```typescript
+@Injectable()
+export class AppService implements OnModuleInit {
+  constructor(
+    private readonly registry: McpToolRegistry,
+    private readonly auditHook: AuditHook,
+  ) {}
+
+  onModuleInit() {
+    this.registry.registerHook(this.auditHook);
+  }
+}
+```
+
+Both `beforeToolCall` and `afterToolCall` are optional. Multiple hooks run in registration order. If `beforeToolCall` throws, the handler and `afterToolCall` are skipped — the error propagates normally.
+
 ## McpToolRegistry API
 
 The registry is the core of the library. It is injectable in any NestJS service when any of the three entry point modules is imported.
@@ -344,9 +525,11 @@ Called automatically by the module's discovery phase. You don't call these direc
 
 | Method | Description |
 |--------|-------------|
-| `registerTool(metadata, handler)` | Register a tool. Throws on duplicate name. |
+| `registerTool(metadata, handler, guards?)` | Register a tool with optional guards. Throws on duplicate name. |
 | `registerResource(metadata, handler)` | Register a resource. Throws on duplicate name. |
 | `registerPrompt(metadata, handler)` | Register a prompt. Throws on duplicate name. |
+| `registerHook(hook)` | Register a `McpToolHook` for all tool executions. |
+| `setGuardResolver(resolver)` | Set the function used to resolve guard class instances. Called automatically by all modules. |
 
 ### Introspection
 
@@ -362,8 +545,10 @@ Called automatically by the module's discovery phase. You don't call these direc
 
 | Method | Input name | Returns | Use when |
 |--------|-----------|---------|----------|
-| `executeToolRaw(name, params)` | MCP name | Raw handler result | Direct programmatic access, tests |
-| `executeToolWrapped(name, params)` | MCP name | `McpToolResult` (auto-wrapped) | MCP HTTP and stdio transports |
+| `executeToolRaw(name, params, authInfo?)` | MCP name | Raw handler result | Direct programmatic access, tests |
+| `executeToolWrapped(name, params, authInfo?)` | MCP name | `McpToolResult` (auto-wrapped) | MCP HTTP and stdio transports |
+
+The optional `authInfo` parameter is populated automatically by `wireRegistryToServer` (from the MCP SDK's request handler extra). When calling the registry directly, pass it if you have auth context available. Both methods run the full [execution pipeline](#execution-pipeline): guards → validation → hooks → handler.
 
 ### Schema conversion
 
@@ -405,7 +590,11 @@ McpStdioModule.registerAndServeStdio({
 
 ## Authentication
 
-Authentication is handled by standard NestJS middleware, not by this library:
+Authentication works at two layers:
+
+### Transport-level authentication
+
+Standard NestJS middleware handles transport-level auth (validating tokens, rejecting unauthenticated requests):
 
 ```typescript
 const routePrefix = 'what/ever/';
@@ -419,6 +608,22 @@ export class AppModule implements NestModule {
   }
 }
 ```
+
+### Tool-level authorization
+
+When the MCP SDK's OAuth 2.1 flow is in use, `authInfo` (token, clientId, scopes) flows from the transport through the registry to tool handlers and guards. Use `@McpGuard` for declarative per-tool scope checks:
+
+```typescript
+@McpTool('read-data', 'Read data', schema)
+@McpGuard(McpScopeGuard, { scopes: ['read'] })
+async readData(params: z.infer<typeof schema>) { ... }
+
+@McpTool('delete-data', 'Delete data', schema)
+@McpGuard(McpScopeGuard, { scopes: ['admin'] })
+async deleteData(params: z.infer<typeof schema>) { ... }
+```
+
+For custom authorization logic beyond scope checking, implement a `McpCanActivate` guard — see [Guards](#guards).
 
 ## CORS
 
@@ -477,6 +682,19 @@ McpAudioContent              // { type: 'audio', data, mimeType, annotations? }
 McpEmbeddedResource          // { type: 'resource', resource: { uri, text?, blob? }, annotations? }
 McpResourceLink              // { type: 'resource_link', uri, name, mimeType?, annotations? }
 
+// Auth & execution context
+McpAuthInfo                  // { token, clientId, scopes, expiresAt?, extra? }
+McpToolContext               // { toolName, params, metadata, authInfo? }
+
+// Guards
+McpGuard                     // Method decorator — @McpGuard(GuardClass, config?)
+McpCanActivate               // Interface for custom guard classes
+McpGuardMetadata             // { guardClass, config? }
+McpScopeGuard                // Built-in guard — checks authInfo.scopes against required scopes
+
+// Hooks
+McpToolHook                  // Interface — { beforeToolCall?, afterToolCall? }
+
 // Decorators
 McpTool                      // Method decorator for tools (schema: z.ZodObject)
 McpResource                  // Method decorator for resources
@@ -506,6 +724,7 @@ MCP_STDIO_CONFIG             // DI token for McpStdioModule config
 MCP_TOOL_METADATA            // Reflect metadata key
 MCP_RESOURCE_METADATA        // Reflect metadata key
 MCP_PROMPT_METADATA          // Reflect metadata key
+MCP_GUARD_METADATA           // Reflect metadata key for @McpGuard
 MCP_CORS_METHODS             // CORS methods array
 MCP_CORS_ALLOWED_HEADERS     // CORS allowed headers array
 MCP_CORS_EXPOSED_HEADERS     // CORS exposed headers array

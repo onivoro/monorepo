@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { McpToolRegistry, mcpSchemaToJsonSchema } from '@onivoro/server-mcp';
+import { McpToolRegistry, McpAuthInfo, mcpSchemaToJsonSchema } from '@onivoro/server-mcp';
 import {
   LLM_ADAPTER_CONFIG,
   LlmAdapterConfig,
@@ -39,6 +39,7 @@ export class LlmToolAdapter<T = unknown> {
   async executeToolForProvider(
     providerName: string,
     params: Record<string, unknown>,
+    authInfo?: McpAuthInfo,
   ): Promise<string> {
     const mcpName = this.buildNameMap().get(providerName);
     if (!mcpName) {
@@ -46,7 +47,7 @@ export class LlmToolAdapter<T = unknown> {
         `No MCP tool found for provider name "${providerName}".`,
       );
     }
-    const result = await this.registry.executeToolRaw(mcpName, params);
+    const result = await this.registry.executeToolRaw(mcpName, params, authInfo);
     return typeof result === 'string' ? result : JSON.stringify(result);
   }
 }

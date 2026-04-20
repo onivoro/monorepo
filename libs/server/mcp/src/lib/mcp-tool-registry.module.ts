@@ -1,7 +1,8 @@
 import { DynamicModule, Logger, Module, OnModuleInit } from '@nestjs/common';
-import { DiscoveryModule, DiscoveryService } from '@nestjs/core';
+import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { McpToolRegistry } from './mcp-tool-registry';
+import { McpScopeGuard } from './mcp-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
 
 @Module({})
@@ -12,13 +13,14 @@ export class McpRegistryModule implements OnModuleInit {
     private readonly discoveryService: DiscoveryService,
     private readonly metadataScanner: MetadataScanner,
     private readonly registry: McpToolRegistry,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   static registerOnly(): DynamicModule {
     return {
       module: McpRegistryModule,
       imports: [DiscoveryModule],
-      providers: [McpToolRegistry],
+      providers: [McpToolRegistry, McpScopeGuard],
       exports: [McpToolRegistry],
     };
   }
@@ -28,7 +30,7 @@ export class McpRegistryModule implements OnModuleInit {
     return {
       module: McpRegistryModule,
       imports: [DiscoveryModule],
-      providers: [McpToolRegistry],
+      providers: [McpToolRegistry, McpScopeGuard],
       exports: [McpToolRegistry],
     };
   }
@@ -39,6 +41,9 @@ export class McpRegistryModule implements OnModuleInit {
       this.metadataScanner,
       this.registry,
       this.logger,
+    );
+    this.registry.setGuardResolver((guardClass) =>
+      this.moduleRef.get(guardClass, { strict: false }),
     );
   }
 }

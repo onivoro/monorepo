@@ -1,11 +1,12 @@
 import { All, Controller, DynamicModule, Logger, Module, OnModuleInit, Req, Res } from '@nestjs/common';
-import { DiscoveryModule, DiscoveryService } from '@nestjs/core';
+import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { Request, Response } from 'express';
 import { McpModuleConfig } from './mcp-config.interface';
 import { MCP_MODULE_CONFIG } from './mcp.constants';
 import { McpService } from './mcp.service';
 import { McpToolRegistry } from './mcp-tool-registry';
+import { McpScopeGuard } from './mcp-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
 
 function createMcpController(routePrefix?: string) {
@@ -32,6 +33,7 @@ export class McpHttpModule implements OnModuleInit {
     private readonly discoveryService: DiscoveryService,
     private readonly metadataScanner: MetadataScanner,
     private readonly registry: McpToolRegistry,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   static registerAndServeHttp(config: McpModuleConfig): DynamicModule {
@@ -39,7 +41,7 @@ export class McpHttpModule implements OnModuleInit {
       module: McpHttpModule,
       imports: [DiscoveryModule],
       controllers: [createMcpController(config.routePrefix)],
-      providers: [McpToolRegistry, McpService, { provide: MCP_MODULE_CONFIG, useValue: config }],
+      providers: [McpToolRegistry, McpService, McpScopeGuard, { provide: MCP_MODULE_CONFIG, useValue: config }],
       exports: [McpService, McpToolRegistry],
     };
   }
@@ -50,7 +52,7 @@ export class McpHttpModule implements OnModuleInit {
       module: McpHttpModule,
       imports: [DiscoveryModule],
       controllers: [createMcpController(config.routePrefix)],
-      providers: [McpToolRegistry, McpService, { provide: MCP_MODULE_CONFIG, useValue: config }],
+      providers: [McpToolRegistry, McpService, McpScopeGuard, { provide: MCP_MODULE_CONFIG, useValue: config }],
       exports: [McpService, McpToolRegistry],
     };
   }
@@ -61,6 +63,9 @@ export class McpHttpModule implements OnModuleInit {
       this.metadataScanner,
       this.registry,
       this.logger,
+    );
+    this.registry.setGuardResolver((guardClass) =>
+      this.moduleRef.get(guardClass, { strict: false }),
     );
   }
 }

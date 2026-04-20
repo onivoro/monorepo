@@ -1,11 +1,12 @@
 import { DynamicModule, Inject, Logger, Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { DiscoveryModule, DiscoveryService } from '@nestjs/core';
+import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { McpStdioConfig } from './mcp-stdio-config.interface';
 import { MCP_STDIO_CONFIG } from './mcp.constants';
 import { McpToolRegistry } from './mcp-tool-registry';
+import { McpScopeGuard } from './mcp-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
 import { buildCapabilities, wireRegistryToServer } from './wire-registry-to-server';
 
@@ -20,6 +21,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     private readonly discoveryService: DiscoveryService,
     private readonly metadataScanner: MetadataScanner,
     private readonly registry: McpToolRegistry,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   static registerAndServeStdio(config: McpStdioConfig): DynamicModule {
@@ -28,6 +30,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       imports: [DiscoveryModule],
       providers: [
         McpToolRegistry,
+        McpScopeGuard,
         { provide: MCP_STDIO_CONFIG, useValue: config },
       ],
       exports: [McpToolRegistry],
@@ -41,6 +44,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       imports: [DiscoveryModule],
       providers: [
         McpToolRegistry,
+        McpScopeGuard,
         { provide: MCP_STDIO_CONFIG, useValue: config },
       ],
       exports: [McpToolRegistry],
@@ -53,6 +57,9 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       this.metadataScanner,
       this.registry,
       this.logger,
+    );
+    this.registry.setGuardResolver((guardClass) =>
+      this.moduleRef.get(guardClass, { strict: false }),
     );
 
     this.server = new McpServer(

@@ -2,9 +2,62 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { McpToolMetadata, McpResourceMetadata, McpPromptMetadata } from './mcp.decorator';
 import { mcpSchemaToJsonSchema } from './mcp-schema-converters';
 
+/**
+ * Authentication/authorization info from the MCP transport layer.
+ * Compatible with the MCP SDK's AuthInfo but defined independently
+ * so the core registry has no SDK dependency.
+ */
+export interface McpAuthInfo {
+  token: string;
+  clientId: string;
+  scopes: string[];
+  expiresAt?: number;
+  extra?: Record<string, unknown>;
+}
+
+/**
+ * Context passed to tool handlers and hooks during execution.
+ */
+export interface McpToolContext {
+  toolName: string;
+  params: Record<string, unknown>;
+  metadata: McpToolMetadata;
+  authInfo?: McpAuthInfo;
+}
+
+/**
+ * Hook interface for cross-cutting concerns around tool execution.
+ * Implement as an injectable NestJS service and register via the module config
+ * or directly on the registry.
+ */
+export interface McpToolHook {
+  beforeToolCall?(context: McpToolContext): Promise<void> | void;
+  afterToolCall?(context: McpToolContext, result: unknown): Promise<void> | void;
+}
+
+/**
+ * Guard interface for per-tool authorization.
+ * Implement as an injectable NestJS service and reference via @McpGuard().
+ */
+export interface McpCanActivate {
+  canActivate(
+    context: McpToolContext,
+    config?: Record<string, unknown>,
+  ): boolean | Promise<boolean>;
+}
+
+/**
+ * Metadata attached by the @McpGuard decorator.
+ */
+export interface McpGuardMetadata {
+  guardClass: new (...args: any[]) => McpCanActivate;
+  config?: Record<string, unknown>;
+}
+
 interface ToolEntry {
   metadata: McpToolMetadata;
-  handler: (params: any) => Promise<any>;
+  handler: (params: any, context?: McpToolContext) => Promise<any>;
+  guards?: McpGuardMetadata[];
 }
 
 interface ResourceEntry {
@@ -70,19 +123,32 @@ export class McpToolRegistry {
   private readonly tools = new Map<string, ToolEntry>();
   private readonly resources = new Map<string, ResourceEntry>();
   private readonly prompts = new Map<string, PromptEntry>();
+  private readonly hooks: McpToolHook[] = [];
+  private guardResolver?: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate;
 
   // -- Registration --
+
+  registerHook(hook: McpToolHook): void {
+    this.hooks.push(hook);
+  }
+
+  setGuardResolver(
+    resolver: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate,
+  ): void {
+    this.guardResolver = resolver;
+  }
 
   registerTool(
     metadata: McpToolMetadata,
     handler: (params: any) => Promise<any>,
+    guards?: McpGuardMetadata[],
   ): void {
     if (this.tools.has(metadata.name)) {
       throw new Error(
         `MCP tool "${metadata.name}" is already registered. Tool names must be unique across all providers.`,
       );
     }
-    this.tools.set(metadata.name, { metadata, handler });
+    this.tools.set(metadata.name, { metadata, handler, guards });
 
     this.logger.log(`Tool registered: ${metadata.name}`);
   }
@@ -137,23 +203,86 @@ export class McpToolRegistry {
 
   // -- Execution --
 
+  /**
+   * Execution pipeline (modeled after NestJS HTTP lifecycle):
+   *
+   *   Guards → Pipes (schema.parse) → beforeToolCall hooks → Handler → afterToolCall hooks
+   *
+   * Errors at any stage propagate normally. executeToolWrapped catches them
+   * and returns error content (analogous to exception filters).
+   */
   async executeToolRaw(
     name: string,
     params: Record<string, unknown>,
+    authInfo?: McpAuthInfo,
   ): Promise<unknown> {
     const entry = this.tools.get(name);
     if (!entry) {
       throw new Error(`MCP tool "${name}" is not registered.`);
     }
-    return entry.handler(params);
+
+    // -- Guards (authorization) --
+    // Run first with raw params. Guards check auth, not input shape.
+    const guardContext: McpToolContext = {
+      toolName: name,
+      params,
+      metadata: entry.metadata,
+      authInfo,
+    };
+
+    if (entry.guards?.length) {
+      if (!this.guardResolver) {
+        throw new Error(
+          `Tool "${name}" has guards configured but no guard resolver is set. ` +
+          'Ensure the module supports guard resolution.',
+        );
+      }
+      for (const { guardClass, config } of entry.guards) {
+        const guard = this.guardResolver(guardClass);
+        const allowed = await guard.canActivate(guardContext, config);
+        if (!allowed) {
+          throw new Error(
+            `Access denied by ${guardClass.name} for tool "${name}".`,
+          );
+        }
+      }
+    }
+
+    // -- Pipes (validation/transformation) --
+    const validatedParams = entry.metadata.schema
+      ? entry.metadata.schema.parse(params)
+      : params;
+
+    const context: McpToolContext = {
+      toolName: name,
+      params: validatedParams,
+      metadata: entry.metadata,
+      authInfo,
+    };
+
+    // -- Hooks (before) --
+    for (const hook of this.hooks) {
+      if (hook.beforeToolCall) await hook.beforeToolCall(context);
+    }
+
+    // -- Handler --
+    const result = await entry.handler(validatedParams, context);
+
+    // -- Hooks (after) --
+    for (const hook of this.hooks) {
+      if (hook.afterToolCall) await hook.afterToolCall(context, result);
+    }
+
+    return result;
   }
 
   async executeToolWrapped(
     name: string,
     params: Record<string, unknown>,
+    authInfo?: McpAuthInfo,
   ): Promise<McpToolResult> {
     try {
-      const result = await this.executeToolRaw(name, params);
+      const result = await this.executeToolRaw(name, params, authInfo);
 
       if (
         result &&

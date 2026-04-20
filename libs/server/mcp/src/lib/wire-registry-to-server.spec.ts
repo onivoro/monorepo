@@ -75,7 +75,26 @@ describe('wireRegistryToServer', () => {
 
     const callback = mockRegisterTool.mock.calls[0][2];
     await callback({ text: 'hello' });
-    expect(handler).toHaveBeenCalledWith({ text: 'hello' });
+    expect(handler).toHaveBeenCalledWith(
+      { text: 'hello' },
+      expect.objectContaining({ toolName: 'tool', params: { text: 'hello' } }),
+    );
+  });
+
+  it('should forward authInfo from MCP SDK extra parameter', async () => {
+    const handler = jest.fn().mockResolvedValue('result');
+    registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const callback = mockRegisterTool.mock.calls[0][2];
+    const mockAuthInfo = { token: 'abc', clientId: 'c1', scopes: ['read'] };
+    await callback({ text: 'hi' }, { authInfo: mockAuthInfo, signal: new AbortController().signal });
+
+    expect(handler).toHaveBeenCalledWith(
+      { text: 'hi' },
+      expect.objectContaining({ authInfo: mockAuthInfo }),
+    );
   });
 
   it('should register static resources with URI string', () => {

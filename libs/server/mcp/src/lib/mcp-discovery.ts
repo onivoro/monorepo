@@ -1,9 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
-import { MCP_TOOL_METADATA, MCP_RESOURCE_METADATA, MCP_PROMPT_METADATA } from './mcp.constants';
+import { MCP_TOOL_METADATA, MCP_RESOURCE_METADATA, MCP_PROMPT_METADATA, MCP_GUARD_METADATA } from './mcp.constants';
 import type { McpToolMetadata, McpResourceMetadata, McpPromptMetadata } from './mcp.decorator';
 import { McpToolRegistry } from './mcp-tool-registry';
+import type { McpGuardMetadata } from './mcp-tool-registry';
 
 export function discoverAndRegisterMcpEntities(
   discoveryService: DiscoveryService,
@@ -51,8 +52,13 @@ function discoverTool(
 
   if (!metadata) return;
 
+  const guards: McpGuardMetadata[] | undefined =
+    Reflect.getMetadata(MCP_GUARD_METADATA, methodRef) ||
+    Reflect.getMetadata(MCP_GUARD_METADATA, prototype, methodName) ||
+    undefined;
+
   logger.log(`Registering MCP tool: ${metadata.name} from ${serviceName}.${methodName}`);
-  registry.registerTool(metadata, instance[methodName].bind(instance));
+  registry.registerTool(metadata, instance[methodName].bind(instance), guards);
 }
 
 function discoverResource(

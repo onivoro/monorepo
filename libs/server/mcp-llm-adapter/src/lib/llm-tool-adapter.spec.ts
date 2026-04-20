@@ -103,7 +103,10 @@ describe('LlmToolAdapter', () => {
       registry.registerTool({ name: 'my-tool', description: 'd' }, handler);
 
       const result = await adapter.executeToolForProvider('my_tool', { x: 1 });
-      expect(handler).toHaveBeenCalledWith({ x: 1 });
+      expect(handler).toHaveBeenCalledWith(
+        { x: 1 },
+        expect.objectContaining({ toolName: 'my-tool', params: { x: 1 } }),
+      );
       expect(result).toBe('{"enhanced":true}');
     });
 
