@@ -25,7 +25,7 @@ Consumer-specific formatting (e.g. Bedrock Converse tool definitions, OpenAI fun
 - **Schema conversion**: Zod schemas on decorators are converted to JSON Schema automatically via zod v4's native `z.toJSONSchema()`.
 - **Consistent infrastructure**: Sessions, transport, discovery, cleanup, duplicate detection, error handling — all handled.
 - **Auth-aware execution**: MCP SDK `authInfo` flows through the registry to tool handlers and hooks. Per-tool authorization is declarative via `@McpGuard`.
-- **Extensible execution pipeline**: Guards run before hooks, hooks run before/after handlers. All three are optional and composable.
+- **Extensible execution pipeline**: Guards, interceptors, and the handler compose in the same order as the NestJS HTTP lifecycle. Interceptors use the `intercept(context, next)` onion model.
 
 ## Three entry points
 
@@ -380,26 +380,29 @@ The registry's tool execution pipeline is modeled after the [NestJS HTTP request
 | 1 | Middleware | Transport layer | NestJS middleware on the MCP route (authentication, logging) |
 | 2 | Guards | `@McpGuard` | Authorization — should this call proceed? |
 | 3 | Pipes | `schema.parse()` | Validation and transformation of input params (internally executed based on the Zod schema) |
-| 4 | Interceptors (before) | `beforeToolCall` hooks | Cross-cutting concerns before execution (auditing, metrics) |
-| 5 | Route handler | Tool handler | Business logic |
-| 6 | Interceptors (after) | `afterToolCall` hooks | Cross-cutting concerns after execution (logging, transformation) |
-| 7 | Exception filters | `executeToolWrapped` try/catch | Error wrapping for MCP clients |
+| 4 | Interceptors | `McpToolInterceptor` chain | Cross-cutting concerns wrapping execution (auditing, caching, timing, transformation) |
+| 5 | Route handler | Tool handler | Business logic (innermost `next()` of the interceptor chain) |
+| 6 | Exception filters | `executeToolWrapped` try/catch | Error wrapping for MCP clients |
 
 ```
-Transport middleware → Guards → Validation → beforeToolCall → Handler → afterToolCall
-                                                                              ↓
-                                                            executeToolWrapped catches errors
+Transport middleware → Guards → Validation → Interceptor₁ → Interceptor₂ → ... → Handler
+                                                  ↑              ↑                    |
+                                                  |   result ←── ┘  ←──── result ←───┘
+                                                  ↓
+                                   executeToolWrapped catches errors
 ```
+
+Interceptors use the **onion model** — identical to NestJS `NestInterceptor`. Each interceptor's `intercept(context, next)` wraps the next interceptor in the chain; the innermost `next()` calls the tool handler. This means each interceptor can run logic both before and after the handler in a single method.
 
 **Key behaviors at each stage:**
 
 - **Guards** receive raw (unvalidated) params. They check authorization, not input shape. If a guard rejects, validation never runs — an unauthorized caller doesn't get a validation error revealing your schema.
-- **Validation** runs `schema.parse()`, applying Zod defaults, transforms, and refinements. From this point forward, all downstream stages (hooks and handler) see the validated params.
-- **Hooks** see validated params and the full `McpToolContext`. If `beforeToolCall` throws, the handler and `afterToolCall` are skipped.
-- **Handler** receives validated params as the first argument and `McpToolContext` as the optional second argument.
-- **Error handling** in `executeToolWrapped` catches any error from any stage and returns it as MCP error content — guards rejecting, validation failing, hooks throwing, or the handler itself failing all produce structured error responses to the MCP client.
+- **Validation** runs `schema.parse()`, applying Zod defaults, transforms, and refinements. From this point forward, all downstream stages (interceptors and handler) see the validated params.
+- **Interceptors** see validated params and the full `McpToolContext`. Each interceptor decides whether to call `next()` (proceed) or short-circuit. They can also transform the result returned by `next()`.
+- **Handler** receives validated params as the first argument and `McpToolContext` as the optional second argument. It is the innermost `next()` in the interceptor chain.
+- **Error handling** in `executeToolWrapped` catches any error from any stage and returns it as MCP error content — guards rejecting, validation failing, interceptors throwing, or the handler itself failing all produce structured error responses to the MCP client.
 
-The pipeline runs identically regardless of transport — the same guards, validation, and hooks apply whether the tool is called via MCP HTTP, MCP stdio, `executeToolRaw`, or `executeToolForProvider` from the LLM adapter.
+The pipeline runs identically regardless of transport — the same guards, validation, and interceptors apply whether the tool is called via MCP HTTP, MCP stdio, `executeToolRaw`, or `executeToolForProvider` from the LLM adapter.
 
 ## Guards
 
@@ -469,51 +472,81 @@ Multiple `@McpGuard` decorators stack. They run in top-to-bottom order; the firs
 async adminAction(params: z.infer<typeof schema>) { ... }
 ```
 
-## Hooks
+## Interceptors
 
-Hooks are the interceptor analog in the [execution pipeline](#execution-pipeline) — cross-cutting concerns that apply to all tool calls globally. Unlike guards (which are per-tool via decorators), hooks run for every tool execution.
+Interceptors are the NestJS interceptor analog in the [execution pipeline](#execution-pipeline) — cross-cutting concerns that wrap tool execution globally. Unlike guards (which are per-tool via decorators), interceptors run for every tool execution and follow the **onion model**: each interceptor wraps the next, with the innermost `next()` calling the tool handler.
 
-### Defining a hook
+This is the same `intercept(context, next)` pattern used by NestJS `NestInterceptor`. Each interceptor can run logic before and after the handler, transform the result, short-circuit execution, or handle errors — all in a single method.
 
-Implement `McpToolHook` as an injectable service:
+### Defining an interceptor
+
+Implement `McpToolInterceptor` as an injectable service:
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
-import { McpToolHook, McpToolContext } from '@onivoro/server-mcp';
+import { McpToolInterceptor, McpToolContext } from '@onivoro/server-mcp';
 
 @Injectable()
-export class AuditHook implements McpToolHook {
-  private readonly logger = new Logger(AuditHook.name);
+export class AuditInterceptor implements McpToolInterceptor {
+  private readonly logger = new Logger(AuditInterceptor.name);
 
-  async beforeToolCall(context: McpToolContext): Promise<void> {
+  async intercept(context: McpToolContext, next: () => Promise<unknown>): Promise<unknown> {
     this.logger.log(`Tool call: ${context.toolName} by ${context.authInfo?.clientId ?? 'anonymous'}`);
-  }
+    const start = Date.now();
 
-  async afterToolCall(context: McpToolContext, result: unknown): Promise<void> {
-    this.logger.log(`Tool completed: ${context.toolName}`);
+    const result = await next();
+
+    this.logger.log(`Tool completed: ${context.toolName} in ${Date.now() - start}ms`);
+    return result;
   }
 }
 ```
 
-### Registering hooks
+### Registering interceptors
 
-Register hooks directly on the registry, typically during module init:
+Register interceptors directly on the registry, typically during module init:
 
 ```typescript
 @Injectable()
 export class AppService implements OnModuleInit {
   constructor(
     private readonly registry: McpToolRegistry,
-    private readonly auditHook: AuditHook,
+    private readonly auditInterceptor: AuditInterceptor,
   ) {}
 
   onModuleInit() {
-    this.registry.registerHook(this.auditHook);
+    this.registry.registerInterceptor(this.auditInterceptor);
   }
 }
 ```
 
-Both `beforeToolCall` and `afterToolCall` are optional. Multiple hooks run in registration order. If `beforeToolCall` throws, the handler and `afterToolCall` are skipped — the error propagates normally.
+### Interceptor capabilities
+
+Because interceptors wrap `next()`, they can do things that simple before/after hooks cannot:
+
+- **Transform the result**: modify or replace the handler's return value.
+- **Short-circuit execution**: return early without calling `next()` (e.g. caching).
+- **Handle errors**: wrap `next()` in a try/catch for centralized error handling.
+- **Measure timing**: capture start/end around the `next()` call.
+
+```typescript
+@Injectable()
+export class CachingInterceptor implements McpToolInterceptor {
+  constructor(private readonly cache: CacheService) {}
+
+  async intercept(context: McpToolContext, next: () => Promise<unknown>): Promise<unknown> {
+    const key = `${context.toolName}:${JSON.stringify(context.params)}`;
+    const cached = this.cache.get(key);
+    if (cached) return cached;           // short-circuit — handler never runs
+
+    const result = await next();
+    this.cache.set(key, result);
+    return result;
+  }
+}
+```
+
+Multiple interceptors chain in registration order using the onion model. If interceptor A is registered before interceptor B, execution flows: A-before → B-before → handler → B-after → A-after. If any interceptor throws (or doesn't call `next()`), downstream interceptors and the handler are skipped.
 
 ## McpToolRegistry API
 
@@ -528,7 +561,7 @@ Called automatically by the module's discovery phase. You don't call these direc
 | `registerTool(metadata, handler, guards?)` | Register a tool with optional guards. Throws on duplicate name. |
 | `registerResource(metadata, handler)` | Register a resource. Throws on duplicate name. |
 | `registerPrompt(metadata, handler)` | Register a prompt. Throws on duplicate name. |
-| `registerHook(hook)` | Register a `McpToolHook` for all tool executions. |
+| `registerInterceptor(interceptor)` | Register a `McpToolInterceptor` for all tool executions. |
 | `setGuardResolver(resolver)` | Set the function used to resolve guard class instances. Called automatically by all modules. |
 
 ### Introspection
@@ -692,8 +725,8 @@ McpCanActivate               // Interface for custom guard classes
 McpGuardMetadata             // { guardClass, config? }
 McpScopeGuard                // Built-in guard — checks authInfo.scopes against required scopes
 
-// Hooks
-McpToolHook                  // Interface — { beforeToolCall?, afterToolCall? }
+// Interceptors
+McpToolInterceptor           // Interface — intercept(context, next) onion-model wrapping
 
 // Decorators
 McpTool                      // Method decorator for tools (schema: z.ZodObject)

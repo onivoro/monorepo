@@ -1,4 +1,4 @@
-import { McpToolRegistry, McpAuthInfo, McpToolContext, McpToolHook, McpCanActivate, McpGuardMetadata } from './mcp-tool-registry';
+import { McpToolRegistry, McpAuthInfo, McpToolContext, McpToolInterceptor, McpCanActivate, McpGuardMetadata } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-guard';
 import { z } from 'zod';
 
@@ -170,92 +170,144 @@ describe('McpToolRegistry', () => {
     });
   });
 
-  describe('hooks', () => {
-    it('should call beforeToolCall before the handler', async () => {
+  describe('interceptors', () => {
+    it('should wrap the handler — before and after logic runs in order', async () => {
       const order: string[] = [];
       const handler = jest.fn().mockImplementation(async () => {
         order.push('handler');
         return 'ok';
       });
-      const hook: McpToolHook = {
-        beforeToolCall: jest.fn().mockImplementation(async () => {
+      const interceptor: McpToolInterceptor = {
+        intercept: jest.fn().mockImplementation(async (ctx, next) => {
           order.push('before');
+          const result = await next();
+          order.push('after');
+          return result;
         }),
       };
 
-      registry.registerHook(hook);
+      registry.registerInterceptor(interceptor);
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
       await registry.executeToolRaw('tool', {});
 
-      expect(order).toEqual(['before', 'handler']);
-      expect(hook.beforeToolCall).toHaveBeenCalledWith(
+      expect(order).toEqual(['before', 'handler', 'after']);
+      expect(interceptor.intercept).toHaveBeenCalledWith(
         expect.objectContaining({ toolName: 'tool' }),
+        expect.any(Function),
       );
     });
 
-    it('should call afterToolCall after the handler with the result', async () => {
+    it('should receive the handler result through the chain', async () => {
       const handler = jest.fn().mockResolvedValue({ data: 42 });
-      const hook: McpToolHook = {
-        afterToolCall: jest.fn(),
+      let capturedResult: unknown;
+      const interceptor: McpToolInterceptor = {
+        async intercept(ctx, next) {
+          const result = await next();
+          capturedResult = result;
+          return result;
+        },
       };
 
-      registry.registerHook(hook);
+      registry.registerInterceptor(interceptor);
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
-      await registry.executeToolRaw('tool', { x: 1 });
+      const result = await registry.executeToolRaw('tool', { x: 1 });
 
-      expect(hook.afterToolCall).toHaveBeenCalledWith(
-        expect.objectContaining({ toolName: 'tool', params: { x: 1 } }),
-        { data: 42 },
-      );
+      expect(capturedResult).toEqual({ data: 42 });
+      expect(result).toEqual({ data: 42 });
     });
 
-    it('should pass authInfo through to hooks', async () => {
+    it('should pass authInfo through to interceptors', async () => {
       const handler = jest.fn().mockResolvedValue('ok');
-      const hook: McpToolHook = {
-        beforeToolCall: jest.fn(),
+      let capturedContext: McpToolContext | undefined;
+      const interceptor: McpToolInterceptor = {
+        async intercept(ctx, next) {
+          capturedContext = ctx;
+          return next();
+        },
       };
 
-      registry.registerHook(hook);
+      registry.registerInterceptor(interceptor);
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
       await registry.executeToolRaw('tool', {}, MOCK_AUTH);
 
-      expect(hook.beforeToolCall).toHaveBeenCalledWith(
-        expect.objectContaining({ authInfo: MOCK_AUTH }),
-      );
+      expect(capturedContext?.authInfo).toEqual(MOCK_AUTH);
     });
 
-    it('should abort execution when beforeToolCall throws', async () => {
+    it('should abort execution when an interceptor throws before next()', async () => {
       const handler = jest.fn().mockResolvedValue('ok');
-      const hook: McpToolHook = {
-        beforeToolCall: jest.fn().mockRejectedValue(new Error('unauthorized')),
-        afterToolCall: jest.fn(),
+      const interceptor: McpToolInterceptor = {
+        async intercept() {
+          throw new Error('unauthorized');
+        },
       };
 
-      registry.registerHook(hook);
+      registry.registerInterceptor(interceptor);
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       await expect(registry.executeToolRaw('tool', {})).rejects.toThrow('unauthorized');
       expect(handler).not.toHaveBeenCalled();
-      expect(hook.afterToolCall).not.toHaveBeenCalled();
     });
 
-    it('should run multiple hooks in registration order', async () => {
-      const order: string[] = [];
-      const handler = jest.fn().mockResolvedValue('ok');
+    it('should allow interceptors to transform the result', async () => {
+      const handler = jest.fn().mockResolvedValue({ count: 1 });
+      const interceptor: McpToolInterceptor = {
+        async intercept(ctx, next) {
+          const result = await next() as Record<string, unknown>;
+          return { ...result, intercepted: true };
+        },
+      };
 
-      registry.registerHook({
-        beforeToolCall: async () => { order.push('hook1-before'); },
-        afterToolCall: async () => { order.push('hook1-after'); },
+      registry.registerInterceptor(interceptor);
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+      const result = await registry.executeToolRaw('tool', {});
+
+      expect(result).toEqual({ count: 1, intercepted: true });
+    });
+
+    it('should chain multiple interceptors in registration order (onion model)', async () => {
+      const order: string[] = [];
+      const handler = jest.fn().mockImplementation(async () => {
+        order.push('handler');
+        return 'ok';
       });
-      registry.registerHook({
-        beforeToolCall: async () => { order.push('hook2-before'); },
-        afterToolCall: async () => { order.push('hook2-after'); },
+
+      registry.registerInterceptor({
+        async intercept(ctx, next) {
+          order.push('i1-before');
+          const result = await next();
+          order.push('i1-after');
+          return result;
+        },
+      });
+      registry.registerInterceptor({
+        async intercept(ctx, next) {
+          order.push('i2-before');
+          const result = await next();
+          order.push('i2-after');
+          return result;
+        },
       });
 
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
       await registry.executeToolRaw('tool', {});
 
-      expect(order).toEqual(['hook1-before', 'hook2-before', 'hook1-after', 'hook2-after']);
+      expect(order).toEqual(['i1-before', 'i2-before', 'handler', 'i2-after', 'i1-after']);
+    });
+
+    it('should short-circuit the chain when an interceptor does not call next()', async () => {
+      const handler = jest.fn().mockResolvedValue('ok');
+      const interceptor: McpToolInterceptor = {
+        async intercept() {
+          return 'short-circuited';
+        },
+      };
+
+      registry.registerInterceptor(interceptor);
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+      const result = await registry.executeToolRaw('tool', {});
+
+      expect(result).toBe('short-circuited');
+      expect(handler).not.toHaveBeenCalled();
     });
   });
 
@@ -332,13 +384,16 @@ describe('McpToolRegistry', () => {
       expect(handler).not.toHaveBeenCalled();
     });
 
-    it('should run guards before hooks', async () => {
+    it('should run guards before interceptors', async () => {
       withResolver();
       const order: string[] = [];
       const handler = jest.fn().mockResolvedValue('ok');
 
-      registry.registerHook({
-        beforeToolCall: async () => { order.push('hook'); },
+      registry.registerInterceptor({
+        async intercept(ctx, next) {
+          order.push('interceptor');
+          return next();
+        },
       });
       const guards: McpGuardMetadata[] = [{ guardClass: DenyGuard }];
       registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);

@@ -26,13 +26,15 @@ export interface McpToolContext {
 }
 
 /**
- * Hook interface for cross-cutting concerns around tool execution.
- * Implement as an injectable NestJS service and register via the module config
- * or directly on the registry.
+ * Interceptor interface for cross-cutting concerns around tool execution.
+ * Modeled after the NestJS `NestInterceptor.intercept(context, next)` pattern.
+ *
+ * Implement as an injectable NestJS service and register via the registry.
+ * Each interceptor wraps the next one in the chain; the innermost `next()`
+ * calls the tool handler.
  */
-export interface McpToolHook {
-  beforeToolCall?(context: McpToolContext): Promise<void> | void;
-  afterToolCall?(context: McpToolContext, result: unknown): Promise<void> | void;
+export interface McpToolInterceptor {
+  intercept(context: McpToolContext, next: () => Promise<unknown>): Promise<unknown>;
 }
 
 /**
@@ -123,13 +125,13 @@ export class McpToolRegistry {
   private readonly tools = new Map<string, ToolEntry>();
   private readonly resources = new Map<string, ResourceEntry>();
   private readonly prompts = new Map<string, PromptEntry>();
-  private readonly hooks: McpToolHook[] = [];
+  private readonly interceptors: McpToolInterceptor[] = [];
   private guardResolver?: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate;
 
   // -- Registration --
 
-  registerHook(hook: McpToolHook): void {
-    this.hooks.push(hook);
+  registerInterceptor(interceptor: McpToolInterceptor): void {
+    this.interceptors.push(interceptor);
   }
 
   setGuardResolver(
@@ -260,20 +262,17 @@ export class McpToolRegistry {
       authInfo,
     };
 
-    // -- Hooks (before) --
-    for (const hook of this.hooks) {
-      if (hook.beforeToolCall) await hook.beforeToolCall(context);
-    }
+    // -- Interceptors --
+    // Build the chain from the inside out: the innermost `next` calls the handler,
+    // each interceptor wraps the next one. This mirrors NestJS interceptor chaining.
+    const handler = () => entry.handler(validatedParams, context);
 
-    // -- Handler --
-    const result = await entry.handler(validatedParams, context);
+    const chain = this.interceptors.reduceRight<() => Promise<unknown>>(
+      (next, interceptor) => () => interceptor.intercept(context, next),
+      handler,
+    );
 
-    // -- Hooks (after) --
-    for (const hook of this.hooks) {
-      if (hook.afterToolCall) await hook.afterToolCall(context, result);
-    }
-
-    return result;
+    return chain();
   }
 
   async executeToolWrapped(
