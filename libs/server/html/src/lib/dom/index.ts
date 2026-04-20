@@ -1,36 +1,14 @@
 import { element } from '../primitives/element.function';
 import { selfClosingElement } from '../primitives/self-closing-element.function';
 
-import { TAttributes } from '../types/attributes.type';
-
 import { CSSProperties } from './lib/types/css-properties.type';
 import { TElementProps } from './lib/types/element-props.type';
 
-import { styleManager } from './lib/constants/style-manager.constant';
-import { asId } from './lib/functions/as-id.function';
 import { asElementFactory } from './lib/functions/as-element-factory.function';
-import { extractStyle } from './lib/functions/extract-style.function';
-import { setAttrs } from './lib/functions/set-element-attributes.function';
-import { setElementStyle } from './lib/functions/set-element-style.function';
-import { setElementStyles } from './lib/functions/set-element-styles.function';
-import { styleOn } from './lib/functions/style-on.function';
-import { styleOnFocus } from './lib/functions/style-on-focus.function';
-import { styleOnPointerEnter } from './lib/functions/style-on-pointer-enter.function';
-import { styled } from './lib/functions/styled.function';
 
 export { CSSProperties };
 export { TElementProps };
-export { styleManager };
-export { asId };
 export { asElementFactory };
-export { extractStyle };
-export { setAttrs };
-export { setElementStyle };
-export { setElementStyles };
-export { styleOn };
-export { styleOnFocus };
-export { styleOnPointerEnter };
-export { styled };
 
 // Element factories
 export const $a = asElementFactory(element.bind(null, 'a'));

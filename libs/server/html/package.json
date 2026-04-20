@@ -9,11 +9,9 @@
     "type": "git",
     "url": "https://github.com/onivoro/monorepo.git"
   },
-  "dependencies": {
-    "tslib": "^2.3.0"
-  },
   "peerDependencies": {
-    "csstype": "*"
+    "csstype": "*",
+    "tslib": "^2.0.0"
   },
   "devDependencies": {
     "csstype": "^3.1.3"
