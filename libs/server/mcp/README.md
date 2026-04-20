@@ -24,7 +24,7 @@ Consumer-specific formatting (e.g. Bedrock Converse tool definitions, OpenAI fun
 - **Automatic format wrapping**: The registry provides per-consumer execution methods. Your service methods return whatever is natural — the registry wraps for the target transport.
 - **Schema conversion**: Zod schemas on decorators are converted to JSON Schema automatically via zod v4's native `z.toJSONSchema()`.
 - **Consistent infrastructure**: Sessions, transport, discovery, cleanup, duplicate detection, error handling — all handled.
-- **Auth-aware execution**: MCP SDK `authInfo` flows through the registry to tool handlers and hooks. Per-tool authorization is declarative via `@McpGuard`.
+- **Auth-aware execution**: MCP SDK `authInfo`, `sessionId`, `signal` (AbortSignal), and `sendProgress` flow through the registry to tool handlers. Per-tool authorization is declarative via `@McpGuard`.
 - **Extensible execution pipeline**: Guards, interceptors, and the handler compose in the same order as the NestJS HTTP lifecycle. Interceptors use the `intercept(context, next)` onion model.
 
 ## Three entry points
@@ -190,7 +190,9 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { McpToolRegistry, wireRegistryToServer, buildCapabilities } from '@onivoro/server-mcp';
 
 @Injectable()
-export class CustomTransportService implements OnModuleInit {
+export class CustomTransportService implements OnModuleInit, OnModuleDestroy {
+  private unsubscribe?: () => void;
+
   constructor(private readonly registry: McpToolRegistry) {}
 
   async onModuleInit() {
@@ -199,16 +201,22 @@ export class CustomTransportService implements OnModuleInit {
       { capabilities: buildCapabilities(this.registry) },
     );
 
-    wireRegistryToServer(this.registry, server);
+    // Wires existing entries and subscribes to future registrations.
+    // Returns an unsubscribe function for cleanup.
+    this.unsubscribe = wireRegistryToServer(this.registry, server);
 
     // Connect to any transport — SSE, WebSocket, custom protocol, etc.
     const transport = new SSEServerTransport('/messages', response);
     await server.connect(transport);
   }
+
+  onModuleDestroy() {
+    this.unsubscribe?.();
+  }
 }
 ```
 
-`wireRegistryToServer` and `buildCapabilities` are independent — `buildCapabilities` derives capabilities from the registry, and `wireRegistryToServer` registers entries onto the server without touching capabilities. To add capabilities beyond what the registry provides (e.g. `logging`, `experimental`), merge them:
+`wireRegistryToServer` and `buildCapabilities` are independent — `buildCapabilities` derives capabilities from the registry (including `listChanged: true`), and `wireRegistryToServer` registers entries onto the server without touching capabilities. `wireRegistryToServer` also subscribes to future registration changes, so tools/resources/prompts added dynamically after startup are automatically wired to the server (triggering `listChanged` notifications to connected clients). To add capabilities beyond what the registry provides (e.g. `logging`, `experimental`), merge them:
 
 ```typescript
 const capabilities = { ...buildCapabilities(this.registry), logging: {} };
@@ -285,6 +293,89 @@ async deleteItem(
 ```
 
 The second parameter is entirely optional — existing handlers that only accept `params` continue to work unchanged. For declarative auth, see [Guards](#guards) below.
+
+### Progress reporting
+
+Long-running tools can report incremental progress to MCP clients. When a client includes a `progressToken` in the request's `_meta`, the registry provides a `sendProgress` function on the context:
+
+```typescript
+import { McpTool, McpToolContext } from '@onivoro/server-mcp';
+
+const importSchema = z.object({
+  url: z.string().url().describe('URL of the dataset to import'),
+});
+
+@Injectable()
+export class DataService {
+  @McpTool('import-data', 'Import a large dataset', importSchema)
+  async importData(
+    params: z.infer<typeof importSchema>,
+    context?: McpToolContext,
+  ) {
+    const rows = await this.fetchRows(params.url);
+
+    for (let i = 0; i < rows.length; i++) {
+      await this.processRow(rows[i]);
+      await context?.sendProgress?.(i + 1, rows.length, `Processing row ${i + 1}`);
+    }
+
+    return `Imported ${rows.length} rows`;
+  }
+}
+```
+
+`sendProgress(progress, total?, message?)` sends a `notifications/progress` notification to the client:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `progress` | `number` | Current progress value. Should increase monotonically. |
+| `total` | `number?` | Total expected value (enables percentage display in client UIs). |
+| `message` | `string?` | Human-readable description of current step. |
+
+The `?.` chain on `context?.sendProgress?.()` is important — `sendProgress` is only populated when the client requested progress tracking via `_meta.progressToken`. Clients that don't request progress (most do not by default) leave it `undefined`, and the optional chain makes the call a safe no-op.
+
+### Cancellation via AbortSignal
+
+The context also carries `signal` — an `AbortSignal` that fires when the client cancels the request. Use it to abort expensive work early:
+
+```typescript
+@McpTool('import-data', 'Import a large dataset', importSchema)
+async importData(
+  params: z.infer<typeof importSchema>,
+  context?: McpToolContext,
+) {
+  const rows = await this.fetchRows(params.url);
+
+  for (let i = 0; i < rows.length; i++) {
+    if (context?.signal?.aborted) {
+      return `Import cancelled after ${i} of ${rows.length} rows`;
+    }
+    await this.processRow(rows[i]);
+    await context?.sendProgress?.(i + 1, rows.length);
+  }
+
+  return `Imported ${rows.length} rows`;
+}
+```
+
+`signal` is an instance of the standard web `AbortSignal`. You can also pass it to APIs that accept abort signals (e.g. `fetch(url, { signal: context.signal })`).
+
+### Session tracking
+
+The context includes `sessionId` — the MCP session identifier from the transport layer. This is useful for per-session caching, rate limiting, or audit logging:
+
+```typescript
+@McpTool('get-status', 'Get system status', statusSchema)
+async getStatus(
+  params: z.infer<typeof statusSchema>,
+  context?: McpToolContext,
+) {
+  this.logger.log(`Status check from session ${context?.sessionId}`);
+  return this.statusService.getStatus();
+}
+```
+
+`sessionId` is set by the HTTP transport (each client connection gets a unique session). For stdio, there is a single session for the lifetime of the process.
 
 ### Input validation
 
@@ -614,6 +705,7 @@ Called automatically by the module's discovery phase. You don't call these direc
 | `registerPrompt(metadata, handler)` | Register a prompt. Throws on duplicate name. |
 | `registerInterceptor(interceptor)` | Register a `McpToolInterceptor` for all tool executions. |
 | `setGuardResolver(resolver)` | Set the function used to resolve guard class instances. Called automatically by all modules. |
+| `onRegistrationChange(listener)` | Subscribe to registration events (`'tool'`, `'resource'`, `'prompt'`). Returns an unsubscribe function. Used by `wireRegistryToServer` for dynamic wiring. |
 
 ### Introspection
 
@@ -629,10 +721,10 @@ Called automatically by the module's discovery phase. You don't call these direc
 
 | Method | Input name | Returns | Use when |
 |--------|-----------|---------|----------|
-| `executeToolRaw(name, params, authInfo?)` | MCP name | Raw handler result | Direct programmatic access, tests |
-| `executeToolWrapped(name, params, authInfo?)` | MCP name | `McpToolResult` (auto-wrapped) | MCP HTTP and stdio transports |
+| `executeToolRaw(name, params, authInfo?, extra?)` | MCP name | Raw handler result | Direct programmatic access, tests |
+| `executeToolWrapped(name, params, authInfo?, extra?)` | MCP name | `McpToolResult` (auto-wrapped) | MCP HTTP and stdio transports |
 
-The optional `authInfo` parameter is populated automatically by `wireRegistryToServer` (from the MCP SDK's request handler extra). When calling the registry directly, pass it if you have auth context available. Both methods run the full [execution pipeline](#execution-pipeline): guards → validation → hooks → handler.
+The optional `authInfo` parameter is populated automatically by `wireRegistryToServer` (from the MCP SDK's request handler extra). When calling the registry directly, pass it if you have auth context available. The optional `extra` parameter carries transport-level context (`sessionId`, `signal`, `sendProgress`) — also populated automatically by `wireRegistryToServer`. Both methods run the full [execution pipeline](#execution-pipeline): guards → validation → interceptors → handler.
 
 ### Schema conversion
 
@@ -780,7 +872,7 @@ McpRegistryModule            // Registry only — use McpRegistryModule.register
 
 // Registry
 McpToolRegistry              // Injectable registry — execution, introspection, schema conversion
-McpToolResult                // { content: McpContentBlock[], isError? }
+McpToolResult                // { content: McpContentBlock[], structuredContent?, isError?, _meta? }
 McpContentBlock              // Union of all MCP content types
 McpTextContent               // { type: 'text', text, annotations? }
 McpImageContent              // { type: 'image', data, mimeType, annotations? }
@@ -790,7 +882,7 @@ McpResourceLink              // { type: 'resource_link', uri, name, mimeType?, a
 
 // Auth & execution context
 McpAuthInfo                  // { token, clientId, scopes, expiresAt?, resource?, extra? }
-McpToolContext               // { toolName, params, metadata, authInfo? }
+McpToolContext               // { toolName, params, metadata, authInfo?, sessionId?, signal?, sendProgress? }
 
 // Guards
 McpGuard                     // Method decorator — @McpGuard(GuardClass, config?)
@@ -801,6 +893,10 @@ McpScopeGuard                // Built-in guard — checks authInfo.scopes agains
 // Interceptors
 McpToolInterceptor           // Interface — intercept(context, next) onion-model wrapping
 
+// Registration change events
+McpRegistrationChangeType    // 'tool' | 'resource' | 'prompt'
+McpRegistrationChangeListener // (type, name) => void — callback for dynamic registration
+
 // Decorators
 McpTool                      // Method decorator for tools (schema: z.ZodObject)
 McpResource                  // Method decorator for resources
@@ -810,7 +906,7 @@ McpPrompt                    // Method decorator for prompts
 mcpSchemaToJsonSchema        // z.ZodObject → JSON Schema object (via zod v4 native z.toJSONSchema)
 
 // Wiring helpers
-wireRegistryToServer         // Register all tools/resources/prompts from registry onto an McpServer
+wireRegistryToServer         // Register all entries onto McpServer + subscribe to future changes; returns unsubscribe fn
 buildCapabilities            // Build MCP capabilities object from current registry state
 
 // Interfaces
@@ -820,7 +916,7 @@ McpServerMetadata            // { name, version, description? }
 McpToolMetadata              // { name, description, title?, schema?, aliases?, annotations? }
 McpToolOptions               // { aliases?, annotations?, title? } — options object form for @McpTool
 McpToolAnnotations           // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
-McpResourceMetadata          // { name, uri, title?, description?, mimeType?, size?, isTemplate? }
+McpResourceMetadata          // { name, uri, title?, description?, mimeType?, size?, isTemplate?, listCallback? }
 McpPromptMetadata            // { name, title?, description?, argsSchema? }
 
 // Service
