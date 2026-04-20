@@ -23,7 +23,11 @@ export function wireRegistryToServer(registry: McpToolRegistry, server: McpServe
   for (const { metadata } of registry.getTools()) {
     server.registerTool(
       metadata.name,
-      { description: metadata.description, inputSchema: metadata.schema?.shape },
+      {
+        description: metadata.description,
+        inputSchema: metadata.schema?.shape,
+        ...(metadata.annotations && { annotations: metadata.annotations }),
+      },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (params: any, extra: any) =>
         registry.executeToolWrapped(metadata.name, params, extra?.authInfo) as any,

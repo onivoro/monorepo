@@ -67,6 +67,28 @@ describe('wireRegistryToServer', () => {
     );
   });
 
+  it('should pass tool annotations to the server when present', () => {
+    const annotations = { readOnlyHint: true, destructiveHint: false };
+    registry.registerTool(
+      { name: 'read-tool', description: 'Reads data', annotations },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config.annotations).toEqual(annotations);
+  });
+
+  it('should omit annotations from tool config when not present', () => {
+    registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config).not.toHaveProperty('annotations');
+  });
+
   it('should delegate tool callback to registry.executeToolWrapped', async () => {
     const handler = jest.fn().mockResolvedValue('result');
     registry.registerTool({ name: 'tool', description: 'd' }, handler);

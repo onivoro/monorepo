@@ -116,6 +116,7 @@ export type McpContentBlock =
 
 export interface McpToolResult {
   content: McpContentBlock[];
+  isError?: boolean;
 }
 
 @Injectable()
@@ -311,6 +312,7 @@ export class McpToolRegistry {
             text: `Error executing ${name}: ${error instanceof Error ? error.message : 'Unknown error'}`,
           },
         ],
+        isError: true,
       };
     }
   }

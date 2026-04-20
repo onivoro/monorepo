@@ -322,6 +322,43 @@ Consumer-specific libraries may require different tool naming conventions. The `
 
 The `aliases` parameter is optional. Consumer libraries read the alias key they care about (e.g. `@onivoro/server-mcp-llm-adapter` reads `aliases['bedrock']` for Bedrock Converse) falling back to the first argument provided to the decorator.
 
+### Tool annotations
+
+The MCP spec defines behavioral hints that clients use for UX decisions — for example, Claude Desktop skips confirmation prompts for tools marked `readOnlyHint: true`. Pass annotations as the 6th parameter to `@McpTool`:
+
+```typescript
+@McpTool(
+  'list-items',
+  'List all items',
+  listItemsSchema,
+  undefined,  // no aliases
+  { readOnlyHint: true, openWorldHint: false },
+)
+async listItems(params: z.infer<typeof listItemsSchema>) { ... }
+```
+
+With aliases and annotations together:
+
+```typescript
+@McpTool(
+  'delete-item',
+  'Delete an item permanently',
+  deleteItemSchema,
+  { bedrock: 'delete_item' },
+  { destructiveHint: true },
+)
+async deleteItem(params: z.infer<typeof deleteItemSchema>) { ... }
+```
+
+| Annotation | Type | Meaning |
+|------------|------|---------|
+| `readOnlyHint` | `boolean` | Tool does not modify its environment |
+| `destructiveHint` | `boolean` | Tool may perform destructive updates (delete, overwrite) |
+| `idempotentHint` | `boolean` | Repeated calls with the same args have no additional effect |
+| `openWorldHint` | `boolean` | Tool may interact with external entities (network, third-party APIs) |
+
+All annotations are optional and advisory — clients MAY use them but are not required to. Annotations are forwarded to the MCP SDK's `server.registerTool()` and appear in `tools/list` responses to MCP clients.
+
 ## Defining resources
 
 ```typescript
@@ -707,7 +744,7 @@ McpRegistryModule            // Registry only — use McpRegistryModule.register
 
 // Registry
 McpToolRegistry              // Injectable registry — execution, introspection, schema conversion
-McpToolResult                // { content: McpContentBlock[] }
+McpToolResult                // { content: McpContentBlock[], isError? }
 McpContentBlock              // Union of all MCP content types
 McpTextContent               // { type: 'text', text, annotations? }
 McpImageContent              // { type: 'image', data, mimeType, annotations? }
@@ -744,7 +781,8 @@ buildCapabilities            // Build MCP capabilities object from current regis
 McpModuleConfig              // Configuration for McpHttpModule.registerAndServeHttp()
 McpStdioConfig               // Configuration for McpStdioModule.registerAndServeStdio()
 McpServerMetadata            // { name, version, description? }
-McpToolMetadata              // { name, description, schema?: z.ZodObject, aliases?: Record<string, string> }
+McpToolMetadata              // { name, description, schema?, aliases?, annotations? }
+McpToolAnnotations           // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
 McpResourceMetadata          // { name, uri, description?, mimeType?, isTemplate? }
 McpPromptMetadata            // { name, description?, argsSchema? }
 

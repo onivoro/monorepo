@@ -160,13 +160,22 @@ describe('McpToolRegistry', () => {
       expect((result.content[0] as any).text).toContain('"key": "value"');
     });
 
-    it('should catch errors and return error content', async () => {
+    it('should catch errors and return error content with isError flag', async () => {
       const handler = jest.fn().mockRejectedValue(new Error('boom'));
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       const result = await registry.executeToolWrapped('tool', {});
       expect((result.content[0] as any).text).toContain('Error executing tool');
       expect((result.content[0] as any).text).toContain('boom');
+      expect(result.isError).toBe(true);
+    });
+
+    it('should not set isError on successful results', async () => {
+      const handler = jest.fn().mockResolvedValue('ok');
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      const result = await registry.executeToolWrapped('tool', {});
+      expect(result.isError).toBeUndefined();
     });
   });
 
