@@ -1,14 +1,14 @@
-import { exec, ExecOptions } from "child_process";
-import { EncodingOption } from "fs";
+import { exec, ExecOptions } from 'child_process';
+import { promisify } from 'util';
 
-export function execPromise(cmd: string, options?: EncodingOption & ExecOptions): Promise<any> {
-    return new Promise((resolve, reject) => {
-        exec(cmd, options, (err, stdout) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(stdout.toString());
-            }
-        });
-    });
+const execAsync = promisify(exec);
+
+export interface ExecPromiseOptions extends ExecOptions {
+    container?: string;
+}
+
+export function execPromise(cmd: string, options?: ExecPromiseOptions): Promise<{ stdout: string; stderr: string }> {
+    const { container, ...execOptions } = options ?? {};
+    const command = container ? `docker exec ${container} ${cmd}` : cmd;
+    return execAsync(command, execOptions);
 }

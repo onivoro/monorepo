@@ -1,12 +1,29 @@
-import { Subject } from 'rxjs';
+import { Observable } from 'rxjs';
+import { splitLines } from './split-lines';
 
-const stdin = new Subject();
-const stdout = new Subject();
+export interface ListenOptions {
+    lines?: boolean;
+    input?: NodeJS.ReadableStream;
+}
 
-export const listen = () => {
+export function listen(options?: ListenOptions): Observable<string> {
+    const { lines = true, input = process.stdin } = options ?? {};
 
-    process.stdin.on('data', d => stdin.next(d));
-    process.stdin.on('close', () => stdin.complete());
+    const raw$ = new Observable<string>((observer) => {
+        const onData = (data: Buffer | string) => observer.next(data.toString());
+        const onError = (err: Error) => observer.error(err);
+        const onEnd = () => observer.complete();
 
-    return { stdout, stdin };
+        input.on('data', onData);
+        input.on('error', onError);
+        input.on('end', onEnd);
+
+        return () => {
+            input.removeListener('data', onData);
+            input.removeListener('error', onError);
+            input.removeListener('end', onEnd);
+        };
+    });
+
+    return lines ? splitLines(raw$) : raw$;
 }

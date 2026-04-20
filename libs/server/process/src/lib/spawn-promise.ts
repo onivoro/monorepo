@@ -1,31 +1,38 @@
-import { spawn } from "child_process";
+import { spawn, SpawnOptions } from 'child_process';
 
-const data = 'data';
+export interface SpawnPromiseOptions extends SpawnOptions {
+    container?: string;
+}
 
-export function spawnPromise(program: string, args?: string[], options?: any) {
-    return new Promise((res, rej) => {
-        let stdout: string[] = [];
-        let stderr: string[] = [];
+export function spawnPromise(program: string, args?: string[], options?: SpawnPromiseOptions): Promise<string> {
+    const { container, ...spawnOptions } = options ?? {};
 
-        const proc = spawn(program, args, options);
+    return new Promise((resolve, reject) => {
+        const stdout: string[] = [];
+        const stderr: string[] = [];
 
-        proc.stdout.on(data, (data) => {
-            stdout.push(`${data}`);
+        const finalProgram = container ? 'docker' : program;
+        const finalArgs = container ? ['exec', container, program, ...(args ?? [])] : (args ?? []);
+        const proc = spawn(finalProgram, finalArgs, spawnOptions);
+
+        proc.stdout?.on('data', (data) => {
+            stdout.push(data.toString());
         });
 
-        proc.stderr.on(data, (data) => {
-            stderr.push(`${data}`);
+        proc.stderr?.on('data', (data) => {
+            stderr.push(data.toString());
+        });
+
+        proc.on('error', (err) => {
+            reject(err);
         });
 
         proc.on('close', (code) => {
-            if (code) {
-                rej(stderr.join(' '));
+            if (code !== 0) {
+                reject(new Error(stderr.join('')));
             } else {
-                res(stdout.join(' '));
+                resolve(stdout.join(''));
             }
- 
-            stdout = undefined as any;
-            stderr = undefined as any;
         });
     });
 }

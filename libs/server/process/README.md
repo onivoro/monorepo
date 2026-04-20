@@ -1,6 +1,6 @@
 # @onivoro/server-process
 
-A lightweight Node.js process management library providing utilities for command execution, Docker container operations, PostgreSQL commands, and reactive process handling.
+A Node.js process execution library providing Promise and RxJS interfaces for running shell commands — locally or inside Docker containers — with true streaming, reactive I/O, abort support, and proper teardown.
 
 ## Installation
 
@@ -10,300 +10,123 @@ npm install @onivoro/server-process
 
 ## Features
 
-- **Promise-based Command Execution**: Simple async/await command execution
-- **Reactive Process Streams**: RxJS-based reactive command execution
-- **Docker Container Support**: Execute commands within Docker containers
-- **PostgreSQL Integration**: Execute psql commands with container support
-- **Process I/O Management**: Handle stdin/stdout streams reactively
-- **JSON Output Processing**: Parse command output as JSON
-- **Line-by-Line Processing**: Stream processing for large outputs
+- **Promise-based execution**: `execPromise` and `spawnPromise` for async/await usage
+- **Streaming RxJS execution**: `execRx` emits output chunks as they arrive via `spawn`
+- **Line-by-line streaming**: `execRxAsLines` with stateful line splitting across chunk boundaries
+- **JSON output parsing**: `execRxAsJson` buffers and parses complete JSON output
+- **Reactive I/O**: `listen` turns any readable stream (or stdin) into an Observable
+- **Docker container support**: Run any command inside a Docker container with `{ container: 'name' }`
+- **AbortSignal support**: Cancel running processes with `AbortController`
+- **Automatic teardown**: Unsubscribing from an Observable kills the child process
 
 ## API Reference
 
-### Command Execution
+### `execPromise(cmd, options?)`
 
-#### `execPromise(cmd, options?)`
-
-Execute a command and return a promise that resolves to stdout as a string:
+Promisified `child_process.exec`. Resolves with `{ stdout, stderr }`.
 
 ```typescript
 import { execPromise } from '@onivoro/server-process';
 
-// Simple command execution
-const output = await execPromise('ls -la');
-console.log(output); // stdout as string
+const { stdout } = await execPromise('ls -la');
+
+// Inside a Docker container
+const { stdout: tables } = await execPromise('psql -c "\\dt"', { container: 'my-postgres' });
 
 // With options
-const result = await execPromise('git status', { cwd: '/path/to/repo' });
+const { stdout: status } = await execPromise('git status', { cwd: '/path/to/repo', timeout: 5000 });
 ```
 
 **Parameters:**
-- `cmd: string` - Command to execute
-- `options?: EncodingOption & ExecOptions` - Node.js exec options
+- `cmd: string` - Shell command to execute
+- `options?: ExecPromiseOptions` - Node.js `ExecOptions` plus:
+  - `container?: string` - Docker container name (runs via `docker exec`)
 
-**Returns:** `Promise<string>` - Command stdout
+**Returns:** `Promise<{ stdout: string; stderr: string }>`
 
-#### `spawnPromise(program, args?, options?)`
+### `spawnPromise(program, args?, options?)`
 
-Spawn a process and return a promise that resolves to joined stdout:
+Spawn a process and return a promise that resolves to collected stdout.
 
 ```typescript
 import { spawnPromise } from '@onivoro/server-process';
 
-// Spawn with arguments
-const output = await spawnPromise('node', ['--version']);
-console.log(output); // Node.js version
+const version = await spawnPromise('node', ['--version']);
 
-// With spawn options
-const result = await spawnPromise('npm', ['install'], { 
-  cwd: '/path/to/project',
-  env: { ...process.env, NODE_ENV: 'production' }
-});
+// Inside a Docker container
+const result = await spawnPromise('psql', ['-c', 'SELECT 1'], { container: 'my-postgres' });
+
+// With abort support
+const ac = new AbortController();
+const output = await spawnPromise('npm', ['install'], { signal: ac.signal });
 ```
 
 **Parameters:**
 - `program: string` - Program to spawn
 - `args?: string[]` - Command arguments
-- `options?: any` - Node.js spawn options
+- `options?: SpawnPromiseOptions` - Node.js `SpawnOptions` plus:
+  - `container?: string` - Docker container name (runs via `docker exec`)
 
-**Returns:** `Promise<string>` - Joined stdout (rejects with stderr on error)
+**Returns:** `Promise<string>` - Collected stdout (rejects with `Error` containing stderr on non-zero exit)
 
-### Reactive Command Execution
+### `execRx(cmd, options?)`
 
-#### `execRx(cmd, options?, emitStdErr?)`
-
-Execute a command reactively, emitting stdout (and optionally stderr):
+Execute a command reactively with true streaming. Each `data` chunk from the child process is emitted as it arrives.
 
 ```typescript
 import { execRx } from '@onivoro/server-process';
 
-execRx('ping -c 3 google.com').subscribe({
-  next: (output) => console.log('Output:', output),
-  error: (err) => console.error('Error:', err),
-  complete: () => console.log('Command completed')
+// Stream output as it arrives
+execRx('tail -f /var/log/app.log').subscribe({
+  next: (chunk) => console.log(chunk),
+  error: (err) => console.error(err),
+  complete: () => console.log('Done')
 });
 
-// Without stderr
-execRx('ls -la', undefined, false).subscribe(console.log);
+// Unsubscribing kills the child process
+const sub = execRx('long-running-command').subscribe(console.log);
+sub.unsubscribe(); // process is killed
+
+// Inside a Docker container — same API, just add container
+execRx('cat /var/log/app.log', { container: 'my-app' }).subscribe(console.log);
+
+// With AbortSignal — completes cleanly, does not error
+const ac = new AbortController();
+execRx('sleep 60', { signal: ac.signal }).subscribe({
+  complete: () => console.log('Cancelled')
+});
+ac.abort();
 ```
 
 **Parameters:**
-- `cmd: string` - Command to execute
-- `options?: EncodingOption & ExecOptions` - Node.js exec options
-- `emitStdErr?: boolean` - Include stderr in output (default: true)
+- `cmd: string` - Shell command to execute
+- `options?: ExecRxOptions` - Options object:
+  - `emitStdErr?: boolean` - Include stderr chunks in output (default: `true`)
+  - `container?: string` - Docker container name (runs via `docker exec`)
+  - Plus all Node.js `SpawnOptions` (`cwd`, `env`, `signal`, etc.)
 
-**Returns:** `Observable<string>` - Command output stream
+**Returns:** `Observable<string>` - Stream of output chunks
 
-#### `execRxAsLines(cmd, options?, emitStdErr?)`
+### `execRxAsLines(cmd, options?)`
 
-Execute a command and emit output line by line:
+Execute a command and emit output line by line. Uses stateful buffering to correctly handle lines that span chunk boundaries.
 
 ```typescript
 import { execRxAsLines } from '@onivoro/server-process';
 
 execRxAsLines('cat large-file.txt').subscribe({
   next: (line) => console.log('Line:', line),
-  complete: () => console.log('File processed')
+  complete: () => console.log('Done')
 });
 ```
 
-**Parameters:**
-- `cmd: string` - Command to execute
-- `options?: ExecOptions` - Node.js exec options
-- `emitStdErr?: boolean` - Include stderr in output (default: true)
+**Parameters:** Same as `execRx`
 
-**Returns:** `Observable<string>` - Stream of individual lines
+**Returns:** `Observable<string>` - Stream of individual lines (empty lines are filtered out)
 
-#### `execRxAsJson(cmd, options?, emitStdErr?)`
+### `execRxAsJson<T>(cmd, options?)`
 
-Execute a command and parse output as JSON:
-
-```typescript
-import { execRxAsJson } from '@onivoro/server-process';
-
-execRxAsJson('docker inspect my-container').subscribe({
-  next: (json) => console.log('Container info:', json),
-  error: (err) => console.error('Failed to parse JSON:', err)
-});
-```
-
-**Parameters:**
-- `cmd: string` - Command to execute
-- `options?: ExecOptions` - Node.js exec options
-- `emitStdErr?: boolean` - Include stderr in output (default: true)
-
-**Returns:** `Observable<any>` - Stream of parsed JSON objects
-
-### Docker Class
-
-Execute commands within Docker containers:
-
-```typescript
-import { Docker } from '@onivoro/server-process';
-
-const docker = new Docker('my-postgres-container', 'psql');
-
-// Execute psql command in container
-docker.execRx('-c "SELECT version();"').subscribe({
-  next: (result) => console.log('DB Version:', result),
-  error: (err) => console.error('Query failed:', err)
-});
-```
-
-**Constructor:**
-- `containerName: string` - Name of the Docker container
-- `binaryName: string` - Binary to execute within the container
-
-**Methods:**
-- `execRx(cmd, options?, emitStdErr?)` - Execute command reactively within container
-
-### PSql Class
-
-Execute PostgreSQL commands with optional Docker container support:
-
-```typescript
-import { PSql } from '@onivoro/server-process';
-
-// Local psql
-const psql = new PSql();
-psql.execRx('SELECT COUNT(*) FROM users;', 'mydb', 'postgres').subscribe(console.log);
-
-// Container-based psql
-const containerPsql = new PSql('postgres-container');
-containerPsql.execRx('SELECT NOW();', 'mydb', 'postgres').subscribe(console.log);
-```
-
-**Constructor:**
-- `containerName?: string` - Optional Docker container name
-
-**Methods:**
-- `execRx(cmd, db, username)` - Execute psql command
-  - `cmd: string` - SQL command to execute
-  - `db: string` - Database name
-  - `username: string` - PostgreSQL username
-
-### Process I/O Management
-
-#### `listen()`
-
-Create reactive streams for process stdin/stdout:
-
-```typescript
-import { listen } from '@onivoro/server-process';
-
-const { stdout, stdin } = listen();
-
-// Handle stdin data
-stdin.subscribe((data) => {
-  console.log('Received input:', data.toString());
-});
-
-// stdin automatically completes when process.stdin closes
-```
-
-**Returns:** `{ stdout: Subject, stdin: Subject }` - Reactive streams for process I/O
-
-#### `exit(code)`
-
-Create a process exit function with specified exit code:
-
-```typescript
-import { exit } from '@onivoro/server-process';
-
-const exitWithError = exit(1);
-const exitSuccess = exit(0);
-
-// Use in error handling
-if (someErrorCondition) {
-  console.error('Fatal error occurred');
-  exitWithError();
-}
-```
-
-**Parameters:**
-- `code: number` - Exit code
-
-**Returns:** `() => never` - Function that exits the process
-
-## Usage Examples
-
-### Basic Command Execution
-
-```typescript
-import { execPromise, spawnPromise } from '@onivoro/server-process';
-
-async function deployApp() {
-  try {
-    // Check if Docker is running
-    await execPromise('docker --version');
-    
-    // Build and deploy
-    const buildOutput = await spawnPromise('docker', ['build', '-t', 'myapp', '.']);
-    console.log('Build completed:', buildOutput);
-    
-    const runOutput = await spawnPromise('docker', ['run', '-d', '-p', '3000:3000', 'myapp']);
-    console.log('Container started:', runOutput);
-  } catch (error) {
-    console.error('Deployment failed:', error);
-  }
-}
-```
-
-### Reactive Log Monitoring
-
-```typescript
-import { execRxAsLines } from '@onivoro/server-process';
-
-function monitorLogs(logFile: string) {
-  execRxAsLines(`tail -f ${logFile}`)
-    .subscribe({
-      next: (line) => {
-        if (line.includes('ERROR')) {
-          console.error('🚨 Error detected:', line);
-          // Trigger alert
-        } else if (line.includes('WARN')) {
-          console.warn('⚠️  Warning:', line);
-        }
-      },
-      error: (err) => console.error('Log monitoring failed:', err)
-    });
-}
-
-monitorLogs('/var/log/app.log');
-```
-
-### Database Operations with Docker
-
-```typescript
-import { PSql } from '@onivoro/server-process';
-
-class DatabaseManager {
-  private psql = new PSql('postgres-container');
-
-  async checkHealth() {
-    return new Promise((resolve, reject) => {
-      this.psql.execRx('SELECT 1;', 'postgres', 'admin').subscribe({
-        next: (result) => {
-          console.log('Database is healthy');
-          resolve(result);
-        },
-        error: reject
-      });
-    });
-  }
-
-  async getUserCount(database: string) {
-    return new Promise((resolve, reject) => {
-      this.psql.execRx('SELECT COUNT(*) FROM users;', database, 'admin').subscribe({
-        next: (result) => resolve(parseInt(result.trim())),
-        error: reject
-      });
-    });
-  }
-}
-```
-
-### JSON Processing
+Execute a command, buffer all output, and parse as JSON. The output is fully collected before parsing since JSON documents cannot be parsed incrementally from arbitrary chunk boundaries.
 
 ```typescript
 import { execRxAsJson } from '@onivoro/server-process';
@@ -314,76 +137,107 @@ interface ContainerInfo {
   State: { Status: string };
 }
 
-function getContainerStatus(containerName: string) {
-  execRxAsJson<ContainerInfo[]>(`docker inspect ${containerName}`).subscribe({
-    next: (containers) => {
-      const container = containers[0];
-      console.log(`Container ${container.Name} is ${container.State.Status}`);
-    },
-    error: (err) => console.error('Failed to get container info:', err)
-  });
-}
+execRxAsJson<ContainerInfo[]>('docker inspect my-container').subscribe({
+  next: (containers) => console.log(containers[0].State.Status),
+  error: (err) => console.error('Failed:', err)
+});
 ```
 
-### Process I/O Handling
+**Parameters:** Same as `execRx`
+
+**Returns:** `Observable<T>` - Single emission of parsed JSON
+
+### `listen(options?)`
+
+Create an RxJS Observable from a readable stream (defaults to `process.stdin`). By default, emits individual lines with stateful buffering across chunk boundaries. Use `{ lines: false }` for raw chunks.
 
 ```typescript
-import { listen, exit } from '@onivoro/server-process';
+import { listen } from '@onivoro/server-process';
 
-function setupInteractiveMode() {
-  const { stdin } = listen();
-  
-  console.log('Enter commands (type "exit" to quit):');
-  
-  stdin.subscribe({
-    next: (data) => {
-      const input = data.toString().trim();
-      
-      if (input === 'exit') {
-        console.log('Goodbye!');
-        exit(0)();
-      } else {
-        console.log(`You entered: ${input}`);
-      }
-    },
-    complete: () => {
-      console.log('Input stream closed');
-      exit(0)();
-    }
-  });
+// Line-by-line from stdin (default)
+listen().subscribe((line) => {
+  console.log('Got:', line);
+});
+
+// Raw chunks
+listen({ lines: false }).subscribe((chunk) => {
+  process.stdout.write(chunk.toUpperCase());
+});
+```
+
+```typescript
+// From any readable stream
+import { listen } from '@onivoro/server-process';
+import { createReadStream } from 'fs';
+
+listen({ input: createReadStream('/var/log/app.log') }).subscribe(console.log);
+```
+
+**Parameters:**
+- `options?: ListenOptions` - Options object:
+  - `lines?: boolean` - Split into lines (default: `true`)
+  - `input?: NodeJS.ReadableStream` - Stream to read from (default: `process.stdin`)
+
+**Returns:** `Observable<string>` - Stream of lines or raw chunks. Completes when the input stream ends. Unsubscribing removes all listeners.
+
+### `splitLines(source$)`
+
+RxJS operator that splits a stream of string chunks into individual lines. Buffers incomplete lines across chunk boundaries and emits the final fragment on completion.
+
+```typescript
+import { splitLines, execRx } from '@onivoro/server-process';
+
+splitLines(execRx('some-command')).subscribe(console.log);
+```
+
+**Parameters:**
+- `source$: Observable<string>` - Source observable of string chunks
+
+**Returns:** `Observable<string>` - Stream of individual lines (empty lines filtered out)
+
+### `exit(code)`
+
+Create a bound process exit function.
+
+```typescript
+import { exit } from '@onivoro/server-process';
+
+const exitWithError = exit(1);
+const exitSuccess = exit(0);
+
+if (fatalError) {
+  exitWithError();
 }
 ```
+
+**Parameters:**
+- `code: number` - Exit code
+
+**Returns:** `() => never`
 
 ## Error Handling
 
-All functions handle errors appropriately:
-
-- **Promise-based functions** reject with error details
-- **Reactive functions** emit errors through the error channel
-- **Process execution errors** include exit codes and stderr information
+- **Promise functions** reject with the error from `exec`/`spawn`
+- **Reactive functions** emit errors through the Observable error channel
+- **Non-zero exit codes** produce an `Error` with the exit code in the message
+- **AbortSignal** in reactive functions (`execRx`, `execRxAsLines`, `execRxAsJson`) completes cleanly — cancellation is not an error. In Promise functions (`execPromise`, `spawnPromise`), abort rejects the promise
 
 ```typescript
 import { execPromise, execRx } from '@onivoro/server-process';
 
-// Promise error handling
+// Promise
 try {
   await execPromise('nonexistent-command');
 } catch (error) {
-  console.error('Command failed:', error.message);
+  console.error('Failed:', error.message);
 }
 
-// Reactive error handling
+// Reactive
 execRx('invalid-command').subscribe({
-  next: (output) => console.log(output),
-  error: (error) => console.error('Command error:', error),
-  complete: () => console.log('Done')
+  error: (error) => console.error('Failed:', error.message)
 });
 ```
 
-## TypeScript Support
-
-All functions are fully typed with TypeScript interfaces. The library uses Node.js built-in types for options and return values.
-
 ## License
 
-This library is licensed under the MIT License. See the LICENSE file in this package for details.
+MIT

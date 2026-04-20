@@ -1,9 +1,8 @@
-export { Docker } from './lib/docker';
-export { execPromise } from './lib/exec-promise';
+export { execPromise, ExecPromiseOptions } from './lib/exec-promise';
 export { execRxAsJson } from './lib/exec-rx-as-json';
 export { execRxAsLines } from './lib/exec-rx-as-lines';
-export { execRx } from './lib/exec-rx';
+export { execRx, ExecRxOptions } from './lib/exec-rx';
 export { exit } from './lib/exit';
-export { listen } from './lib/listen';
-export { PSql } from './lib/psql';
-export { spawnPromise } from './lib/spawn-promise';
+export { listen, ListenOptions } from './lib/listen';
+export { splitLines } from './lib/split-lines';
+export { spawnPromise, SpawnPromiseOptions } from './lib/spawn-promise';
