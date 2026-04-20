@@ -965,8 +965,10 @@ libs/mcp/emojeez/           ← @McpTool adapters, formats results as markdown
 
 This separation means the same business logic can be consumed by MCP tools, REST APIs, CLI commands, or tests — each with its own presentation layer.
 
+It also gives you a natural place to use the more advanced parts of the MCP spec — progress reporting, cancellation, session tracking — without polluting business logic with MCP-specific concerns. When `@McpTool` is bolted directly onto an existing service method, that method's signature can't change to accept `McpToolContext` without affecting all its other callers. A dedicated adapter method owns the MCP surface area and can freely use the full context:
+
 ```typescript
-// libs/server/emojeez — business logic
+// libs/server/emojeez — business logic (no MCP dependency)
 @Injectable()
 export class EmojiService {
   async insertEmojis(params: z.infer<typeof insertEmojisSchema>): Promise<InsertEmojisResult> {
@@ -974,15 +976,22 @@ export class EmojiService {
   }
 }
 
-// libs/mcp/emojeez — MCP adapter
-// this is optional, but preferred (for larger codebases) instead of just bolting the @McpTool decorator onto an existing service (which IS supported nonetheless)
+// libs/mcp/emojeez — MCP adapter (owns the MCP surface area)
 @Injectable()
 export class EmojiToolService {
   constructor(private readonly emoji: EmojiService) {}
 
   @McpTool('insert-emojis', 'Insert emojis into text', insertEmojisSchema)
-  async insertEmojis(params: z.infer<typeof insertEmojisSchema>) {
+  async insertEmojis(
+    params: z.infer<typeof insertEmojisSchema>,
+    context?: McpToolContext,
+  ) {
     const result = await this.emoji.insertEmojis(params);
+
+    // Progress, cancellation, session tracking — all available here
+    // without changing the business logic layer
+    await context?.sendProgress?.(1, 1, 'Emojis inserted');
+
     return `**Enhanced Text:**\n\n${result.enhancedText}\n\n*Level: ${result.intensity}*`;
   }
 }
