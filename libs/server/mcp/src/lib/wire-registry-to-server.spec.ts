@@ -89,6 +89,27 @@ describe('wireRegistryToServer', () => {
     expect(config).not.toHaveProperty('annotations');
   });
 
+  it('should pass tool title to the server when present', () => {
+    registry.registerTool(
+      { name: 'list-items', description: 'List items', title: 'List Items' },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config.title).toBe('List Items');
+  });
+
+  it('should omit tool title when not present', () => {
+    registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config).not.toHaveProperty('title');
+  });
+
   it('should delegate tool callback to registry.executeToolWrapped', async () => {
     const handler = jest.fn().mockResolvedValue('result');
     registry.registerTool({ name: 'tool', description: 'd' }, handler);
@@ -136,6 +157,19 @@ describe('wireRegistryToServer', () => {
     );
   });
 
+  it('should pass resource title and size to the server when present', () => {
+    registry.registerResource(
+      { name: 'db-dump', uri: 'app://db-dump', title: 'Database Dump', description: 'Full DB', size: 1048576 },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterResource.mock.calls[0][2];
+    expect(config.title).toBe('Database Dump');
+    expect(config.size).toBe(1048576);
+  });
+
   it('should register template resources with ResourceTemplate', () => {
     registry.registerResource(
       { name: 'item', uri: 'item://{id}', isTemplate: true },
@@ -147,6 +181,18 @@ describe('wireRegistryToServer', () => {
     expect(mockRegisterResource).toHaveBeenCalledTimes(1);
     expect(mockRegisterResource.mock.calls[0][0]).toBe('item');
     expect(mockRegisterResource.mock.calls[0][1]).toEqual({ uri: 'item://{id}' });
+  });
+
+  it('should pass prompt title to the server when present', () => {
+    registry.registerPrompt(
+      { name: 'summarize', title: 'Summarize Item', description: 'Generate a summary' },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterPrompt.mock.calls[0][1];
+    expect(config.title).toBe('Summarize Item');
   });
 
   it('should register prompts with correct args', () => {

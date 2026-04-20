@@ -250,6 +250,20 @@ export class EmojiService {
 
 The `z.infer<typeof insertEmojisSchema>` resolves to `{ text: string; intensity?: "subtle" | "moderate" | "heavy" }` at compile time — the schema and the params type can never drift apart.
 
+### Options object form
+
+When you need `title`, `aliases`, and/or `annotations` together, pass a single options object as the 4th parameter instead of positional args:
+
+```typescript
+@McpTool('insert-emojis', 'Insert emojis into text', insertEmojisSchema, {
+  title: 'Insert Emojis',
+  aliases: { bedrock: 'insert_emojis' },
+  annotations: { readOnlyHint: false },
+})
+```
+
+The positional form (`@McpTool(name, desc, schema, aliases, annotations)`) is still supported for backward compatibility.
+
 ### Accessing auth context
 
 Tool handlers receive an optional second parameter — `McpToolContext` — containing the tool name, parameters, metadata, and any `authInfo` from the MCP transport layer:
@@ -753,7 +767,7 @@ McpEmbeddedResource          // { type: 'resource', resource: { uri, text?, blob
 McpResourceLink              // { type: 'resource_link', uri, name, mimeType?, annotations? }
 
 // Auth & execution context
-McpAuthInfo                  // { token, clientId, scopes, expiresAt?, extra? }
+McpAuthInfo                  // { token, clientId, scopes, expiresAt?, resource?, extra? }
 McpToolContext               // { toolName, params, metadata, authInfo? }
 
 // Guards
@@ -781,10 +795,11 @@ buildCapabilities            // Build MCP capabilities object from current regis
 McpModuleConfig              // Configuration for McpHttpModule.registerAndServeHttp()
 McpStdioConfig               // Configuration for McpStdioModule.registerAndServeStdio()
 McpServerMetadata            // { name, version, description? }
-McpToolMetadata              // { name, description, schema?, aliases?, annotations? }
+McpToolMetadata              // { name, description, title?, schema?, aliases?, annotations? }
+McpToolOptions               // { aliases?, annotations?, title? } — options object form for @McpTool
 McpToolAnnotations           // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
-McpResourceMetadata          // { name, uri, description?, mimeType?, isTemplate? }
-McpPromptMetadata            // { name, description?, argsSchema? }
+McpResourceMetadata          // { name, uri, title?, description?, mimeType?, size?, isTemplate? }
+McpPromptMetadata            // { name, title?, description?, argsSchema? }
 
 // Service
 McpService                   // HTTP session manager (rarely needed directly)

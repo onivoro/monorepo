@@ -25,6 +25,8 @@ export interface McpToolAnnotations {
 export interface McpToolMetadata {
   name: string;
   description: string;
+  /** Human-readable display name shown in MCP client UIs. */
+  title?: string;
   schema?: z.ZodObject<any>;
   aliases?: Record<string, string>;
   annotations?: McpToolAnnotations;
@@ -33,30 +35,59 @@ export interface McpToolMetadata {
 export interface McpResourceMetadata {
   name: string;
   uri: string;
+  /** Human-readable display name shown in MCP client UIs. */
+  title?: string;
   description?: string;
   mimeType?: string;
+  /** Size in bytes, helps clients decide whether to fetch large resources. */
+  size?: number;
   isTemplate?: boolean;
 }
 
 export interface McpPromptMetadata {
   name: string;
+  /** Human-readable display name shown in MCP client UIs. */
+  title?: string;
   description?: string;
   argsSchema?: Record<string, z.ZodTypeAny>;
 }
 
+export interface McpToolOptions {
+  aliases?: Record<string, string>;
+  annotations?: McpToolAnnotations;
+  title?: string;
+}
+
+/**
+ * Decorator for MCP tool methods.
+ *
+ * Accepts either positional `aliases`/`annotations` args (backward-compatible)
+ * or a single options object as the 4th parameter:
+ *
+ * ```ts
+ * @McpTool('name', 'desc', schema, { title: 'Display Name', aliases: { bedrock: 'name' }, annotations: { readOnlyHint: true } })
+ * ```
+ */
 export const McpTool = (
   name: string,
   description: string,
   schema?: z.ZodObject<any>,
-  aliases?: Record<string, string>,
+  aliasesOrOptions?: Record<string, string> | McpToolOptions,
   annotations?: McpToolAnnotations,
 ) => {
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
-    SetMetadata(MCP_TOOL_METADATA, { name, description, schema, aliases, annotations } as McpToolMetadata)(
-      target,
-      propertyKey,
-      descriptor,
-    );
+    let metadata: McpToolMetadata;
+
+    if (aliasesOrOptions && ('aliases' in aliasesOrOptions || 'annotations' in aliasesOrOptions || 'title' in aliasesOrOptions)) {
+      // Options object form
+      const opts = aliasesOrOptions as McpToolOptions;
+      metadata = { name, description, schema, ...opts };
+    } else {
+      // Positional form (backward-compatible)
+      metadata = { name, description, schema, aliases: aliasesOrOptions as Record<string, string> | undefined, annotations };
+    }
+
+    SetMetadata(MCP_TOOL_METADATA, metadata)(target, propertyKey, descriptor);
   };
 };
 

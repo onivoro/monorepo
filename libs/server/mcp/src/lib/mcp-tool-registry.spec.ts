@@ -87,6 +87,20 @@ describe('McpToolRegistry', () => {
       expect(context.params).toEqual({ x: 1 });
     });
 
+    it('should forward authInfo.resource when provided', async () => {
+      const handler = jest.fn().mockResolvedValue('ok');
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      const authWithResource: McpAuthInfo = {
+        ...MOCK_AUTH,
+        resource: 'https://api.example.com',
+      };
+      await registry.executeToolRaw('tool', {}, authWithResource);
+
+      const context: McpToolContext = handler.mock.calls[0][1];
+      expect(context.authInfo?.resource).toBe('https://api.example.com');
+    });
+
     it('should pass undefined authInfo when not provided', async () => {
       const handler = jest.fn().mockResolvedValue('ok');
       registry.registerTool({ name: 'tool', description: 'd' }, handler);

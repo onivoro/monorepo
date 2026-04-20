@@ -12,6 +12,8 @@ export interface McpAuthInfo {
   clientId: string;
   scopes: string[];
   expiresAt?: number;
+  /** RFC 8707 resource indicator — the audience this token was issued for. */
+  resource?: string;
   extra?: Record<string, unknown>;
 }
 

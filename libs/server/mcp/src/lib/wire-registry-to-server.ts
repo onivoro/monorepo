@@ -26,6 +26,7 @@ export function wireRegistryToServer(registry: McpToolRegistry, server: McpServe
       {
         description: metadata.description,
         inputSchema: metadata.schema?.shape,
+        ...(metadata.title && { title: metadata.title }),
         ...(metadata.annotations && { annotations: metadata.annotations }),
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,9 +36,11 @@ export function wireRegistryToServer(registry: McpToolRegistry, server: McpServe
   }
 
   for (const { metadata, handler } of registry.getResources()) {
-    const resourceConfig: Record<string, string | undefined> = {};
+    const resourceConfig: Record<string, unknown> = {};
+    if (metadata.title) resourceConfig['title'] = metadata.title;
     if (metadata.description) resourceConfig['description'] = metadata.description;
     if (metadata.mimeType) resourceConfig['mimeType'] = metadata.mimeType;
+    if (metadata.size != null) resourceConfig['size'] = metadata.size;
 
     if (metadata.isTemplate) {
       server.registerResource(metadata.name, new ResourceTemplate(metadata.uri, { list: undefined }), resourceConfig, handler);
@@ -47,6 +50,14 @@ export function wireRegistryToServer(registry: McpToolRegistry, server: McpServe
   }
 
   for (const { metadata, handler } of registry.getPrompts()) {
-    server.registerPrompt(metadata.name, { description: metadata.description, argsSchema: metadata.argsSchema }, handler);
+    server.registerPrompt(
+      metadata.name,
+      {
+        description: metadata.description,
+        argsSchema: metadata.argsSchema,
+        ...(metadata.title && { title: metadata.title }),
+      },
+      handler,
+    );
   }
 }
