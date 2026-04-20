@@ -42,6 +42,11 @@ export interface McpResourceMetadata {
   /** Size in bytes, helps clients decide whether to fetch large resources. */
   size?: number;
   isTemplate?: boolean;
+  /**
+   * Callback to list all resources matching this template. Only used when isTemplate is true.
+   * Must return `{ resources: [...] }` matching the MCP ListResourcesResult shape.
+   */
+  listCallback?: (...args: any[]) => any;
 }
 
 export interface McpPromptMetadata {

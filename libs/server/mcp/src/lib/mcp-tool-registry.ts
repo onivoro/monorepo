@@ -18,13 +18,23 @@ export interface McpAuthInfo {
 }
 
 /**
- * Context passed to tool handlers and hooks during execution.
+ * Context passed to tool handlers and interceptors during execution.
  */
 export interface McpToolContext {
   toolName: string;
   params: Record<string, unknown>;
   metadata: McpToolMetadata;
   authInfo?: McpAuthInfo;
+  /** MCP session identifier from the transport layer. */
+  sessionId?: string;
+  /** Abort signal — fires when the client cancels the request. */
+  signal?: AbortSignal;
+  /**
+   * Send an incremental progress notification to the client.
+   * Only available when the client requested progress tracking via `_meta.progressToken`.
+   * No-op when progress is not supported for this request.
+   */
+  sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
 }
 
 /**
@@ -118,8 +128,14 @@ export type McpContentBlock =
 
 export interface McpToolResult {
   content: McpContentBlock[];
+  /** Optional structured output (JSON object) returned alongside content. */
+  structuredContent?: Record<string, unknown>;
   isError?: boolean;
+  _meta?: Record<string, unknown>;
 }
+
+export type McpRegistrationChangeType = 'tool' | 'resource' | 'prompt';
+export type McpRegistrationChangeListener = (type: McpRegistrationChangeType, name: string) => void;
 
 @Injectable()
 export class McpToolRegistry {
@@ -129,9 +145,29 @@ export class McpToolRegistry {
   private readonly resources = new Map<string, ResourceEntry>();
   private readonly prompts = new Map<string, PromptEntry>();
   private readonly interceptors: McpToolInterceptor[] = [];
+  private readonly changeListeners: McpRegistrationChangeListener[] = [];
   private guardResolver?: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate;
 
   // -- Registration --
+
+  /** Subscribe to registration changes for dynamic wiring. Returns an unsubscribe function. */
+  onRegistrationChange(listener: McpRegistrationChangeListener): () => void {
+    this.changeListeners.push(listener);
+    return () => {
+      const idx = this.changeListeners.indexOf(listener);
+      if (idx >= 0) this.changeListeners.splice(idx, 1);
+    };
+  }
+
+  private notifyChange(type: McpRegistrationChangeType, name: string): void {
+    for (const listener of this.changeListeners) {
+      try {
+        listener(type, name);
+      } catch (err) {
+        this.logger.error(`Registration change listener error:`, err);
+      }
+    }
+  }
 
   registerInterceptor(interceptor: McpToolInterceptor): void {
     this.interceptors.push(interceptor);
@@ -154,8 +190,8 @@ export class McpToolRegistry {
       );
     }
     this.tools.set(metadata.name, { metadata, handler, guards });
-
     this.logger.log(`Tool registered: ${metadata.name}`);
+    this.notifyChange('tool', metadata.name);
   }
 
   registerResource(
@@ -169,6 +205,7 @@ export class McpToolRegistry {
     }
     this.resources.set(metadata.name, { metadata, handler });
     this.logger.log(`Resource registered: ${metadata.name}`);
+    this.notifyChange('resource', metadata.name);
   }
 
   registerPrompt(
@@ -182,6 +219,7 @@ export class McpToolRegistry {
     }
     this.prompts.set(metadata.name, { metadata, handler });
     this.logger.log(`Prompt registered: ${metadata.name}`);
+    this.notifyChange('prompt', metadata.name);
   }
 
   // -- Introspection --
@@ -208,18 +246,15 @@ export class McpToolRegistry {
 
   // -- Execution --
 
-  /**
-   * Execution pipeline (modeled after NestJS HTTP lifecycle):
-   *
-   *   Guards → Pipes (schema.parse) → beforeToolCall hooks → Handler → afterToolCall hooks
-   *
-   * Errors at any stage propagate normally. executeToolWrapped catches them
-   * and returns error content (analogous to exception filters).
-   */
   async executeToolRaw(
     name: string,
     params: Record<string, unknown>,
     authInfo?: McpAuthInfo,
+    extra?: {
+      sessionId?: string;
+      signal?: AbortSignal;
+      sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
+    },
   ): Promise<unknown> {
     const entry = this.tools.get(name);
     if (!entry) {
@@ -233,6 +268,9 @@ export class McpToolRegistry {
       params,
       metadata: entry.metadata,
       authInfo,
+      sessionId: extra?.sessionId,
+      signal: extra?.signal,
+      sendProgress: extra?.sendProgress,
     };
 
     if (entry.guards?.length) {
@@ -263,6 +301,9 @@ export class McpToolRegistry {
       params: validatedParams,
       metadata: entry.metadata,
       authInfo,
+      sessionId: extra?.sessionId,
+      signal: extra?.signal,
+      sendProgress: extra?.sendProgress,
     };
 
     // -- Interceptors --
@@ -282,9 +323,14 @@ export class McpToolRegistry {
     name: string,
     params: Record<string, unknown>,
     authInfo?: McpAuthInfo,
+    extra?: {
+      sessionId?: string;
+      signal?: AbortSignal;
+      sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
+    },
   ): Promise<McpToolResult> {
     try {
-      const result = await this.executeToolRaw(name, params, authInfo);
+      const result = await this.executeToolRaw(name, params, authInfo, extra);
 
       if (
         result &&

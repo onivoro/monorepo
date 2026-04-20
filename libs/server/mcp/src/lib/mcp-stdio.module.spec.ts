@@ -176,7 +176,7 @@ describe('McpStdioModule', () => {
 
     expect(McpServer).toHaveBeenCalledWith(
       { name: 'my-stdio-server', version: '2.0.0' },
-      expect.objectContaining({ capabilities: { tools: {} } }),
+      expect.objectContaining({ capabilities: { tools: { listChanged: true } } }),
     );
 
     await module.close();

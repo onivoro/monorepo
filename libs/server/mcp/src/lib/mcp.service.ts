@@ -12,6 +12,7 @@ interface SessionEntry {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
   lastActivity: number;
+  unsubscribeRegistry: () => void;
 }
 
 @Injectable()
@@ -49,8 +50,7 @@ export class McpService implements OnModuleDestroy {
 
     entry.server = server;
     entry.transport = transport;
-
-    wireRegistryToServer(this.registry, server);
+    entry.unsubscribeRegistry = wireRegistryToServer(this.registry, server);
 
     server.connect(transport);
 
@@ -147,6 +147,7 @@ export class McpService implements OnModuleDestroy {
   }
 
   private async closeSession(sessionId: string, session: SessionEntry) {
+    session.unsubscribeRegistry();
     try {
       await session.transport.close();
     } catch (error) {

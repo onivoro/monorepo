@@ -15,6 +15,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(McpStdioModule.name);
   private server?: McpServer;
   private transport?: StdioServerTransport;
+  private unsubscribeRegistry?: () => void;
 
   constructor(
     @Inject(MCP_STDIO_CONFIG) private readonly config: McpStdioConfig,
@@ -67,7 +68,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       { ...this.config.serverOptions, capabilities: buildCapabilities(this.registry) },
     );
 
-    wireRegistryToServer(this.registry, this.server);
+    this.unsubscribeRegistry = wireRegistryToServer(this.registry, this.server);
 
     this.transport = new StdioServerTransport(
       this.config.stdin,
@@ -79,6 +80,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    this.unsubscribeRegistry?.();
     try {
       if (this.transport) await this.transport.close();
     } catch (error) {

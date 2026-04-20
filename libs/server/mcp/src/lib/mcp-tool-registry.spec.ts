@@ -101,6 +101,44 @@ describe('McpToolRegistry', () => {
       expect(context.authInfo?.resource).toBe('https://api.example.com');
     });
 
+    it('should forward sessionId and signal in the context', async () => {
+      const handler = jest.fn().mockResolvedValue('ok');
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      const abortController = new AbortController();
+      await registry.executeToolRaw('tool', {}, undefined, {
+        sessionId: 'sess-99',
+        signal: abortController.signal,
+      });
+
+      const context: McpToolContext = handler.mock.calls[0][1];
+      expect(context.sessionId).toBe('sess-99');
+      expect(context.signal).toBe(abortController.signal);
+    });
+
+    it('should forward sendProgress in the context', async () => {
+      const handler = jest.fn().mockResolvedValue('ok');
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      const sendProgress = jest.fn().mockResolvedValue(undefined);
+      await registry.executeToolRaw('tool', {}, undefined, { sendProgress });
+
+      const context: McpToolContext = handler.mock.calls[0][1];
+      expect(context.sendProgress).toBe(sendProgress);
+    });
+
+    it('should pass undefined sessionId, signal, and sendProgress when extra is not provided', async () => {
+      const handler = jest.fn().mockResolvedValue('ok');
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      await registry.executeToolRaw('tool', {});
+
+      const context: McpToolContext = handler.mock.calls[0][1];
+      expect(context.sessionId).toBeUndefined();
+      expect(context.signal).toBeUndefined();
+      expect(context.sendProgress).toBeUndefined();
+    });
+
     it('should pass undefined authInfo when not provided', async () => {
       const handler = jest.fn().mockResolvedValue('ok');
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
@@ -509,6 +547,57 @@ describe('McpToolRegistry', () => {
         await registry.executeToolRaw('tool', {});
         expect(handler).toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('onRegistrationChange', () => {
+    it('should notify listeners when a tool is registered', () => {
+      const listener = jest.fn();
+      registry.onRegistrationChange(listener);
+
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+      expect(listener).toHaveBeenCalledWith('tool', 'tool');
+    });
+
+    it('should notify listeners when a resource is registered', () => {
+      const listener = jest.fn();
+      registry.onRegistrationChange(listener);
+
+      registry.registerResource({ name: 'res', uri: 'test://r' }, jest.fn());
+
+      expect(listener).toHaveBeenCalledWith('resource', 'res');
+    });
+
+    it('should notify listeners when a prompt is registered', () => {
+      const listener = jest.fn();
+      registry.onRegistrationChange(listener);
+
+      registry.registerPrompt({ name: 'prompt' }, jest.fn());
+
+      expect(listener).toHaveBeenCalledWith('prompt', 'prompt');
+    });
+
+    it('should stop notifying after unsubscribe', () => {
+      const listener = jest.fn();
+      const unsub = registry.onRegistrationChange(listener);
+
+      unsub();
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('should handle listener errors without breaking other listeners', () => {
+      const bad = jest.fn().mockImplementation(() => { throw new Error('oops'); });
+      const good = jest.fn();
+      registry.onRegistrationChange(bad);
+      registry.onRegistrationChange(good);
+
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+      expect(bad).toHaveBeenCalled();
+      expect(good).toHaveBeenCalled();
     });
   });
 
