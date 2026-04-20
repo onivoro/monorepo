@@ -377,6 +377,114 @@ async getStatus(
 
 `sessionId` is set by the HTTP transport (each client connection gets a unique session). For stdio, there is a single session for the lifetime of the process.
 
+### Logging
+
+Tool handlers can send structured log messages to MCP clients via `context.sendLog()`. The client controls the minimum log level via the `logging/setLevel` protocol message.
+
+```typescript
+@McpTool('import-data', 'Import data from source', importSchema)
+async importData(params: z.infer<typeof importSchema>, context?: McpToolContext) {
+  await context?.sendLog?.('info', { phase: 'starting', source: params.source }, 'import-data');
+  const result = await this.importService.run(params.source);
+  await context?.sendLog?.('info', { phase: 'complete', count: result.count }, 'import-data');
+  return result;
+}
+```
+
+The `sendLog` signature is `(level: McpLogLevel, data: unknown, logger?: string) => Promise<void>`. Levels follow RFC 5424: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`.
+
+### Resource subscriptions
+
+Clients can subscribe to resource change notifications. When your application data changes, call `notifyResourceUpdated(uri)` on the registry to push `notifications/resources/updated` to subscribed clients:
+
+```typescript
+@Injectable()
+export class ConfigService {
+  constructor(private readonly registry: McpToolRegistry) {}
+
+  async updateConfig(key: string, value: string) {
+    await this.configStore.set(key, value);
+    this.registry.notifyResourceUpdated('app://config');
+  }
+}
+```
+
+The library handles `resources/subscribe` and `resources/unsubscribe` requests automatically. Subscriptions are cleaned up when sessions close.
+
+### Resource template completion
+
+Resource templates can provide autocompletion for URI variables via `completeCallbacks`:
+
+```typescript
+@McpResource({
+  name: 'user-profile',
+  uri: 'app://users/{userId}',
+  isTemplate: true,
+  listCallback: async () => ({ resources: users.map(u => ({ uri: `app://users/${u.id}`, name: u.name })) }),
+  completeCallbacks: {
+    userId: (value) => users.filter(u => u.id.startsWith(value)).map(u => u.id),
+  },
+})
+async getProfile(uri: URL, variables: { userId: string }) {
+  return { contents: [{ uri: uri.href, text: JSON.stringify(await this.userService.get(variables.userId)) }] };
+}
+```
+
+### Output schema
+
+Tools can declare an output schema for structured output validation. When present, the SDK validates `structuredContent` against this schema and advertises it to clients:
+
+```typescript
+const resultSchema = z.object({ count: z.number(), items: z.array(z.string()) });
+
+@McpTool('list-items', 'List all items', inputSchema, { outputSchema: resultSchema })
+async listItems(params: z.infer<typeof inputSchema>) {
+  const items = await this.itemService.list(params.filter);
+  return { content: [{ type: 'text', text: 'Done' }], structuredContent: { count: items.length, items } };
+}
+```
+
+### Server instructions
+
+Provide human-readable usage instructions that are included in the MCP `initialize` response:
+
+```typescript
+McpHttpModule.registerAndServeHttp({
+  metadata: {
+    name: 'my-server',
+    version: '1.0.0',
+    instructions: 'This server provides tools for managing customer data. Use list-customers first to find IDs.',
+  },
+})
+```
+
+### Tool enable/disable
+
+Tools can be enabled or disabled at runtime. Disabled tools are hidden from `tools/list` and reject calls:
+
+```typescript
+@Injectable()
+export class FeatureFlagService {
+  constructor(private readonly registry: McpToolRegistry) {}
+
+  async onFeatureToggle(feature: string, enabled: boolean) {
+    if (feature === 'experimental-tool') {
+      this.registry.setToolEnabled('experimental-tool', enabled);
+    }
+  }
+}
+```
+
+### Sampling, elicitation, and roots
+
+Tool handlers have access to client capabilities via context callbacks:
+
+- `context.createMessage(params)` — request LLM sampling from the client
+- `context.elicitInput(params)` — request user input via a form or URL
+- `context.listRoots()` — request the client's filesystem roots
+
+These are always present on the context but may reject if the client doesn't support the capability. Wrap calls in try/catch.
+
 ### Input validation
 
 When a tool has a Zod schema, the registry runs `schema.parse(params)` as the **Pipes** stage of the [execution pipeline](#execution-pipeline) — after guards but before hooks and the handler. This means:

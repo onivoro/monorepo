@@ -2,7 +2,9 @@ import { McpToolRegistry } from './mcp-tool-registry';
 import { buildCapabilities, wireRegistryToServer } from './wire-registry-to-server';
 import { z } from 'zod';
 
-const mockRegisterTool = jest.fn();
+const mockEnable = jest.fn();
+const mockDisable = jest.fn();
+const mockRegisterTool = jest.fn().mockReturnValue({ enable: mockEnable, disable: mockDisable });
 const mockRegisterResource = jest.fn();
 const mockRegisterPrompt = jest.fn();
 const mockSetRequestHandler = jest.fn();
@@ -23,10 +25,14 @@ function createMockServer() {
     registerTool: mockRegisterTool,
     registerResource: mockRegisterResource,
     registerPrompt: mockRegisterPrompt,
+    sendLoggingMessage: jest.fn().mockResolvedValue(undefined),
     server: {
       setRequestHandler: mockSetRequestHandler,
       sendResourceUpdated: mockSendResourceUpdated,
       notification: jest.fn().mockResolvedValue(undefined),
+      createMessage: jest.fn().mockResolvedValue({}),
+      elicitInput: jest.fn().mockResolvedValue({}),
+      listRoots: jest.fn().mockResolvedValue({ roots: [] }),
     },
   } as any;
 }
@@ -116,6 +122,28 @@ describe('wireRegistryToServer', () => {
 
     const config = mockRegisterTool.mock.calls[0][1];
     expect(config.title).toBe('List Items');
+  });
+
+  it('should pass outputSchema to the server when present', () => {
+    const outputSchema = z.object({ result: z.string() });
+    registry.registerTool(
+      { name: 'structured-tool', description: 'Returns structured', outputSchema },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config.outputSchema).toBe(outputSchema);
+  });
+
+  it('should omit outputSchema when not present', () => {
+    registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config).not.toHaveProperty('outputSchema');
   });
 
   it('should omit tool title when not present', () => {
@@ -503,5 +531,16 @@ describe('wireRegistryToServer', () => {
     await new Promise((r) => setTimeout(r, 10));
 
     expect(server.server.sendResourceUpdated).not.toHaveBeenCalled();
+  });
+
+  it('should enable tool enable/disable via registry.setToolEnabled', () => {
+    registry.registerTool({ name: 'toggleable', description: 'Can be toggled' }, jest.fn());
+    wireRegistryToServer(registry, createMockServer());
+
+    registry.setToolEnabled('toggleable', false);
+    expect(mockDisable).toHaveBeenCalledTimes(1);
+
+    registry.setToolEnabled('toggleable', true);
+    expect(mockEnable).toHaveBeenCalledTimes(1);
   });
 });

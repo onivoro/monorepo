@@ -324,6 +324,22 @@ describe('McpService', () => {
       // Should not throw
       await expect(service.onModuleDestroy()).resolves.not.toThrow();
     });
+
+    it('should clean up resource subscriptions on session close', async () => {
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
+
+      await service.handleRequest(mockReq(), mockRes());
+      capturedOnSessionInitialized!('sub-session');
+
+      // Simulate a subscription for this session
+      registry.subscribeResource('app://config', 'sub-session');
+      expect(registry.getResourceSubscribers('app://config').has('sub-session')).toBe(true);
+
+      await service.onModuleDestroy();
+
+      // Subscriptions should be cleaned up
+      expect(registry.getResourceSubscribers('app://config').size).toBe(0);
+    });
   });
 
   function mockReq(overrides: Partial<{ method: string; headers: Record<string, string>; body: any }> = {}) {

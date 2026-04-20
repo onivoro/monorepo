@@ -35,16 +35,22 @@ function buildSendProgress(
   };
 }
 
-function wireToolToServer(registry: McpToolRegistry, server: McpServer, toolName: string): void {
+function wireToolToServer(
+  registry: McpToolRegistry,
+  server: McpServer,
+  toolName: string,
+  registeredTools: Map<string, { enable(): void; disable(): void }>,
+): void {
   const entry = registry.getTool(toolName);
   if (!entry) return;
   const { metadata } = entry;
 
-  server.registerTool(
+  const registered = server.registerTool(
     metadata.name,
     {
       description: metadata.description,
       inputSchema: metadata.schema,
+      ...(metadata.outputSchema && { outputSchema: metadata.outputSchema }),
       ...(metadata.title && { title: metadata.title }),
       ...(metadata.annotations && { annotations: metadata.annotations }),
     },
@@ -56,8 +62,15 @@ function wireToolToServer(registry: McpToolRegistry, server: McpServer, toolName
         sendProgress: buildSendProgress(server, extra),
         sendLog: (level: McpLogLevel, data: unknown, logger?: string) =>
           server.sendLoggingMessage({ level, data, ...(logger != null && { logger }) }),
+        createMessage: (msgParams: Record<string, unknown>) =>
+          server.server.createMessage(msgParams as any, { signal: extra?.signal }),
+        elicitInput: (elicitParams: Record<string, unknown>) =>
+          server.server.elicitInput(elicitParams as any, { signal: extra?.signal }),
+        listRoots: () => server.server.listRoots(undefined, { signal: extra?.signal }),
       }) as any,
   );
+
+  registeredTools.set(metadata.name, registered as any);
 }
 
 function wireResourceToServer(registry: McpToolRegistry, server: McpServer, resourceName: string): void {
@@ -114,8 +127,10 @@ function wirePromptToServer(registry: McpToolRegistry, server: McpServer, prompt
  * @returns An unsubscribe function to stop listening for registration changes.
  */
 export function wireRegistryToServer(registry: McpToolRegistry, server: McpServer): () => void {
+  const registeredTools = new Map<string, { enable(): void; disable(): void }>();
+
   for (const { metadata } of registry.getTools()) {
-    wireToolToServer(registry, server, metadata.name);
+    wireToolToServer(registry, server, metadata.name, registeredTools);
   }
 
   for (const { metadata } of registry.getResources()) {
@@ -125,6 +140,14 @@ export function wireRegistryToServer(registry: McpToolRegistry, server: McpServe
   for (const { metadata } of registry.getPrompts()) {
     wirePromptToServer(registry, server, metadata.name);
   }
+
+  // Wire enable/disable delegate so registry.setToolEnabled() works.
+  registry.setToolEnabledDelegate((name, enabled) => {
+    const registered = registeredTools.get(name);
+    if (!registered) return;
+    if (enabled) registered.enable();
+    else registered.disable();
+  });
 
   // Wire resource subscription handlers on the low-level Server.
   // The SDK doesn't auto-handle subscribe/unsubscribe — we track subscriptions on the registry.
@@ -160,7 +183,7 @@ export function wireRegistryToServer(registry: McpToolRegistry, server: McpServe
   const unsubRegistrationChanges = registry.onRegistrationChange((type, name) => {
     switch (type) {
       case 'tool':
-        wireToolToServer(registry, server, name);
+        wireToolToServer(registry, server, name, registeredTools);
         break;
       case 'resource':
         wireResourceToServer(registry, server, name);

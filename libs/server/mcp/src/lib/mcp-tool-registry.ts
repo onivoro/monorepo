@@ -41,6 +41,21 @@ export interface McpToolContext {
    * The client controls the minimum log level via `logging/setLevel`.
    */
   sendLog?: (level: McpLogLevel, data: unknown, logger?: string) => Promise<void>;
+  /**
+   * Request LLM sampling from the client. Only available when the client supports sampling.
+   * Sends a `sampling/createMessage` request to the client.
+   */
+  createMessage?: (params: Record<string, unknown>) => Promise<unknown>;
+  /**
+   * Request user input via an elicitation form or URL.
+   * Only available when the client supports elicitation.
+   */
+  elicitInput?: (params: Record<string, unknown>) => Promise<unknown>;
+  /**
+   * Request the list of filesystem roots from the client.
+   * Only available when the client supports roots.
+   */
+  listRoots?: () => Promise<unknown>;
 }
 
 /**
@@ -160,6 +175,7 @@ export class McpToolRegistry {
   private readonly changeListeners: McpRegistrationChangeListener[] = [];
   private readonly resourceSubscriptions = new Map<string, Set<string>>();
   private readonly resourceUpdateListeners: McpResourceUpdateListener[] = [];
+  private toolEnabledDelegate?: (name: string, enabled: boolean) => void;
   private guardResolver?: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate;
 
   // -- Registration --
@@ -250,6 +266,31 @@ export class McpToolRegistry {
     this.guardResolver = resolver;
   }
 
+  /**
+   * Set a delegate for enabling/disabling tools on the underlying McpServer.
+   * Called by `wireRegistryToServer` — consumers should use `setToolEnabled()` instead.
+   */
+  setToolEnabledDelegate(delegate: (name: string, enabled: boolean) => void): void {
+    this.toolEnabledDelegate = delegate;
+  }
+
+  /**
+   * Enable or disable a tool at runtime.
+   * Disabled tools are hidden from `tools/list` and reject calls with "tool not found".
+   * Requires a wired server (via wireRegistryToServer, McpHttpModule, or McpStdioModule).
+   */
+  setToolEnabled(name: string, enabled: boolean): void {
+    if (!this.tools.has(name)) {
+      throw new Error(`MCP tool "${name}" is not registered.`);
+    }
+    if (!this.toolEnabledDelegate) {
+      throw new Error(
+        'No server wired. setToolEnabled requires an active transport (HTTP, stdio, or custom).',
+      );
+    }
+    this.toolEnabledDelegate(name, enabled);
+  }
+
   registerTool(
     metadata: McpToolMetadata,
     handler: (params: any) => Promise<any>,
@@ -326,6 +367,9 @@ export class McpToolRegistry {
       signal?: AbortSignal;
       sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
       sendLog?: (level: McpLogLevel, data: unknown, logger?: string) => Promise<void>;
+      createMessage?: (params: Record<string, unknown>) => Promise<unknown>;
+      elicitInput?: (params: Record<string, unknown>) => Promise<unknown>;
+      listRoots?: () => Promise<unknown>;
     },
   ): Promise<unknown> {
     const entry = this.tools.get(name);
@@ -344,6 +388,9 @@ export class McpToolRegistry {
       signal: extra?.signal,
       sendProgress: extra?.sendProgress,
       sendLog: extra?.sendLog,
+      createMessage: extra?.createMessage,
+      elicitInput: extra?.elicitInput,
+      listRoots: extra?.listRoots,
     };
 
     if (entry.guards?.length) {
@@ -378,6 +425,9 @@ export class McpToolRegistry {
       signal: extra?.signal,
       sendProgress: extra?.sendProgress,
       sendLog: extra?.sendLog,
+      createMessage: extra?.createMessage,
+      elicitInput: extra?.elicitInput,
+      listRoots: extra?.listRoots,
     };
 
     // -- Interceptors --
@@ -402,6 +452,9 @@ export class McpToolRegistry {
       signal?: AbortSignal;
       sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
       sendLog?: (level: McpLogLevel, data: unknown, logger?: string) => Promise<void>;
+      createMessage?: (params: Record<string, unknown>) => Promise<unknown>;
+      elicitInput?: (params: Record<string, unknown>) => Promise<unknown>;
+      listRoots?: () => Promise<unknown>;
     },
   ): Promise<McpToolResult> {
     try {

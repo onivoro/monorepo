@@ -45,7 +45,11 @@ export class McpService implements OnModuleDestroy {
 
     const server = new McpServer(
       { name: this.config.metadata.name, version: this.config.metadata.version },
-      { ...this.config.serverOptions, capabilities: buildCapabilities(this.registry) },
+      {
+        ...this.config.serverOptions,
+        capabilities: buildCapabilities(this.registry),
+        ...(this.config.metadata.instructions && { instructions: this.config.metadata.instructions }),
+      },
     );
 
     entry.server = server;
@@ -148,6 +152,7 @@ export class McpService implements OnModuleDestroy {
 
   private async closeSession(sessionId: string, session: SessionEntry) {
     session.unsubscribeRegistry();
+    this.registry.removeSessionSubscriptions(sessionId);
     try {
       await session.transport.close();
     } catch (error) {

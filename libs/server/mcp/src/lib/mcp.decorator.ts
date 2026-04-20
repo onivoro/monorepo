@@ -28,6 +28,8 @@ export interface McpToolMetadata {
   /** Human-readable display name shown in MCP client UIs. */
   title?: string;
   schema?: z.ZodObject<any>;
+  /** Output schema for structured output validation. When present, the SDK validates structuredContent against this schema. */
+  outputSchema?: z.ZodObject<any>;
   aliases?: Record<string, string>;
   annotations?: McpToolAnnotations;
 }
@@ -72,6 +74,7 @@ export interface McpToolOptions {
   aliases?: Record<string, string>;
   annotations?: McpToolAnnotations;
   title?: string;
+  outputSchema?: z.ZodObject<any>;
 }
 
 /**

@@ -626,6 +626,29 @@ describe('McpToolRegistry', () => {
     });
   });
 
+  describe('setToolEnabled', () => {
+    it('should throw when tool is not registered', () => {
+      expect(() => registry.setToolEnabled('nope', false)).toThrow('not registered');
+    });
+
+    it('should throw when no delegate is set', () => {
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+      expect(() => registry.setToolEnabled('tool', false)).toThrow('No server wired');
+    });
+
+    it('should call delegate when set', () => {
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+      const delegate = jest.fn();
+      registry.setToolEnabledDelegate(delegate);
+
+      registry.setToolEnabled('tool', false);
+      expect(delegate).toHaveBeenCalledWith('tool', false);
+
+      registry.setToolEnabled('tool', true);
+      expect(delegate).toHaveBeenCalledWith('tool', true);
+    });
+  });
+
   describe('resource subscriptions', () => {
     it('should track subscriptions by URI and sessionId', () => {
       registry.subscribeResource('app://config', 'sess-1');

@@ -65,7 +65,11 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
 
     this.server = new McpServer(
       { name: this.config.metadata.name, version: this.config.metadata.version },
-      { ...this.config.serverOptions, capabilities: buildCapabilities(this.registry) },
+      {
+        ...this.config.serverOptions,
+        capabilities: buildCapabilities(this.registry),
+        ...(this.config.metadata.instructions && { instructions: this.config.metadata.instructions }),
+      },
     );
 
     this.unsubscribeRegistry = wireRegistryToServer(this.registry, this.server);
