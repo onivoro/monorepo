@@ -47,6 +47,17 @@ export interface McpResourceMetadata {
    * Must return `{ resources: [...] }` matching the MCP ListResourcesResult shape.
    */
   listCallback?: (...args: any[]) => any;
+  /**
+   * Autocompletion callbacks for URI template variables. Only used when isTemplate is true.
+   * Each key is a variable name from the URI template; the callback returns possible completions.
+   *
+   * ```ts
+   * completeCallbacks: {
+   *   id: (value) => items.filter(i => i.startsWith(value)).map(i => i.id),
+   * }
+   * ```
+   */
+  completeCallbacks?: Record<string, (value: string, context?: { arguments?: Record<string, string> }) => string[] | Promise<string[]>>;
 }
 
 export interface McpPromptMetadata {

@@ -127,7 +127,18 @@ describe('McpToolRegistry', () => {
       expect(context.sendProgress).toBe(sendProgress);
     });
 
-    it('should pass undefined sessionId, signal, and sendProgress when extra is not provided', async () => {
+    it('should forward sendLog in the context', async () => {
+      const handler = jest.fn().mockResolvedValue('ok');
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      const sendLog = jest.fn().mockResolvedValue(undefined);
+      await registry.executeToolRaw('tool', {}, undefined, { sendLog });
+
+      const context: McpToolContext = handler.mock.calls[0][1];
+      expect(context.sendLog).toBe(sendLog);
+    });
+
+    it('should pass undefined for all extra fields when extra is not provided', async () => {
       const handler = jest.fn().mockResolvedValue('ok');
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
@@ -137,6 +148,7 @@ describe('McpToolRegistry', () => {
       expect(context.sessionId).toBeUndefined();
       expect(context.signal).toBeUndefined();
       expect(context.sendProgress).toBeUndefined();
+      expect(context.sendLog).toBeUndefined();
     });
 
     it('should pass undefined authInfo when not provided', async () => {
@@ -611,6 +623,88 @@ describe('McpToolRegistry', () => {
       expect(schemas[0].name).toBe('tool');
       expect(schemas[0].description).toBe('desc');
       expect(schemas[0].jsonSchema).toHaveProperty('type', 'object');
+    });
+  });
+
+  describe('resource subscriptions', () => {
+    it('should track subscriptions by URI and sessionId', () => {
+      registry.subscribeResource('app://config', 'sess-1');
+      registry.subscribeResource('app://config', 'sess-2');
+
+      const subs = registry.getResourceSubscribers('app://config');
+      expect(subs.size).toBe(2);
+      expect(subs.has('sess-1')).toBe(true);
+      expect(subs.has('sess-2')).toBe(true);
+    });
+
+    it('should return empty set for unsubscribed URIs', () => {
+      const subs = registry.getResourceSubscribers('app://unknown');
+      expect(subs.size).toBe(0);
+    });
+
+    it('should unsubscribe a session from a URI', () => {
+      registry.subscribeResource('app://config', 'sess-1');
+      registry.subscribeResource('app://config', 'sess-2');
+      registry.unsubscribeResource('app://config', 'sess-1');
+
+      const subs = registry.getResourceSubscribers('app://config');
+      expect(subs.size).toBe(1);
+      expect(subs.has('sess-2')).toBe(true);
+    });
+
+    it('should clean up empty subscription sets on unsubscribe', () => {
+      registry.subscribeResource('app://config', 'sess-1');
+      registry.unsubscribeResource('app://config', 'sess-1');
+
+      // getResourceSubscribers returns empty set, internal map entry is cleaned up
+      expect(registry.getResourceSubscribers('app://config').size).toBe(0);
+    });
+
+    it('should not throw when unsubscribing from non-existent URI', () => {
+      expect(() => registry.unsubscribeResource('app://nope', 'sess-1')).not.toThrow();
+    });
+
+    it('should remove all subscriptions for a session', () => {
+      registry.subscribeResource('app://a', 'sess-1');
+      registry.subscribeResource('app://b', 'sess-1');
+      registry.subscribeResource('app://a', 'sess-2');
+
+      registry.removeSessionSubscriptions('sess-1');
+
+      expect(registry.getResourceSubscribers('app://a').size).toBe(1);
+      expect(registry.getResourceSubscribers('app://a').has('sess-2')).toBe(true);
+      expect(registry.getResourceSubscribers('app://b').size).toBe(0);
+    });
+
+    it('should notify resource update listeners', () => {
+      const listener = jest.fn();
+      registry.onResourceUpdate(listener);
+
+      registry.notifyResourceUpdated('app://config');
+
+      expect(listener).toHaveBeenCalledWith('app://config');
+    });
+
+    it('should allow unsubscribing from resource update notifications', () => {
+      const listener = jest.fn();
+      const unsub = registry.onResourceUpdate(listener);
+
+      unsub();
+      registry.notifyResourceUpdated('app://config');
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('should isolate errors in resource update listeners', () => {
+      const badListener = jest.fn().mockImplementation(() => { throw new Error('oops'); });
+      const goodListener = jest.fn();
+      registry.onResourceUpdate(badListener);
+      registry.onResourceUpdate(goodListener);
+
+      registry.notifyResourceUpdated('app://config');
+
+      expect(badListener).toHaveBeenCalled();
+      expect(goodListener).toHaveBeenCalledWith('app://config');
     });
   });
 });

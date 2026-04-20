@@ -35,6 +35,12 @@ export interface McpToolContext {
    * No-op when progress is not supported for this request.
    */
   sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
+  /**
+   * Send a structured log message to the MCP client.
+   * Only available when the server is connected via a transport (HTTP/stdio).
+   * The client controls the minimum log level via `logging/setLevel`.
+   */
+  sendLog?: (level: McpLogLevel, data: unknown, logger?: string) => Promise<void>;
 }
 
 /**
@@ -134,8 +140,14 @@ export interface McpToolResult {
   _meta?: Record<string, unknown>;
 }
 
+/** MCP logging levels (RFC 5424 severity + notice). */
+export type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency';
+
 export type McpRegistrationChangeType = 'tool' | 'resource' | 'prompt';
 export type McpRegistrationChangeListener = (type: McpRegistrationChangeType, name: string) => void;
+
+/** Listener called when `notifyResourceUpdated(uri)` is invoked. */
+export type McpResourceUpdateListener = (uri: string) => void;
 
 @Injectable()
 export class McpToolRegistry {
@@ -146,6 +158,8 @@ export class McpToolRegistry {
   private readonly prompts = new Map<string, PromptEntry>();
   private readonly interceptors: McpToolInterceptor[] = [];
   private readonly changeListeners: McpRegistrationChangeListener[] = [];
+  private readonly resourceSubscriptions = new Map<string, Set<string>>();
+  private readonly resourceUpdateListeners: McpResourceUpdateListener[] = [];
   private guardResolver?: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate;
 
   // -- Registration --
@@ -166,6 +180,63 @@ export class McpToolRegistry {
       } catch (err) {
         this.logger.error(`Registration change listener error:`, err);
       }
+    }
+  }
+
+  // -- Resource Subscriptions --
+
+  /** Track a client subscribing to updates for a resource URI. */
+  subscribeResource(uri: string, sessionId: string): void {
+    let sessions = this.resourceSubscriptions.get(uri);
+    if (!sessions) {
+      sessions = new Set();
+      this.resourceSubscriptions.set(uri, sessions);
+    }
+    sessions.add(sessionId);
+  }
+
+  /** Remove a client subscription for a resource URI. */
+  unsubscribeResource(uri: string, sessionId: string): void {
+    const sessions = this.resourceSubscriptions.get(uri);
+    if (sessions) {
+      sessions.delete(sessionId);
+      if (sessions.size === 0) this.resourceSubscriptions.delete(uri);
+    }
+  }
+
+  /** Get all session IDs subscribed to a resource URI. */
+  getResourceSubscribers(uri: string): ReadonlySet<string> {
+    return this.resourceSubscriptions.get(uri) ?? new Set();
+  }
+
+  /**
+   * Notify all subscribers that a resource has been updated.
+   * Call this from your application code when a resource's data changes.
+   */
+  notifyResourceUpdated(uri: string): void {
+    for (const listener of this.resourceUpdateListeners) {
+      try {
+        listener(uri);
+      } catch (err) {
+        this.logger.error(`Resource update listener error:`, err);
+      }
+    }
+  }
+
+  /** Subscribe to resource update notifications. Returns an unsubscribe function. */
+  onResourceUpdate(listener: McpResourceUpdateListener): () => void {
+    this.resourceUpdateListeners.push(listener);
+    return () => {
+      const idx = this.resourceUpdateListeners.indexOf(listener);
+      if (idx >= 0) this.resourceUpdateListeners.splice(idx, 1);
+    };
+  }
+
+  /** Remove all subscriptions for a given session (e.g., on disconnect). */
+  removeSessionSubscriptions(sessionId: string): void {
+    for (const [uri, sessions] of this.resourceSubscriptions) {
+      sessions.delete(sessionId);
+      if (sessions.size === 0) this.resourceSubscriptions.delete(uri);
     }
   }
 
@@ -254,6 +325,7 @@ export class McpToolRegistry {
       sessionId?: string;
       signal?: AbortSignal;
       sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
+      sendLog?: (level: McpLogLevel, data: unknown, logger?: string) => Promise<void>;
     },
   ): Promise<unknown> {
     const entry = this.tools.get(name);
@@ -271,6 +343,7 @@ export class McpToolRegistry {
       sessionId: extra?.sessionId,
       signal: extra?.signal,
       sendProgress: extra?.sendProgress,
+      sendLog: extra?.sendLog,
     };
 
     if (entry.guards?.length) {
@@ -304,6 +377,7 @@ export class McpToolRegistry {
       sessionId: extra?.sessionId,
       signal: extra?.signal,
       sendProgress: extra?.sendProgress,
+      sendLog: extra?.sendLog,
     };
 
     // -- Interceptors --
@@ -327,6 +401,7 @@ export class McpToolRegistry {
       sessionId?: string;
       signal?: AbortSignal;
       sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
+      sendLog?: (level: McpLogLevel, data: unknown, logger?: string) => Promise<void>;
     },
   ): Promise<McpToolResult> {
     try {

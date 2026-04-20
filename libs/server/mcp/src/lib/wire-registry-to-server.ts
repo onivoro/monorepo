@@ -1,5 +1,6 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { McpToolRegistry } from './mcp-tool-registry';
+import { SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { McpToolRegistry, McpLogLevel } from './mcp-tool-registry';
 
 /**
  * Builds the MCP capabilities object from the current registry state.
@@ -7,9 +8,9 @@ import { McpToolRegistry } from './mcp-tool-registry';
  * Sets `listChanged: true` so clients know to expect dynamic updates.
  */
 export function buildCapabilities(registry: McpToolRegistry): Record<string, unknown> {
-  const capabilities: Record<string, unknown> = {};
+  const capabilities: Record<string, unknown> = { logging: {} };
   if (registry.getTools().length > 0) capabilities['tools'] = { listChanged: true };
-  if (registry.getResources().length > 0) capabilities['resources'] = { listChanged: true };
+  if (registry.getResources().length > 0) capabilities['resources'] = { subscribe: true, listChanged: true };
   if (registry.getPrompts().length > 0) capabilities['prompts'] = { listChanged: true };
   return capabilities;
 }
@@ -53,6 +54,8 @@ function wireToolToServer(registry: McpToolRegistry, server: McpServer, toolName
         sessionId: extra?.sessionId,
         signal: extra?.signal,
         sendProgress: buildSendProgress(server, extra),
+        sendLog: (level: McpLogLevel, data: unknown, logger?: string) =>
+          server.sendLoggingMessage({ level, data, ...(logger != null && { logger }) }),
       }) as any,
   );
 }
@@ -72,7 +75,10 @@ function wireResourceToServer(registry: McpToolRegistry, server: McpServer, reso
   if (metadata.isTemplate) {
     server.registerResource(
       metadata.name,
-      new ResourceTemplate(metadata.uri, { list: metadata.listCallback ?? undefined }),
+      new ResourceTemplate(metadata.uri, {
+        list: metadata.listCallback ?? undefined,
+        ...(metadata.completeCallbacks && { complete: metadata.completeCallbacks }),
+      }),
       resourceConfig,
       handler,
     );
@@ -120,9 +126,38 @@ export function wireRegistryToServer(registry: McpToolRegistry, server: McpServe
     wirePromptToServer(registry, server, metadata.name);
   }
 
+  // Wire resource subscription handlers on the low-level Server.
+  // The SDK doesn't auto-handle subscribe/unsubscribe — we track subscriptions on the registry.
+  server.server.setRequestHandler(SubscribeRequestSchema, (request, extra) => {
+    const uri = request.params.uri;
+    const sessionId = (extra as any)?.sessionId;
+    if (uri && sessionId) {
+      registry.subscribeResource(uri, sessionId);
+    }
+    return {};
+  });
+
+  server.server.setRequestHandler(UnsubscribeRequestSchema, (request, extra) => {
+    const uri = request.params.uri;
+    const sessionId = (extra as any)?.sessionId;
+    if (uri && sessionId) {
+      registry.unsubscribeResource(uri, sessionId);
+    }
+    return {};
+  });
+
+  // Forward resource update notifications to the MCP client.
+  const unsubResourceUpdates = registry.onResourceUpdate(async (uri) => {
+    try {
+      await server.server.sendResourceUpdated({ uri });
+    } catch (err) {
+      // Swallow errors — the client may have disconnected.
+    }
+  });
+
   // Subscribe to future changes so dynamically registered items are wired automatically.
   // The SDK's registerTool/registerResource/registerPrompt send listChanged notifications.
-  return registry.onRegistrationChange((type, name) => {
+  const unsubRegistrationChanges = registry.onRegistrationChange((type, name) => {
     switch (type) {
       case 'tool':
         wireToolToServer(registry, server, name);
@@ -135,4 +170,9 @@ export function wireRegistryToServer(registry: McpToolRegistry, server: McpServe
         break;
     }
   });
+
+  return () => {
+    unsubRegistrationChanges();
+    unsubResourceUpdates();
+  };
 }

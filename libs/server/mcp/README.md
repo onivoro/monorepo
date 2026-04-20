@@ -965,7 +965,7 @@ libs/mcp/emojeez/           ← @McpTool adapters, formats results as markdown
 
 This separation means the same business logic can be consumed by MCP tools, REST APIs, CLI commands, or tests — each with its own presentation layer.
 
-It also gives you a natural place to use the more advanced parts of the MCP spec — progress reporting, cancellation, session tracking — without polluting business logic with MCP-specific concerns. When `@McpTool` is bolted directly onto an existing service method, that method's signature can't change to accept `McpToolContext` without affecting all its other callers. A dedicated adapter method owns the MCP surface area and can freely use the full context:
+It also gives you a natural place to use the more advanced parts of the MCP spec — progress reporting, cancellation, session tracking — without polluting business logic with MCP-specific concerns. When `@McpTool` is bolted directly onto an existing service method, that method's signature can't change to accept `McpToolContext` without affecting all its other callers (unless you make it an optional last parameter but this still dirties your pure business logic with MCP specifics). A dedicated adapter method owns the MCP surface area and can freely use the full context:
 
 ```typescript
 // libs/server/emojeez — business logic (no MCP dependency)

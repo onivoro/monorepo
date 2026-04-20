@@ -5,10 +5,17 @@ import { z } from 'zod';
 const mockRegisterTool = jest.fn();
 const mockRegisterResource = jest.fn();
 const mockRegisterPrompt = jest.fn();
+const mockSetRequestHandler = jest.fn();
+const mockSendResourceUpdated = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   McpServer: jest.fn(),
   ResourceTemplate: jest.fn().mockImplementation((uri: string) => ({ uri })),
+}));
+
+jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
+  SubscribeRequestSchema: { method: 'resources/subscribe' },
+  UnsubscribeRequestSchema: { method: 'resources/unsubscribe' },
 }));
 
 function createMockServer() {
@@ -16,6 +23,11 @@ function createMockServer() {
     registerTool: mockRegisterTool,
     registerResource: mockRegisterResource,
     registerPrompt: mockRegisterPrompt,
+    server: {
+      setRequestHandler: mockSetRequestHandler,
+      sendResourceUpdated: mockSendResourceUpdated,
+      notification: jest.fn().mockResolvedValue(undefined),
+    },
   } as any;
 }
 
@@ -26,14 +38,14 @@ describe('buildCapabilities', () => {
     registry = new McpToolRegistry();
   });
 
-  it('should return empty object when nothing is registered', () => {
-    expect(buildCapabilities(registry)).toEqual({});
+  it('should always include logging capability', () => {
+    expect(buildCapabilities(registry)).toEqual({ logging: {} });
   });
 
   it('should include tools key with listChanged when tools are registered', () => {
     registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
     const caps = buildCapabilities(registry);
-    expect(caps).toEqual({ tools: { listChanged: true } });
+    expect(caps).toEqual({ logging: {}, tools: { listChanged: true } });
   });
 
   it('should include all keys with listChanged when tools, resources, and prompts are registered', () => {
@@ -42,8 +54,9 @@ describe('buildCapabilities', () => {
     registry.registerPrompt({ name: 'prompt' }, jest.fn());
     const caps = buildCapabilities(registry);
     expect(caps).toEqual({
+      logging: {},
       tools: { listChanged: true },
-      resources: { listChanged: true },
+      resources: { subscribe: true, listChanged: true },
       prompts: { listChanged: true },
     });
   });
@@ -172,7 +185,7 @@ describe('wireRegistryToServer', () => {
 
     const mockNotification = jest.fn().mockResolvedValue(undefined);
     const server = createMockServer();
-    server.server = { notification: mockNotification };
+    server.server.notification = mockNotification;
 
     wireRegistryToServer(registry, server);
 
@@ -210,6 +223,51 @@ describe('wireRegistryToServer', () => {
 
     const context = handler.mock.calls[0][1];
     expect(context.sendProgress).toBeUndefined();
+  });
+
+  it('should provide sendLog that delegates to server.sendLoggingMessage', async () => {
+    const handler = jest.fn().mockResolvedValue('result');
+    registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+    const mockSendLoggingMessage = jest.fn().mockResolvedValue(undefined);
+    const server = createMockServer();
+    server.sendLoggingMessage = mockSendLoggingMessage;
+
+    wireRegistryToServer(registry, server);
+
+    const callback = mockRegisterTool.mock.calls[0][2];
+    await callback({}, { signal: new AbortController().signal });
+
+    const context = handler.mock.calls[0][1];
+    expect(context.sendLog).toBeDefined();
+
+    await context.sendLog('info', { message: 'test' }, 'my-tool');
+    expect(mockSendLoggingMessage).toHaveBeenCalledWith({
+      level: 'info',
+      data: { message: 'test' },
+      logger: 'my-tool',
+    });
+  });
+
+  it('should omit logger from sendLog when not provided', async () => {
+    const handler = jest.fn().mockResolvedValue('result');
+    registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+    const mockSendLoggingMessage = jest.fn().mockResolvedValue(undefined);
+    const server = createMockServer();
+    server.sendLoggingMessage = mockSendLoggingMessage;
+
+    wireRegistryToServer(registry, server);
+
+    const callback = mockRegisterTool.mock.calls[0][2];
+    await callback({}, { signal: new AbortController().signal });
+
+    const context = handler.mock.calls[0][1];
+    await context.sendLog('error', 'something broke');
+    expect(mockSendLoggingMessage).toHaveBeenCalledWith({
+      level: 'error',
+      data: 'something broke',
+    });
   });
 
   it('should register static resources with URI string', () => {
@@ -268,6 +326,37 @@ describe('wireRegistryToServer', () => {
 
     // ResourceTemplate should have been called with the listCallback
     expect(ResourceTemplate).toHaveBeenCalledWith('item://{id}', { list: listCallback });
+  });
+
+  it('should pass completeCallbacks to ResourceTemplate when provided', () => {
+    const { ResourceTemplate } = require('@modelcontextprotocol/sdk/server/mcp.js');
+    const completeId = jest.fn().mockResolvedValue(['item-1', 'item-2']);
+
+    registry.registerResource(
+      { name: 'item', uri: 'item://{id}', isTemplate: true, completeCallbacks: { id: completeId } },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    expect(ResourceTemplate).toHaveBeenCalledWith('item://{id}', {
+      list: undefined,
+      complete: { id: completeId },
+    });
+  });
+
+  it('should omit complete from ResourceTemplate when completeCallbacks not provided', () => {
+    const { ResourceTemplate } = require('@modelcontextprotocol/sdk/server/mcp.js');
+
+    registry.registerResource(
+      { name: 'item', uri: 'item://{id}', isTemplate: true },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    // Should only have list, no complete key
+    expect(ResourceTemplate).toHaveBeenCalledWith('item://{id}', { list: undefined });
   });
 
   it('should pass prompt title to the server when present', () => {
@@ -336,5 +425,83 @@ describe('wireRegistryToServer', () => {
 
     registry.registerTool({ name: 'ignored-tool', description: 'Should not wire' }, jest.fn());
     expect(mockRegisterTool).not.toHaveBeenCalled();
+  });
+
+  it('should register subscribe and unsubscribe request handlers', () => {
+    const server = createMockServer();
+    wireRegistryToServer(registry, server);
+
+    expect(mockSetRequestHandler).toHaveBeenCalledTimes(2);
+    expect(mockSetRequestHandler).toHaveBeenCalledWith(
+      { method: 'resources/subscribe' },
+      expect.any(Function),
+    );
+    expect(mockSetRequestHandler).toHaveBeenCalledWith(
+      { method: 'resources/unsubscribe' },
+      expect.any(Function),
+    );
+  });
+
+  it('should track subscriptions via subscribe handler', () => {
+    const server = createMockServer();
+    wireRegistryToServer(registry, server);
+
+    // Find the subscribe handler
+    const subscribeCall = mockSetRequestHandler.mock.calls.find(
+      (c: any[]) => c[0].method === 'resources/subscribe',
+    );
+    const subscribeHandler = subscribeCall[1];
+
+    subscribeHandler(
+      { params: { uri: 'app://config' } },
+      { sessionId: 'sess-1' },
+    );
+
+    expect(registry.getResourceSubscribers('app://config').has('sess-1')).toBe(true);
+  });
+
+  it('should remove subscriptions via unsubscribe handler', () => {
+    const server = createMockServer();
+    wireRegistryToServer(registry, server);
+
+    // Subscribe first
+    registry.subscribeResource('app://config', 'sess-1');
+
+    // Find the unsubscribe handler
+    const unsubscribeCall = mockSetRequestHandler.mock.calls.find(
+      (c: any[]) => c[0].method === 'resources/unsubscribe',
+    );
+    const unsubscribeHandler = unsubscribeCall[1];
+
+    unsubscribeHandler(
+      { params: { uri: 'app://config' } },
+      { sessionId: 'sess-1' },
+    );
+
+    expect(registry.getResourceSubscribers('app://config').size).toBe(0);
+  });
+
+  it('should forward resource update notifications to server', async () => {
+    const server = createMockServer();
+    wireRegistryToServer(registry, server);
+
+    registry.notifyResourceUpdated('app://config');
+
+    // Give the async handler time to execute
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(server.server.sendResourceUpdated).toHaveBeenCalledWith({ uri: 'app://config' });
+  });
+
+  it('should stop forwarding resource updates after unsubscribe', async () => {
+    const server = createMockServer();
+    const unsub = wireRegistryToServer(registry, server);
+
+    unsub();
+
+    registry.notifyResourceUpdated('app://config');
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(server.server.sendResourceUpdated).not.toHaveBeenCalled();
   });
 });

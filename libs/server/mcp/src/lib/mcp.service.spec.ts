@@ -19,8 +19,19 @@ jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
     registerPrompt: mockServerRegisterPrompt,
     connect: mockServerConnect,
     close: mockServerClose,
+    server: {
+      setRequestHandler: jest.fn(),
+      sendResourceUpdated: jest.fn().mockResolvedValue(undefined),
+      notification: jest.fn().mockResolvedValue(undefined),
+    },
+    sendLoggingMessage: jest.fn().mockResolvedValue(undefined),
   })),
   ResourceTemplate: jest.fn(),
+}));
+
+jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
+  SubscribeRequestSchema: { method: 'resources/subscribe' },
+  UnsubscribeRequestSchema: { method: 'resources/unsubscribe' },
 }));
 
 jest.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
