@@ -58,6 +58,20 @@ export class McpService implements OnModuleDestroy {
   }
 
   async handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    // -- DNS rebinding protection (MCP spec 2025-03-26+) --
+    if (this.config.allowedOrigins) {
+      const origin = req.headers['origin'];
+      if (origin && !this.config.allowedOrigins.includes(origin)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          error: { code: -32600, message: `Origin "${origin}" is not allowed` },
+          id: null,
+        }));
+        return;
+      }
+    }
+
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
     try {

@@ -654,6 +654,10 @@ McpHttpModule.registerAndServeHttp({
   routePrefix: 'api/v1',      // Optional. Prefixes the /mcp route (becomes /api/v1/mcp).
   sessionTtlMinutes: 30,      // Optional. Idle session timeout. Default: 30.
   serverOptions: {},           // Optional. Passed to McpServer from @modelcontextprotocol/sdk.
+  allowedOrigins: [            // Optional. DNS rebinding protection (see below).
+    'http://localhost:3000',
+    'https://my-app.example.com',
+  ],
 });
 ```
 
@@ -708,6 +712,24 @@ async deleteData(params: z.infer<typeof schema>) { ... }
 ```
 
 For custom authorization logic beyond scope checking, implement a `McpCanActivate` guard — see [Guards](#guards).
+
+## DNS rebinding protection
+
+The MCP spec (2025-03-26+) recommends that Streamable HTTP servers validate the `Origin` header to prevent DNS rebinding attacks — where a malicious website makes requests to a locally-running MCP server from the browser.
+
+Enable it by setting `allowedOrigins` in the HTTP module config:
+
+```typescript
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  allowedOrigins: ['http://localhost:3000', 'https://my-app.example.com'],
+});
+```
+
+When `allowedOrigins` is set:
+- Requests **with** an `Origin` header not in the list are rejected with `403 Forbidden`.
+- Requests **without** an `Origin` header are always allowed — non-browser MCP clients (Claude Desktop, Claude Code, curl, MCP Inspector) don't send `Origin`.
+- When not set, Origin validation is disabled (backward-compatible default).
 
 ## CORS
 

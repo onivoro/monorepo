@@ -204,6 +204,66 @@ describe('McpService', () => {
     });
   });
 
+  describe('DNS rebinding protection', () => {
+    let protectedService: McpService;
+
+    beforeEach(() => {
+      protectedService = new McpService(
+        { ...config, allowedOrigins: ['http://localhost:3000', 'https://app.example.com'] } as any,
+        registry,
+      );
+    });
+
+    afterEach(async () => {
+      await protectedService.onModuleDestroy();
+    });
+
+    it('should reject requests with disallowed Origin', async () => {
+      const req = mockReq({ headers: { origin: 'https://evil.com' } });
+      const res = mockRes();
+
+      await protectedService.handleRequest(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(403, { 'Content-Type': 'application/json' });
+      const body = JSON.parse(res.end.mock.calls[0][0]);
+      expect(body.error.message).toContain('not allowed');
+    });
+
+    it('should allow requests with an allowed Origin', async () => {
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
+      const req = mockReq({ headers: { origin: 'http://localhost:3000' } });
+      const res = mockRes();
+
+      await protectedService.handleRequest(req, res);
+
+      // Should not get 403 — proceeds to create session
+      expect(res.writeHead).not.toHaveBeenCalledWith(403, expect.anything());
+      expect(mockTransportHandleRequest).toHaveBeenCalled();
+    });
+
+    it('should allow requests with no Origin header', async () => {
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
+      const req = mockReq();
+      const res = mockRes();
+
+      await protectedService.handleRequest(req, res);
+
+      expect(res.writeHead).not.toHaveBeenCalledWith(403, expect.anything());
+      expect(mockTransportHandleRequest).toHaveBeenCalled();
+    });
+
+    it('should skip validation when allowedOrigins is not configured', async () => {
+      // Default service has no allowedOrigins
+      const req = mockReq({ headers: { origin: 'https://anything.com' } });
+      const res = mockRes();
+
+      await service.handleRequest(req, res);
+
+      // Should not get 403
+      expect(res.writeHead).not.toHaveBeenCalledWith(403, expect.anything());
+    });
+  });
+
   describe('session TTL', () => {
     it('should use custom TTL from config', () => {
       const customService = new McpService(
