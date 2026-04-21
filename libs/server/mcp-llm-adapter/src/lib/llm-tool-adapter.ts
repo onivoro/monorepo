@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { McpToolRegistry, McpAuthInfo, mcpSchemaToJsonSchema } from '@onivoro/server-mcp';
 import {
   LLM_ADAPTER_CONFIG,
@@ -7,19 +7,31 @@ import {
 } from './llm-adapter.config';
 
 @Injectable()
-export class LlmToolAdapter<T = unknown> {
+export class LlmToolAdapter<T = unknown> implements OnModuleInit {
+  private nameMapCache: Map<string, string> | null = null;
+  private unsubscribe?: () => void;
+
   constructor(
     private readonly registry: McpToolRegistry,
     @Inject(LLM_ADAPTER_CONFIG)
     private readonly config: LlmAdapterConfig<T>,
   ) {}
 
-  private buildNameMap(): Map<string, string> {
-    const map = new Map<string, string>();
-    for (const { metadata } of this.registry.getTools()) {
-      map.set(resolveProviderName(metadata, this.config), metadata.name);
+  onModuleInit() {
+    this.unsubscribe = this.registry.onRegistrationChange(() => {
+      this.nameMapCache = null;
+    });
+  }
+
+  private getNameMap(): Map<string, string> {
+    if (!this.nameMapCache) {
+      const map = new Map<string, string>();
+      for (const { metadata } of this.registry.getTools()) {
+        map.set(resolveProviderName(metadata, this.config), metadata.name);
+      }
+      this.nameMapCache = map;
     }
-    return map;
+    return this.nameMapCache;
   }
 
   toProviderTools(): T[] {
@@ -33,7 +45,7 @@ export class LlmToolAdapter<T = unknown> {
   }
 
   resolveProviderToolName(providerName: string): string | undefined {
-    return this.buildNameMap().get(providerName);
+    return this.getNameMap().get(providerName);
   }
 
   async executeToolForProvider(
@@ -41,7 +53,7 @@ export class LlmToolAdapter<T = unknown> {
     params: Record<string, unknown>,
     authInfo?: McpAuthInfo,
   ): Promise<string> {
-    const mcpName = this.buildNameMap().get(providerName);
+    const mcpName = this.getNameMap().get(providerName);
     if (!mcpName) {
       throw new Error(
         `No MCP tool found for provider name "${providerName}".`,

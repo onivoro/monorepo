@@ -1,10 +1,10 @@
 export { McpHttpModule } from './lib/mcp.module';
 export { McpService } from './lib/mcp.service';
 export { McpStdioModule } from './lib/mcp-stdio.module';
-export { McpModuleConfig, McpServerMetadata } from './lib/mcp-config.interface';
-export { McpStdioConfig } from './lib/mcp-stdio-config.interface';
+export { McpModuleConfig, McpModuleAsyncOptions, McpServerMetadata } from './lib/mcp-config.interface';
+export { McpStdioConfig, McpStdioAsyncOptions } from './lib/mcp-stdio-config.interface';
 export { MCP_MODULE_CONFIG, MCP_STDIO_CONFIG, MCP_TOOL_METADATA, MCP_RESOURCE_METADATA, MCP_PROMPT_METADATA, MCP_GUARD_METADATA, MCP_CORS_ALLOWED_HEADERS, MCP_CORS_EXPOSED_HEADERS, MCP_CORS_METHODS, MCP_CORS_CONFIG } from './lib/mcp.constants';
-export { McpTool, McpResource, McpPrompt, McpToolMetadata, McpToolOptions, McpToolAnnotations, McpResourceMetadata, McpPromptMetadata } from './lib/mcp.decorator';
+export { McpTool, McpResource, McpPrompt, McpToolMetadata, McpToolOptions, McpToolAnnotations, McpIcon, McpResourceAnnotations, McpResourceMetadata, McpPromptMetadata } from './lib/mcp.decorator';
 export { McpToolRegistry, McpToolResult, McpContentBlock, McpTextContent, McpImageContent, McpAudioContent, McpEmbeddedResource, McpResourceLink, McpAuthInfo, McpToolContext, McpToolInterceptor, McpCanActivate, McpGuardMetadata, McpRegistrationChangeType, McpRegistrationChangeListener, McpResourceUpdateListener, McpLogLevel } from './lib/mcp-tool-registry';
 export { McpGuard, McpScopeGuard } from './lib/mcp-guard';
 export { McpRegistryModule } from './lib/mcp-tool-registry.module';

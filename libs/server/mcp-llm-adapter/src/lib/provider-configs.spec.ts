@@ -37,6 +37,17 @@ describe('provider-configs', () => {
       expect(tools[0].toolSpec.inputSchema.json).toHaveProperty('properties');
     });
 
+    it('should sanitize all non-alphanumeric/underscore characters', () => {
+      registry.registerTool(
+        { name: 'my.tool:v2-beta', description: 'd' },
+        jest.fn(),
+      );
+      const adapter = new LlmToolAdapter(registry, BEDROCK_CONVERSE_CONFIG);
+      const tools = adapter.toProviderTools();
+      const sanitized = tools.find((t) => t.toolSpec.name === 'my_tool_v2_beta');
+      expect(sanitized).toBeDefined();
+    });
+
     it('should use explicit bedrock alias', () => {
       registry.registerTool(
         { name: 'other', description: 'd', aliases: { bedrock: 'myAlias' } },

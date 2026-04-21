@@ -2,7 +2,7 @@ import { All, Controller, DynamicModule, Logger, Module, OnModuleInit, Req, Res 
 import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { Request, Response } from 'express';
-import { McpModuleConfig } from './mcp-config.interface';
+import { McpModuleConfig, McpModuleAsyncOptions } from './mcp-config.interface';
 import { MCP_MODULE_CONFIG } from './mcp.constants';
 import { McpService } from './mcp.service';
 import { McpToolRegistry } from './mcp-tool-registry';
@@ -42,6 +42,25 @@ export class McpHttpModule implements OnModuleInit {
       imports: [DiscoveryModule],
       controllers: [createMcpController(config.routePrefix)],
       providers: [McpToolRegistry, McpService, McpScopeGuard, { provide: MCP_MODULE_CONFIG, useValue: config }],
+      exports: [McpService, McpToolRegistry],
+    };
+  }
+
+  static registerAndServeHttpAsync(options: McpModuleAsyncOptions): DynamicModule {
+    return {
+      module: McpHttpModule,
+      imports: [DiscoveryModule, ...(options.imports || [])],
+      controllers: [createMcpController()],
+      providers: [
+        McpToolRegistry,
+        McpService,
+        McpScopeGuard,
+        {
+          provide: MCP_MODULE_CONFIG,
+          useFactory: options.useFactory,
+          inject: options.inject || [],
+        },
+      ],
       exports: [McpService, McpToolRegistry],
     };
   }

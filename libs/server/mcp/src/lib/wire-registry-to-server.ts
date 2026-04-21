@@ -53,6 +53,7 @@ function wireToolToServer(
       ...(metadata.outputSchema && { outputSchema: metadata.outputSchema }),
       ...(metadata.title && { title: metadata.title }),
       ...(metadata.annotations && { annotations: metadata.annotations }),
+      ...(metadata.icons && { icons: metadata.icons }),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (params: any, extra: any) =>
@@ -84,6 +85,8 @@ function wireResourceToServer(registry: McpToolRegistry, server: McpServer, reso
   if (metadata.description) resourceConfig['description'] = metadata.description;
   if (metadata.mimeType) resourceConfig['mimeType'] = metadata.mimeType;
   if (metadata.size != null) resourceConfig['size'] = metadata.size;
+  if (metadata.icons) resourceConfig['icons'] = metadata.icons;
+  if (metadata.annotations) resourceConfig['annotations'] = metadata.annotations;
 
   if (metadata.isTemplate) {
     server.registerResource(
@@ -112,6 +115,8 @@ function wirePromptToServer(registry: McpToolRegistry, server: McpServer, prompt
       description: metadata.description,
       argsSchema: metadata.argsSchema,
       ...(metadata.title && { title: metadata.title }),
+      ...(metadata.icons && { icons: metadata.icons }),
+      ...(metadata.completeCallbacks && { complete: metadata.completeCallbacks }),
     },
     handler,
   );

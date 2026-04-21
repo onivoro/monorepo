@@ -12,34 +12,19 @@
 
 ## Integrity Issues (Bugs / Correctness Problems)
 
-### 1. `McpToolOptions` detection is fragile
+### ~~1. `McpToolOptions` detection is fragile~~ RESOLVED
 
 **File**: `mcp.decorator.ts:100`
 
-```ts
-if (aliasesOrOptions && ('aliases' in aliasesOrOptions || 'annotations' in aliasesOrOptions || 'title' in aliasesOrOptions))
-```
-
-If someone passes `{ outputSchema: z.object({...}) }` without any of the three checked keys, it falls into the positional branch and the `outputSchema` is silently treated as an `aliases` `Record<string, string>`. The check must include `'outputSchema' in aliasesOrOptions`.
-
-**Severity**: HIGH — silent data corruption of metadata.
+The `in` check now includes all `McpToolOptions` keys: `aliases`, `annotations`, `title`, `outputSchema`, and `icons`. Options objects with any recognized key are correctly routed to the options branch.
 
 ---
 
-### 2. `description` not passed to McpServer constructor
+### ~~2. `description` not passed to McpServer constructor~~ RESOLVED
 
-**Files**: `mcp.service.ts:47`, `mcp-stdio.module.ts:67`
+**Files**: `mcp.service.ts`, `mcp-stdio.module.ts`
 
-```ts
-const server = new McpServer(
-  { name: this.config.metadata.name, version: this.config.metadata.version },
-  ...
-);
-```
-
-`McpServerMetadata` has a `description` field, but it's never forwarded to the SDK's `ServerInfo`. Clients that display server descriptions will see nothing.
-
-**Severity**: LOW — cosmetic, but easy fix.
+Both modules now forward `metadata.description` to the SDK's `McpServer` constructor via conditional spread.
 
 ---
 
@@ -82,13 +67,11 @@ The subscribe/unsubscribe handlers only act when both `uri` and `sessionId` are 
 
 ---
 
-### 6. `LlmToolAdapter.buildNameMap()` rebuilds on every call
+### ~~6. `LlmToolAdapter.buildNameMap()` rebuilds on every call~~ RESOLVED
 
-**File**: `llm-tool-adapter.ts:17-23`
+**File**: `llm-tool-adapter.ts`
 
-O(n) on every `executeToolForProvider` and `resolveProviderToolName` call. Not a bug, but a scaling issue for servers with many tools under high call frequency.
-
-**Severity**: LOW (performance).
+The name map is now cached and automatically invalidated when the registry fires a registration change event. The adapter implements `OnModuleInit` to subscribe to the registry's `onRegistrationChange` listener.
 
 ---
 
@@ -96,26 +79,26 @@ O(n) on every `executeToolForProvider` and `resolveProviderToolName` call. Not a
 
 ### HIGH PRIORITY
 
-| Gap | Spec Requirement | Current State |
-|-----|-----------------|---------------|
-| **Prompt argument completions** | `completion/complete` with `ref: { type: "ref/prompt" }` allows clients to get autocomplete suggestions for prompt arguments | `@McpPrompt` has no completion support. Resource template completions work via `completeCallbacks`, but prompts have no equivalent. |
-| **`icons` field** | Tools, resources, and prompts can have `icons: Array<{ url, mediaType?, size? }>` for client UI rendering | Not in metadata types. Added in 2025-11-25 spec. |
-| **Async module factories** | Production configs often come from environment/secrets at runtime | Both modules only accept static config. No `registerAndServeHttpAsync({ useFactory, inject })` pattern. |
+| Gap | Spec Requirement | Status |
+|-----|-----------------|--------|
+| ~~**Prompt argument completions**~~ | `completion/complete` with `ref: { type: "ref/prompt" }` allows clients to get autocomplete suggestions for prompt arguments | **RESOLVED** — `McpPromptMetadata.completeCallbacks` added, wired to SDK's `registerPrompt` as `complete` config. |
+| ~~**`icons` field**~~ | Tools, resources, and prompts can have `icons: Array<{ url, mediaType?, size? }>` for client UI rendering | **RESOLVED** — `McpIcon` interface added. `icons` supported on `McpToolMetadata`, `McpResourceMetadata`, `McpPromptMetadata`, and `McpToolOptions`. All wired through to SDK registration. |
+| ~~**Async module factories**~~ | Production configs often come from environment/secrets at runtime | **RESOLVED** — `registerAndServeHttpAsync()` and `registerAndServeStdioAsync()` added with `{ imports, inject, useFactory }` pattern. `McpModuleAsyncOptions` and `McpStdioAsyncOptions` exported. |
 
 ### MEDIUM PRIORITY
 
-| Gap | Spec Requirement | Current State |
-|-----|-----------------|---------------|
-| **Resource `annotations`** | Resources can have `audience`, `priority`, and `lastModified` annotations | Not exposed in `McpResourceMetadata`. |
-| **Tasks (experimental)** | Long-running tools return `CreateTaskResult`. Status polling, cancellation, notifications via `ExperimentalServerTasks`. | Not implemented. Experimental in SDK. |
+| Gap | Spec Requirement | Status |
+|-----|-----------------|--------|
+| ~~**Resource `annotations`**~~ | Resources can have `audience`, `priority`, and `lastModified` annotations | **RESOLVED** — `McpResourceAnnotations` interface added to `McpResourceMetadata`. Wired through to SDK resource config. |
+| **Tasks (experimental)** | Long-running tools return `CreateTaskResult`. Status polling, cancellation, notifications via `ExperimentalServerTasks`. | Not implemented. Experimental in SDK — defer until stable. |
 | **Resumability config** | SSE streams can have event IDs. Client reconnects with `Last-Event-ID` for replay. SDK supports with event store config. | Not exposed in module config. |
 | **Sampling with tools** | `sampling/createMessage` can include a `tools` array and `toolChoice` for multi-turn agentic loops | `createMessage` is a raw passthrough (`Record<string, unknown>`), which works but provides no typed helper. |
 | **`MCP-Protocol-Version` validation** | After init, clients include `MCP-Protocol-Version` header. Server should validate. | Header is in CORS allowed list but not validated by `McpService`. SDK transport likely handles this internally. |
 
 ### LOW PRIORITY
 
-| Gap | Spec Requirement | Current State |
-|-----|-----------------|---------------|
+| Gap | Spec Requirement | Status |
+|-----|-----------------|--------|
 | **URL-mode elicitation notifications** | `notifications/elicitation/complete` for URL-mode flows | Passthrough via `elicitInput` callback; SDK handles internally. |
 | **Error code `-32002`** | `ResourceNotFound` for unknown resource URIs | Delegated to SDK. |
 | **`ping`** | Server responds to `ping` requests | Handled by SDK's low-level `Server` automatically. |
@@ -127,9 +110,9 @@ O(n) on every `executeToolForProvider` and `resolveProviderToolName` call. Not a
 
 | Feature | Implementation |
 |---------|---------------|
-| Tools (input schema, output schema, annotations, aliases) | `@McpTool` decorator + registry |
-| Resources (static + templates with completion) | `@McpResource` decorator + `completeCallbacks` |
-| Prompts | `@McpPrompt` decorator |
+| Tools (input schema, output schema, annotations, aliases, icons) | `@McpTool` decorator + registry |
+| Resources (static + templates with completion, icons, annotations) | `@McpResource` decorator + `completeCallbacks` |
+| Prompts (with argument completions and icons) | `@McpPrompt` decorator + `completeCallbacks` |
 | Progress reporting | `sendProgress` on `McpToolContext` |
 | Logging | `sendLog` on `McpToolContext` |
 | Sampling | `createMessage` on `McpToolContext` |
@@ -147,6 +130,8 @@ O(n) on every `executeToolForProvider` and `resolveProviderToolName` call. Not a
 | Multiple content types | `McpContentBlock` union (text, image, audio, resource, resource_link) |
 | Structured output | `outputSchema` + `structuredContent` in results |
 | Server instructions | `metadata.instructions` merged into `ServerOptions` |
+| Server description | `metadata.description` forwarded to SDK `ServerInfo` |
+| Async module config | `registerAndServeHttpAsync` / `registerAndServeStdioAsync` |
 
 ---
 
@@ -159,7 +144,7 @@ O(n) on every `executeToolForProvider` and `resolveProviderToolName` call. Not a
 3. **Dynamic wiring** — `onRegistrationChange` + `wireRegistryToServer` enables hot-registration after init.
 4. **Enable/disable delegate** — Avoids leaking SDK-specific `RegisteredTool` types into the transport-agnostic registry.
 5. **Session subscription cleanup** — Proper memory leak prevention on disconnect.
-6. **LLM adapter** — Elegant "define once, consume everywhere" with per-provider aliases and name sanitization.
+6. **LLM adapter** — Elegant "define once, consume everywhere" with per-provider aliases, name sanitization, and cached name maps.
 
 ### Design Concerns
 
@@ -175,35 +160,35 @@ O(n) on every `executeToolForProvider` and `resolveProviderToolName` call. Not a
 
 ## LLM Adapter Gaps
 
-| Issue | Detail |
-|-------|--------|
-| **No output schema forwarding** | Some LLM APIs (OpenAI `response_format`, Claude `tool_result_schema`) support structured output validation. Adapter only forwards `inputSchema`. |
-| **No streaming support** | `executeToolForProvider` returns a complete string. No incremental path for streaming tool results. |
-| **No tool-call-id handling** | LLM APIs (OpenAI, Claude) require correlating tool calls to responses via IDs. Adapter doesn't help with this. |
-| **No batch execution** | LLMs can request multiple tool calls in one turn. No `executeMultiple` method. |
-| **Bedrock name sanitization too narrow** | `replace(/-/g, '_')` handles hyphens but not dots, colons, or spaces. Bedrock requires `[a-zA-Z0-9_]+`. |
-| **Name map not cached** | `buildNameMap()` is O(n) on every call. Should cache and invalidate on registration change. |
+| Issue | Detail | Status |
+|-------|--------|--------|
+| **No output schema forwarding** | Some LLM APIs (OpenAI `response_format`, Claude `tool_result_schema`) support structured output validation. Adapter only forwards `inputSchema`. | Open |
+| **No streaming support** | `executeToolForProvider` returns a complete string. No incremental path for streaming tool results. | Open |
+| **No tool-call-id handling** | LLM APIs (OpenAI, Claude) require correlating tool calls to responses via IDs. Adapter doesn't help with this. | Open |
+| **No batch execution** | LLMs can request multiple tool calls in one turn. No `executeMultiple` method. | Open |
+| ~~**Bedrock name sanitization too narrow**~~ | `replace(/-/g, '_')` handles hyphens but not dots, colons, or spaces. Bedrock requires `[a-zA-Z0-9_]+`. | **RESOLVED** — sanitization now uses `replace(/[^a-zA-Z0-9_]/g, '_')` for both Bedrock and Gemini configs. |
+| ~~**Name map not cached**~~ | `buildNameMap()` is O(n) on every call. Should cache and invalidate on registration change. | **RESOLVED** — cached with automatic invalidation via `onRegistrationChange` subscription. |
 
 ---
 
 ## Recommended Actions
 
-### Critical (correctness)
+### ~~Critical (correctness)~~ ALL RESOLVED
 
-1. Fix `McpToolOptions` detection to include `'outputSchema'` in the check
-2. Pass `description` from `McpServerMetadata` to `McpServer()` constructor
+1. ~~Fix `McpToolOptions` detection to include `'outputSchema'` in the check~~ **DONE**
+2. ~~Pass `description` from `McpServerMetadata` to `McpServer()` constructor~~ **DONE**
 
-### High (spec compliance / production readiness)
+### ~~High (spec compliance / production readiness)~~ ALL RESOLVED
 
-3. Add `icons` support to `McpToolMetadata`, `McpResourceMetadata`, `McpPromptMetadata`
-4. Add async module factory methods (`registerAndServeHttpAsync`, `registerAndServeStdioAsync`)
-5. Add prompt argument completion callback support to `@McpPrompt`
+3. ~~Add `icons` support to `McpToolMetadata`, `McpResourceMetadata`, `McpPromptMetadata`~~ **DONE**
+4. ~~Add async module factory methods (`registerAndServeHttpAsync`, `registerAndServeStdioAsync`)~~ **DONE**
+5. ~~Add prompt argument completion callback support to `@McpPrompt`~~ **DONE**
 
 ### Medium (improvements)
 
-6. Cache `buildNameMap()` in LLM adapter (invalidate on registry `onRegistrationChange`)
-7. Expand Bedrock name sanitization to strip all non-`[a-zA-Z0-9_]` characters
-8. Add resource `annotations` (audience, priority, lastModified) to `McpResourceMetadata`
+6. ~~Cache `buildNameMap()` in LLM adapter (invalidate on registry `onRegistrationChange`)~~ **DONE**
+7. ~~Expand Bedrock name sanitization to strip all non-`[a-zA-Z0-9_]` characters~~ **DONE**
+8. ~~Add resource `annotations` (audience, priority, lastModified) to `McpResourceMetadata`~~ **DONE**
 9. Document or enforce Express-only requirement for `McpHttpModule`
 10. Add batch `executeToolsForProvider` method to LLM adapter
 
@@ -219,7 +204,8 @@ O(n) on every `executeToolForProvider` and `resolveProviderToolName` call. Not a
 ## Verification Notes
 
 - Pagination: Confirmed handled internally by SDK's `McpServer.registerTool/Resource/Prompt`
-- Completions capability: SDK advertises automatically when resource templates have completion callbacks
+- Completions capability: SDK advertises automatically when resource templates or prompts have completion callbacks
 - `ping`: Handled by SDK's low-level `Server` class
 - Cancellation: SDK propagates via `AbortSignal` — correctly forwarded to `McpToolContext.signal`
 - `logging/setLevel`: SDK handles internally; `sendLog` respects the client-set level
+- All 139 `lib-server-mcp` tests and 24 `lib-server-mcp-llm-adapter` tests pass

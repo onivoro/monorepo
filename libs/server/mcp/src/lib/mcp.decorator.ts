@@ -11,6 +11,11 @@ import {
  * All fields are optional and advisory — clients MAY use them
  * for UX decisions (e.g. skipping confirmation for read-only tools).
  */
+/**
+ * Behavioral hints for MCP clients (spec 2025-03-26+).
+ * All fields are optional and advisory — clients MAY use them
+ * for UX decisions (e.g. skipping confirmation for read-only tools).
+ */
 export interface McpToolAnnotations {
   /** Tool does not modify its environment. */
   readOnlyHint?: boolean;
@@ -20,6 +25,19 @@ export interface McpToolAnnotations {
   idempotentHint?: boolean;
   /** Tool may interact with external entities (network, third-party APIs). */
   openWorldHint?: boolean;
+}
+
+/**
+ * Icon descriptor for MCP entities (spec 2025-11-25+).
+ * Provides visual identity for tools, resources, and prompts in client UIs.
+ */
+export interface McpIcon {
+  /** URL of the icon (HTTPS or data URI). */
+  url: string;
+  /** MIME type of the icon (e.g. 'image/svg+xml', 'image/png'). */
+  mediaType?: string;
+  /** Display size hint (e.g. '16x16', '32x32'). */
+  size?: string;
 }
 
 export interface McpToolMetadata {
@@ -32,6 +50,20 @@ export interface McpToolMetadata {
   outputSchema?: z.ZodObject<any>;
   aliases?: Record<string, string>;
   annotations?: McpToolAnnotations;
+  /** Icons for client UI rendering (spec 2025-11-25+). */
+  icons?: McpIcon[];
+}
+
+/**
+ * Annotations for MCP resources (spec 2025-11-25+).
+ */
+export interface McpResourceAnnotations {
+  /** Who the resource content is intended for. */
+  audience?: Array<'user' | 'assistant'>;
+  /** Relative priority (0.0–1.0). Higher = more important. */
+  priority?: number;
+  /** ISO 8601 timestamp of the last modification. */
+  lastModified?: string;
 }
 
 export interface McpResourceMetadata {
@@ -43,6 +75,10 @@ export interface McpResourceMetadata {
   mimeType?: string;
   /** Size in bytes, helps clients decide whether to fetch large resources. */
   size?: number;
+  /** Icons for client UI rendering (spec 2025-11-25+). */
+  icons?: McpIcon[];
+  /** Resource-level annotations (audience, priority, lastModified). */
+  annotations?: McpResourceAnnotations;
   isTemplate?: boolean;
   /**
    * Callback to list all resources matching this template. Only used when isTemplate is true.
@@ -68,6 +104,19 @@ export interface McpPromptMetadata {
   title?: string;
   description?: string;
   argsSchema?: Record<string, z.ZodTypeAny>;
+  /** Icons for client UI rendering (spec 2025-11-25+). */
+  icons?: McpIcon[];
+  /**
+   * Autocompletion callbacks for prompt arguments.
+   * Each key is an argument name from argsSchema; the callback returns possible completions.
+   *
+   * ```ts
+   * completeCallbacks: {
+   *   language: (value) => ['typescript', 'python', 'rust'].filter(l => l.startsWith(value)),
+   * }
+   * ```
+   */
+  completeCallbacks?: Record<string, (value: string, context?: { arguments?: Record<string, string> }) => string[] | Promise<string[]>>;
 }
 
 export interface McpToolOptions {
@@ -75,6 +124,8 @@ export interface McpToolOptions {
   annotations?: McpToolAnnotations;
   title?: string;
   outputSchema?: z.ZodObject<any>;
+  /** Icons for client UI rendering (spec 2025-11-25+). */
+  icons?: McpIcon[];
 }
 
 /**
@@ -97,7 +148,7 @@ export const McpTool = (
   return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
     let metadata: McpToolMetadata;
 
-    if (aliasesOrOptions && ('aliases' in aliasesOrOptions || 'annotations' in aliasesOrOptions || 'title' in aliasesOrOptions)) {
+    if (aliasesOrOptions && ('aliases' in aliasesOrOptions || 'annotations' in aliasesOrOptions || 'title' in aliasesOrOptions || 'outputSchema' in aliasesOrOptions || 'icons' in aliasesOrOptions)) {
       // Options object form
       const opts = aliasesOrOptions as McpToolOptions;
       metadata = { name, description, schema, ...opts };

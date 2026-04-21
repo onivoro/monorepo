@@ -485,6 +485,95 @@ Tool handlers have access to client capabilities via context callbacks:
 
 These are always present on the context but may reject if the client doesn't support the capability. Wrap calls in try/catch.
 
+### Icons
+
+Tools, resources, and prompts can provide icons for client UI rendering (spec 2025-11-25+):
+
+```typescript
+@McpTool('deploy-app', 'Deploy application', deploySchema, {
+  icons: [
+    { url: 'https://cdn.example.com/deploy-icon.svg', mediaType: 'image/svg+xml' },
+    { url: 'https://cdn.example.com/deploy-icon-32.png', mediaType: 'image/png', size: '32x32' },
+  ],
+})
+async deploy(params: z.infer<typeof deploySchema>) { ... }
+```
+
+Resources and prompts accept `icons` in their metadata object:
+
+```typescript
+@McpResource({
+  name: 'logs',
+  uri: 'app://logs',
+  icons: [{ url: 'https://cdn.example.com/logs.svg' }],
+})
+```
+
+### Resource annotations
+
+Resources can declare audience targeting, priority, and last modification time:
+
+```typescript
+@McpResource({
+  name: 'system-status',
+  uri: 'app://status',
+  annotations: {
+    audience: ['user'],      // intended for human consumption
+    priority: 0.9,           // high priority (0.0–1.0)
+    lastModified: '2026-04-20T10:00:00Z',
+  },
+})
+async getStatus() { ... }
+```
+
+### Prompt argument completions
+
+Prompts can provide autocompletion for their arguments via `completeCallbacks`:
+
+```typescript
+@McpPrompt({
+  name: 'generate-code',
+  description: 'Generate code in a specific language',
+  argsSchema: { language: z.string(), task: z.string() },
+  completeCallbacks: {
+    language: (value) => ['typescript', 'python', 'rust', 'go']
+      .filter(l => l.startsWith(value)),
+  },
+})
+async generateCode(params: { language: string; task: string }) {
+  return { messages: [{ role: 'user', content: { type: 'text', text: `Write ${params.language}: ${params.task}` } }] };
+}
+```
+
+### Async module configuration
+
+When config must be resolved at runtime (e.g., from a config service, environment, or secret manager), use the async factory methods:
+
+```typescript
+import { McpHttpModule } from '@onivoro/server-mcp';
+import { ConfigService } from '@nestjs/config';
+
+@Module({
+  imports: [
+    McpHttpModule.registerAndServeHttpAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        metadata: {
+          name: config.get('MCP_SERVER_NAME'),
+          version: config.get('MCP_SERVER_VERSION'),
+          description: config.get('MCP_SERVER_DESCRIPTION'),
+        },
+        allowedOrigins: config.get<string[]>('MCP_ALLOWED_ORIGINS'),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+The stdio equivalent is `McpStdioModule.registerAndServeStdioAsync()` with the same `{ imports, inject, useFactory }` shape.
+
 ### Input validation
 
 When a tool has a Zod schema, the registry runs `schema.parse(params)` as the **Pipes** stage of the [execution pipeline](#execution-pipeline) — after guards but before hooks and the handler. This means:

@@ -138,4 +138,29 @@ describe('LlmToolAdapter', () => {
       ).rejects.toThrow(/No MCP tool found/);
     });
   });
+
+  describe('name map caching', () => {
+    it('should invalidate cache when a new tool is registered', () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      adapter.onModuleInit();
+
+      registry.registerTool({ name: 'tool-a', description: 'd' }, jest.fn());
+      expect(adapter.resolveProviderToolName('tool-a')).toBe('tool-a');
+
+      registry.registerTool({ name: 'tool-b', description: 'd' }, jest.fn());
+      expect(adapter.resolveProviderToolName('tool-b')).toBe('tool-b');
+    });
+
+    it('should reuse cached map on repeated calls without changes', () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      adapter.onModuleInit();
+
+      registry.registerTool({ name: 'tool-a', description: 'd' }, jest.fn());
+
+      const result1 = adapter.resolveProviderToolName('tool-a');
+      const result2 = adapter.resolveProviderToolName('tool-a');
+      expect(result1).toBe('tool-a');
+      expect(result2).toBe('tool-a');
+    });
+  });
 });

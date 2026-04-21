@@ -12,7 +12,7 @@ export interface BedrockConverseToolDefinition {
 
 export const BEDROCK_CONVERSE_CONFIG: LlmAdapterConfig<BedrockConverseToolDefinition> = {
   aliasKey: 'bedrock',
-  sanitizeName: (name) => name.replace(/-/g, '_'),
+  sanitizeName: (name) => name.replace(/[^a-zA-Z0-9_]/g, '_'),
   formatTool: (name, description, jsonSchema) => ({
     toolSpec: { name, description, inputSchema: { json: jsonSchema } },
   }),
@@ -64,7 +64,7 @@ export interface GeminiToolDefinition {
 
 export const GEMINI_CONFIG: LlmAdapterConfig<GeminiToolDefinition> = {
   aliasKey: 'gemini',
-  sanitizeName: (name) => name.replace(/-/g, '_'),
+  sanitizeName: (name) => name.replace(/[^a-zA-Z0-9_]/g, '_'),
   formatTool: (name, description, jsonSchema) => ({
     name,
     description,

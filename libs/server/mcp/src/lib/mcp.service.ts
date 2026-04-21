@@ -44,7 +44,11 @@ export class McpService implements OnModuleDestroy {
     });
 
     const server = new McpServer(
-      { name: this.config.metadata.name, version: this.config.metadata.version },
+      {
+        name: this.config.metadata.name,
+        version: this.config.metadata.version,
+        ...(this.config.metadata.description && { description: this.config.metadata.description }),
+      },
       {
         ...this.config.serverOptions,
         capabilities: buildCapabilities(this.registry),

@@ -543,4 +543,83 @@ describe('wireRegistryToServer', () => {
     registry.setToolEnabled('toggleable', true);
     expect(mockEnable).toHaveBeenCalledTimes(1);
   });
+
+  it('should pass icons to tool config when present', () => {
+    const icons = [{ url: 'https://example.com/icon.svg', mediaType: 'image/svg+xml' }];
+    registry.registerTool(
+      { name: 'icon-tool', description: 'Has icons', icons },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config.icons).toEqual(icons);
+  });
+
+  it('should omit icons from tool config when not present', () => {
+    registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config).not.toHaveProperty('icons');
+  });
+
+  it('should pass icons and annotations to resource config when present', () => {
+    const icons = [{ url: 'https://example.com/res.png' }];
+    const annotations = { audience: ['user' as const], priority: 0.8 };
+    registry.registerResource(
+      { name: 'annotated', uri: 'app://annotated', icons, annotations },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterResource.mock.calls[0][2];
+    expect(config.icons).toEqual(icons);
+    expect(config.annotations).toEqual(annotations);
+  });
+
+  it('should pass icons to prompt config when present', () => {
+    const icons = [{ url: 'https://example.com/prompt.png' }];
+    registry.registerPrompt(
+      { name: 'icon-prompt', description: 'Has icons', icons },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterPrompt.mock.calls[0][1];
+    expect(config.icons).toEqual(icons);
+  });
+
+  it('should pass prompt completeCallbacks as complete config', () => {
+    const completeLang = jest.fn().mockReturnValue(['typescript', 'python']);
+    registry.registerPrompt(
+      {
+        name: 'code-prompt',
+        description: 'Generate code',
+        completeCallbacks: { language: completeLang },
+      },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterPrompt.mock.calls[0][1];
+    expect(config.complete).toEqual({ language: completeLang });
+  });
+
+  it('should omit complete from prompt config when completeCallbacks not provided', () => {
+    registry.registerPrompt(
+      { name: 'simple-prompt', description: 'No completions' },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterPrompt.mock.calls[0][1];
+    expect(config).not.toHaveProperty('complete');
+  });
 });

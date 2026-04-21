@@ -3,7 +3,7 @@ import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { McpStdioConfig } from './mcp-stdio-config.interface';
+import { McpStdioConfig, McpStdioAsyncOptions } from './mcp-stdio-config.interface';
 import { MCP_STDIO_CONFIG } from './mcp.constants';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-guard';
@@ -38,6 +38,23 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  static registerAndServeStdioAsync(options: McpStdioAsyncOptions): DynamicModule {
+    return {
+      module: McpStdioModule,
+      imports: [DiscoveryModule, ...(options.imports || [])],
+      providers: [
+        McpToolRegistry,
+        McpScopeGuard,
+        {
+          provide: MCP_STDIO_CONFIG,
+          useFactory: options.useFactory,
+          inject: options.inject || [],
+        },
+      ],
+      exports: [McpToolRegistry],
+    };
+  }
+
   /** @deprecated Use McpStdioModule.registerAndServeStdio() instead */
   static configure(config: McpStdioConfig): DynamicModule {
     return {
@@ -64,7 +81,11 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     );
 
     this.server = new McpServer(
-      { name: this.config.metadata.name, version: this.config.metadata.version },
+      {
+        name: this.config.metadata.name,
+        version: this.config.metadata.version,
+        ...(this.config.metadata.description && { description: this.config.metadata.description }),
+      },
       {
         ...this.config.serverOptions,
         capabilities: buildCapabilities(this.registry),
