@@ -88,6 +88,35 @@ export class ChatService {
 }
 ```
 
+## Batch execution
+
+LLM providers can return multiple tool calls in a single turn — OpenAI returns an array of `tool_calls`, Claude returns multiple `tool_use` content blocks, Bedrock returns multiple `toolUse` entries. This is not an MCP spec concept (the MCP protocol's `tools/call` is always a single tool per request), but it's a universal pattern at the LLM API layer that this adapter sits in front of.
+
+`executeToolsForProvider` handles the boilerplate: parallel execution via `Promise.allSettled`, independent per-call error handling (one failure doesn't block siblings), and `id` passthrough for the correlation every provider requires.
+
+```typescript
+// LLM returned multiple tool calls in one turn
+const results = await this.adapter.executeToolsForProvider(
+  toolCalls.map(tc => ({
+    providerName: tc.name,
+    params: tc.input,
+    id: tc.id,  // OpenAI tool_call.id, Claude tool_use.id, Bedrock toolUseId
+  })),
+  authInfo,
+);
+
+// Build tool result messages for the next LLM turn
+for (const r of results) {
+  messages.push({
+    role: 'tool',
+    tool_call_id: r.id,
+    content: r.success ? r.result : `Error: ${r.error}`,
+  });
+}
+```
+
+Each tool call goes through the full `@onivoro/server-mcp` execution pipeline independently (guards, validation, interceptors, handler) via `registry.executeToolRaw()`. The core MCP library is unchanged — the batch coordination lives entirely in the adapter.
+
 ## Custom providers
 
 Use `LlmAdapterModule.forProvider()` with a custom config for any provider not included out of the box:
@@ -120,7 +149,8 @@ LlmAdapterModule.forProvider(MY_CONFIG);
 |--------|-------------|
 | `toProviderTools()` | Returns `T[]` — tool definitions in the provider's format |
 | `resolveProviderToolName(providerName)` | Maps a provider-specific tool name back to the MCP tool name, or `undefined` |
-| `executeToolForProvider(providerName, params)` | Resolves name, executes tool, returns stringified result |
+| `executeToolForProvider(providerName, params, authInfo?)` | Resolves name, executes tool, returns stringified result |
+| `executeToolsForProvider(toolCalls, authInfo?)` | Executes multiple tool calls in parallel. Returns `ProviderToolCallResult[]` with per-call success/error |
 
 ## Name handling
 
@@ -148,7 +178,9 @@ Providers that require name sanitization (Bedrock Converse, Gemini) apply it aut
 LlmAdapterModule                // NestJS module — forProvider(), forBedrockConverse(), forOpenAi(), forClaude(), forGemini(), forMistral()
 
 // Adapter
-LlmToolAdapter                  // Injectable — toProviderTools(), resolveProviderToolName(), executeToolForProvider()
+LlmToolAdapter                  // Injectable — toProviderTools(), resolveProviderToolName(), executeToolForProvider(), executeToolsForProvider()
+ProviderToolCall                // Input type for batch execution — { providerName, params, id? }
+ProviderToolCallResult          // Output type for batch execution — { providerName, id?, result?, error?, success }
 
 // Config
 LlmAdapterConfig                // Interface for custom provider configs

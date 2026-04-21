@@ -18,6 +18,17 @@ function createMcpController(routePrefix?: string) {
 
     @All(route)
     async handleMcp(@Req() req: Request, @Res() res: Response) {
+      if (typeof (req as any).body === 'undefined') {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32603,
+            message: 'Request body not parsed. McpHttpModule requires Express platform with body-parsing middleware.',
+          },
+          id: null,
+        });
+        return;
+      }
       await this.mcpService.handleRequest(req as any, res as any);
     }
   }
@@ -25,6 +36,20 @@ function createMcpController(routePrefix?: string) {
   return DynamicMcpController;
 }
 
+/**
+ * MCP HTTP transport module using Streamable HTTP.
+ *
+ * **Platform requirement:** This module requires NestJS's Express platform
+ * (`@nestjs/platform-express`, the default). It depends on Express body-parsing
+ * middleware populating `req.body` on incoming requests.
+ *
+ * **Fastify is not supported.** The `@nestjs/platform-fastify` adapter uses
+ * different request/response types and body-parsing mechanics that are
+ * incompatible with this module's controller. If you need Fastify, use
+ * `McpRegistryModule.registerOnly()` and implement a custom controller that
+ * extracts the body from Fastify's request object and passes raw Node
+ * `http.IncomingMessage` / `http.ServerResponse` to `McpService.handleRequest()`.
+ */
 @Module({})
 export class McpHttpModule implements OnModuleInit {
   private readonly logger = new Logger(McpHttpModule.name);

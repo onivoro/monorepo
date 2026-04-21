@@ -139,6 +139,90 @@ describe('LlmToolAdapter', () => {
     });
   });
 
+  describe('executeToolsForProvider', () => {
+    it('should execute multiple tools in parallel and return results', async () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      registry.registerTool({ name: 'tool-a', description: 'd' }, jest.fn().mockResolvedValue({ a: 1 }));
+      registry.registerTool({ name: 'tool-b', description: 'd' }, jest.fn().mockResolvedValue('text'));
+
+      const results = await adapter.executeToolsForProvider([
+        { providerName: 'tool-a', params: { x: 1 }, id: 'call-1' },
+        { providerName: 'tool-b', params: {}, id: 'call-2' },
+      ]);
+
+      expect(results).toHaveLength(2);
+      expect(results[0]).toEqual({ providerName: 'tool-a', id: 'call-1', result: '{"a":1}', success: true });
+      expect(results[1]).toEqual({ providerName: 'tool-b', id: 'call-2', result: 'text', success: true });
+    });
+
+    it('should handle partial failures independently', async () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      registry.registerTool({ name: 'ok-tool', description: 'd' }, jest.fn().mockResolvedValue('ok'));
+      registry.registerTool({ name: 'bad-tool', description: 'd' }, jest.fn().mockRejectedValue(new Error('boom')));
+
+      const results = await adapter.executeToolsForProvider([
+        { providerName: 'ok-tool', params: {} },
+        { providerName: 'bad-tool', params: {} },
+      ]);
+
+      expect(results[0].success).toBe(true);
+      expect(results[0].result).toBe('ok');
+      expect(results[1].success).toBe(false);
+      expect(results[1].error).toContain('boom');
+    });
+
+    it('should report unknown provider names as errors without blocking siblings', async () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      registry.registerTool({ name: 'real-tool', description: 'd' }, jest.fn().mockResolvedValue('done'));
+
+      const results = await adapter.executeToolsForProvider([
+        { providerName: 'real-tool', params: {}, id: 'a' },
+        { providerName: 'ghost-tool', params: {}, id: 'b' },
+      ]);
+
+      expect(results[0]).toEqual({ providerName: 'real-tool', id: 'a', result: 'done', success: true });
+      expect(results[1].success).toBe(false);
+      expect(results[1].error).toContain('No MCP tool found');
+      expect(results[1].id).toBe('b');
+    });
+
+    it('should return empty array for empty input', async () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const results = await adapter.executeToolsForProvider([]);
+      expect(results).toEqual([]);
+    });
+
+    it('should pass through id from input to output', async () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn().mockResolvedValue('r'));
+
+      const results = await adapter.executeToolsForProvider([
+        { providerName: 'tool', params: {}, id: 'openai-call-xyz' },
+        { providerName: 'tool', params: {} },
+      ]);
+
+      expect(results[0].id).toBe('openai-call-xyz');
+      expect(results[1].id).toBeUndefined();
+    });
+
+    it('should forward authInfo to all tool executions', async () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const handler = jest.fn().mockResolvedValue('ok');
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      const authInfo = { token: 'tok', clientId: 'c1', scopes: ['read'] };
+      await adapter.executeToolsForProvider(
+        [{ providerName: 'tool', params: { x: 1 } }],
+        authInfo,
+      );
+
+      expect(handler).toHaveBeenCalledWith(
+        { x: 1 },
+        expect.objectContaining({ authInfo }),
+      );
+    });
+  });
+
   describe('name map caching', () => {
     it('should invalidate cache when a new tool is registered', () => {
       const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);

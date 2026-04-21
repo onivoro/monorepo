@@ -95,6 +95,12 @@ bootstrap();
 
 The MCP endpoint is available at `POST /mcp`. Tools are discovered and registered automatically.
 
+### Platform requirement
+
+`McpHttpModule` requires NestJS's Express platform (`@nestjs/platform-express`), which is the default when you call `NestFactory.create()`. It depends on Express body-parsing middleware to parse incoming request bodies.
+
+If your application uses `@nestjs/platform-fastify`, use `McpRegistryModule.registerOnly()` and write a custom Fastify-aware controller. The `McpService.handleRequest()` method accepts raw Node `http.IncomingMessage` and `http.ServerResponse` — you only need to extract the parsed body from Fastify's request and pass it correctly.
+
 ## Quick start: MCP stdio server
 
 Use `McpStdioModule.registerAndServeStdio()` when your MCP server runs as a subprocess — the standard model for Claude Desktop local servers, `npx`-invoked MCP tools, and similar environments where the client spawns your process and communicates over stdin/stdout.

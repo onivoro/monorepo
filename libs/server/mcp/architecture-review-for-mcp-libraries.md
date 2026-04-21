@@ -38,22 +38,11 @@ The MCP spec says servers advertise `logging` capability only if they support it
 
 ---
 
-### 4. Express-only HTTP transport
+### ~~4. Express-only HTTP transport~~ RESOLVED
 
-**File**: `mcp.module.ts:22`
+**File**: `mcp.module.ts`
 
-```ts
-@All(route)
-async handleMcp(@Req() req: Request, @Res() res: Response) {
-  await this.mcpService.handleRequest(req as any, res as any);
-}
-```
-
-The controller uses Express `Request`/`Response` types. The SDK's `StreamableHTTPServerTransport.handleRequest` expects raw Node HTTP objects. This works because Express objects are supersets of `http.IncomingMessage`/`http.ServerResponse`, but:
-- `(req as any).body` depends on Express body-parsing middleware. If the NestJS app uses Fastify platform or a raw body parser, this breaks silently.
-- No validation that the body is parsed JSON.
-
-**Severity**: MEDIUM — breaks on NestJS Fastify platform without error.
+The controller now includes a runtime guard that returns a clear JSON-RPC error when `req.body` is undefined (Fastify platform, missing body parser). JSDoc on `McpHttpModule` documents the Express-only requirement and recommends `McpRegistryModule.registerOnly()` for Fastify users. README includes a "Platform requirement" section.
 
 ---
 
@@ -154,7 +143,7 @@ The name map is now cached and automatically invalidated when the registry fires
 
 3. **CORS config exported but not auto-applied** — `MCP_CORS_CONFIG` is exported as a constant, but consumers must manually apply it. Could be auto-configured by the HTTP module.
 
-4. **Express-only** — The SDK provides `WebStandardStreamableHTTPServerTransport` for non-Express runtimes. NestJS Fastify users cannot use `McpHttpModule` without modification.
+4. ~~**Express-only**~~ — Documented. JSDoc, README, and runtime guard now clearly communicate the Express requirement. Fastify users directed to `McpRegistryModule.registerOnly()`.
 
 ---
 
@@ -168,6 +157,7 @@ The name map is now cached and automatically invalidated when the registry fires
 | **No batch execution** | LLMs can request multiple tool calls in one turn. No `executeMultiple` method. | Open |
 | ~~**Bedrock name sanitization too narrow**~~ | `replace(/-/g, '_')` handles hyphens but not dots, colons, or spaces. Bedrock requires `[a-zA-Z0-9_]+`. | **RESOLVED** — sanitization now uses `replace(/[^a-zA-Z0-9_]/g, '_')` for both Bedrock and Gemini configs. |
 | ~~**Name map not cached**~~ | `buildNameMap()` is O(n) on every call. Should cache and invalidate on registration change. | **RESOLVED** — cached with automatic invalidation via `onRegistrationChange` subscription. |
+| ~~**No batch execution**~~ | LLMs can request multiple tool calls in one turn. No `executeMultiple` method. | **RESOLVED** — `executeToolsForProvider(toolCalls, authInfo?)` added with `Promise.allSettled` for independent per-call error handling and `id` passthrough for provider correlation. |
 
 ---
 
@@ -189,8 +179,8 @@ The name map is now cached and automatically invalidated when the registry fires
 6. ~~Cache `buildNameMap()` in LLM adapter (invalidate on registry `onRegistrationChange`)~~ **DONE**
 7. ~~Expand Bedrock name sanitization to strip all non-`[a-zA-Z0-9_]` characters~~ **DONE**
 8. ~~Add resource `annotations` (audience, priority, lastModified) to `McpResourceMetadata`~~ **DONE**
-9. Document or enforce Express-only requirement for `McpHttpModule`
-10. Add batch `executeToolsForProvider` method to LLM adapter
+9. ~~Document or enforce Express-only requirement for `McpHttpModule`~~ **DONE**
+10. ~~Add batch `executeToolsForProvider` method to LLM adapter~~ **DONE**
 
 ### Low (nice to have / defer)
 
@@ -208,4 +198,4 @@ The name map is now cached and automatically invalidated when the registry fires
 - `ping`: Handled by SDK's low-level `Server` class
 - Cancellation: SDK propagates via `AbortSignal` — correctly forwarded to `McpToolContext.signal`
 - `logging/setLevel`: SDK handles internally; `sendLog` respects the client-set level
-- All 139 `lib-server-mcp` tests and 24 `lib-server-mcp-llm-adapter` tests pass
+- All 139 `lib-server-mcp` tests and 30 `lib-server-mcp-llm-adapter` tests pass

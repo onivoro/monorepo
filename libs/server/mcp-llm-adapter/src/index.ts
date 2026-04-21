@@ -1,4 +1,4 @@
-export { LlmToolAdapter } from './lib/llm-tool-adapter';
+export { LlmToolAdapter, ProviderToolCall, ProviderToolCallResult } from './lib/llm-tool-adapter';
 export { LlmAdapterModule } from './lib/llm-adapter.module';
 export {
   LlmAdapterConfig,
