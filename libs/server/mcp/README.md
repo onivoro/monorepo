@@ -1053,6 +1053,49 @@ Each MCP client connection creates a session, identified by the `Mcp-Session-Id`
 - The default idle TTL is 30 minutes, configurable via `sessionTtlMinutes`.
 - All sessions are cleaned up on application shutdown.
 
+#### Resumability
+
+MCP clients can reconnect after a network drop and resume their SSE stream from where they left off. This requires an `EventStore` implementation that persists outgoing events so they can be replayed on reconnect.
+
+```typescript
+import { EventStore } from '@onivoro/server-mcp';
+
+// In-memory store for development (events are lost on restart)
+const eventStore: EventStore = {
+  events: new Map(),
+  async storeEvent(streamId, message) {
+    const id = `${streamId}-${Date.now()}`;
+    this.events.set(id, { streamId, message });
+    return id;
+  },
+  async replayEventsAfter(lastEventId, { send }) {
+    let replaying = false;
+    let streamId = '';
+    for (const [id, { streamId: sid, message }] of this.events) {
+      if (id === lastEventId) { replaying = true; streamId = sid; continue; }
+      if (replaying) await send(id, message);
+    }
+    return streamId;
+  },
+};
+
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  eventStore,                   // Enable resumability
+  enableJsonResponse: false,    // Use SSE streams (required for resumability)
+});
+```
+
+For production, implement `EventStore` with a persistent backend (Redis, database). The `enableJsonResponse` option should be set to `false` when using resumability, since JSON responses are not streamable.
+
+Additional transport options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `eventStore` | `undefined` | Event store for SSE resumability |
+| `enableJsonResponse` | `true` | Return JSON instead of SSE streams |
+| `sessionIdGenerator` | `crypto.randomUUID()` | Custom session ID generator. Set to `undefined` for stateless mode |
+
 ### Stdio (`McpStdioModule`)
 
 A single `McpServer` is created and connected to `StdioServerTransport` during `onModuleInit`. There are no sessions — the server runs for the lifetime of the process.
@@ -1111,6 +1154,11 @@ mcpSchemaToJsonSchema        // z.ZodObject → JSON Schema object (via zod v4 n
 // Wiring helpers
 wireRegistryToServer         // Register all entries onto McpServer + subscribe to future changes; returns unsubscribe fn
 buildCapabilities            // Build MCP capabilities object from current registry state
+
+// SDK re-exports (types)
+EventStore                   // Interface for SSE resumability event storage
+StreamId                     // String alias for stream identifiers
+EventId                      // String alias for event identifiers
 
 // Interfaces
 McpModuleConfig              // Configuration for McpHttpModule.registerAndServeHttp()

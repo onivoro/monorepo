@@ -11,6 +11,7 @@ const mockServerConnect = jest.fn();
 const mockServerClose = jest.fn().mockResolvedValue(undefined);
 
 let capturedOnSessionInitialized: ((sessionId: string) => void) | undefined;
+let capturedTransportOptions: any;
 
 jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   McpServer: jest.fn().mockImplementation(() => ({
@@ -36,6 +37,7 @@ jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
 
 jest.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
   StreamableHTTPServerTransport: jest.fn().mockImplementation((opts: any) => {
+    capturedTransportOptions = opts;
     capturedOnSessionInitialized = opts.onsessioninitialized;
     return {
       handleRequest: mockTransportHandleRequest,
@@ -54,6 +56,7 @@ describe('McpService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     capturedOnSessionInitialized = undefined;
+    capturedTransportOptions = undefined;
     registry = new McpToolRegistry();
     service = new McpService(config as any, registry);
   });
@@ -272,6 +275,83 @@ describe('McpService', () => {
 
       // Should not get 403
       expect(res.writeHead).not.toHaveBeenCalledWith(403, expect.anything());
+    });
+  });
+
+  describe('transport options', () => {
+    it('should forward eventStore to transport when provided', async () => {
+      const mockEventStore = {
+        storeEvent: jest.fn(),
+        replayEventsAfter: jest.fn(),
+      };
+      const customService = new McpService(
+        { ...config, eventStore: mockEventStore } as any,
+        registry,
+      );
+
+      await customService.handleRequest(mockReq(), mockRes());
+
+      expect(capturedTransportOptions.eventStore).toBe(mockEventStore);
+      await customService.onModuleDestroy();
+    });
+
+    it('should not include eventStore when not configured', async () => {
+      await service.handleRequest(mockReq(), mockRes());
+
+      expect(capturedTransportOptions.eventStore).toBeUndefined();
+    });
+
+    it('should default enableJsonResponse to true when not configured', async () => {
+      await service.handleRequest(mockReq(), mockRes());
+
+      expect(capturedTransportOptions.enableJsonResponse).toBe(true);
+    });
+
+    it('should forward enableJsonResponse as false when set in config', async () => {
+      const customService = new McpService(
+        { ...config, enableJsonResponse: false } as any,
+        registry,
+      );
+
+      await customService.handleRequest(mockReq(), mockRes());
+
+      expect(capturedTransportOptions.enableJsonResponse).toBe(false);
+      await customService.onModuleDestroy();
+    });
+
+    it('should use default sessionIdGenerator when not configured', async () => {
+      await service.handleRequest(mockReq(), mockRes());
+
+      expect(capturedTransportOptions.sessionIdGenerator).toBeInstanceOf(Function);
+      // Should generate UUID-like strings
+      const id = capturedTransportOptions.sessionIdGenerator();
+      expect(typeof id).toBe('string');
+      expect(id.length).toBeGreaterThan(0);
+    });
+
+    it('should forward custom sessionIdGenerator when provided', async () => {
+      const customGenerator = () => 'custom-session-id';
+      const customService = new McpService(
+        { ...config, sessionIdGenerator: customGenerator } as any,
+        registry,
+      );
+
+      await customService.handleRequest(mockReq(), mockRes());
+
+      expect(capturedTransportOptions.sessionIdGenerator).toBe(customGenerator);
+      await customService.onModuleDestroy();
+    });
+
+    it('should pass undefined sessionIdGenerator for stateless mode', async () => {
+      const customService = new McpService(
+        { ...config, sessionIdGenerator: undefined } as any,
+        registry,
+      );
+
+      await customService.handleRequest(mockReq(), mockRes());
+
+      expect(capturedTransportOptions.sessionIdGenerator).toBeUndefined();
+      await customService.onModuleDestroy();
     });
   });
 

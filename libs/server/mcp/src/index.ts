@@ -10,3 +10,4 @@ export { McpGuard, McpScopeGuard } from './lib/mcp-guard';
 export { McpRegistryModule } from './lib/mcp-tool-registry.module';
 export { mcpSchemaToJsonSchema } from './lib/mcp-schema-converters';
 export { wireRegistryToServer, buildCapabilities } from './lib/wire-registry-to-server';
+export type { EventStore, StreamId, EventId } from '@modelcontextprotocol/sdk/server/streamableHttp.js';

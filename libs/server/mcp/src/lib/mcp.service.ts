@@ -35,12 +35,15 @@ export class McpService implements OnModuleDestroy {
     const entry: Partial<SessionEntry> = { lastActivity: Date.now() };
 
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-      enableJsonResponse: true,
+      sessionIdGenerator: 'sessionIdGenerator' in this.config
+        ? this.config.sessionIdGenerator
+        : () => crypto.randomUUID(),
+      enableJsonResponse: this.config.enableJsonResponse ?? true,
       onsessioninitialized: (sessionId: string) => {
         this.sessions.set(sessionId, entry as SessionEntry);
         this.logger.log(`Session initialized: ${sessionId}`);
       },
+      ...(this.config.eventStore && { eventStore: this.config.eventStore }),
     });
 
     const server = new McpServer(

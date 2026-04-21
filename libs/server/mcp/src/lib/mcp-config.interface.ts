@@ -1,4 +1,5 @@
 import type { ServerOptions } from '@modelcontextprotocol/sdk/server/index.js';
+import type { EventStore } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 export interface McpServerMetadata {
   name: string;
@@ -25,6 +26,28 @@ export interface McpModuleConfig {
    * @example ['http://localhost:3000', 'https://my-app.example.com']
    */
   allowedOrigins?: string[];
+  /**
+   * EventStore implementation for SSE stream resumability.
+   *
+   * When provided, the transport stores outgoing events and supports client reconnection
+   * via `Last-Event-ID`. Clients that disconnect and reconnect receive replayed events
+   * from the point they left off.
+   *
+   * When not set, resumability is disabled (default).
+   */
+  eventStore?: EventStore;
+  /**
+   * When `true`, the transport returns JSON responses instead of SSE streams.
+   * Default: `true` (current behavior). Set to `false` for SSE-only mode.
+   */
+  enableJsonResponse?: boolean;
+  /**
+   * Custom session ID generator function. Default: `crypto.randomUUID()`.
+   *
+   * Set to `undefined` explicitly to enable stateless mode (no session tracking).
+   * When absent from config, the default UUID generator is used.
+   */
+  sessionIdGenerator?: (() => string) | undefined;
 }
 
 /**

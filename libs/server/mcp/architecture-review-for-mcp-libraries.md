@@ -76,7 +76,7 @@ The name map is now cached and automatically invalidated when the registry fires
 |-----|-----------------|--------|
 | ~~**Resource `annotations`**~~ | Resources can have `audience`, `priority`, and `lastModified` annotations | **RESOLVED** — `McpResourceAnnotations` interface added to `McpResourceMetadata`. Wired through to SDK resource config. |
 | **Tasks (experimental)** | Long-running tools return `CreateTaskResult`. Status polling, cancellation, notifications via `ExperimentalServerTasks`. | Not implemented. Experimental in SDK — defer until stable. |
-| **Resumability config** | SSE streams can have event IDs. Client reconnects with `Last-Event-ID` for replay. SDK supports with event store config. | Not exposed in module config. |
+| ~~**Resumability config**~~ | SSE streams can have event IDs. Client reconnects with `Last-Event-ID` for replay. SDK supports with event store config. | **RESOLVED** — `McpModuleConfig` now accepts `eventStore`, `enableJsonResponse`, and `sessionIdGenerator`. Forwarded to `StreamableHTTPServerTransport`. `EventStore`, `StreamId`, `EventId` re-exported from barrel. |
 | **Sampling with tools** | `sampling/createMessage` can include a `tools` array and `toolChoice` for multi-turn agentic loops | `createMessage` is a raw passthrough (`Record<string, unknown>`), which works but provides no typed helper. |
 | **`MCP-Protocol-Version` validation** | After init, clients include `MCP-Protocol-Version` header. Server should validate. | Header is in CORS allowed list but not validated by `McpService`. SDK transport likely handles this internally. |
 
@@ -179,7 +179,7 @@ The name map is now cached and automatically invalidated when the registry fires
 
 ### Low (nice to have / defer)
 
-11. Resumability config passthrough (event store option)
+11. ~~Resumability config passthrough (event store option)~~ **DONE**
 12. Tasks support (wait for SDK to stabilize experimental API)
 13. Auto-apply CORS in HTTP module
 14. Add auth extraction middleware hook
@@ -193,4 +193,4 @@ The name map is now cached and automatically invalidated when the registry fires
 - `ping`: Handled by SDK's low-level `Server` class
 - Cancellation: SDK propagates via `AbortSignal` — correctly forwarded to `McpToolContext.signal`
 - `logging/setLevel`: SDK handles internally; `sendLog` respects the client-set level
-- All 144 `lib-server-mcp` tests and 38 `lib-server-mcp-llm-adapter` tests pass
+- All 151 `lib-server-mcp` tests and 38 `lib-server-mcp-llm-adapter` tests pass
