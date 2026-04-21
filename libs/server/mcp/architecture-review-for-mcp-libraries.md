@@ -28,13 +28,11 @@ Both modules now forward `metadata.description` to the SDK's `McpServer` constru
 
 ---
 
-### 3. `buildCapabilities` hardcodes `logging: {}` unconditionally
+### ~~3. `buildCapabilities` hardcodes `logging: {}` unconditionally~~ RESOLVED
 
 **File**: `wire-registry-to-server.ts:11`
 
-The MCP spec says servers advertise `logging` capability only if they support it. The implementation always advertises it, which is technically correct (logging is always wired), but in registry-only setups (no transport) this advertises a capability that can't deliver. Minor, but misleading for introspection consumers.
-
-**Severity**: LOW.
+`buildCapabilities` now accepts an optional `options` parameter with a `logging` flag (defaults to `true`). Transport modules (HTTP, stdio) get logging advertised automatically. Registry-only consumers can pass `{ logging: false }` to avoid advertising a capability that no transport can deliver. JSDoc documents the intended usage.
 
 ---
 
@@ -46,13 +44,11 @@ The controller now includes a runtime guard that returns a clear JSON-RPC error 
 
 ---
 
-### 5. Resource subscription handlers have no logging for missing sessionId
+### ~~5. Resource subscription handlers have no logging for missing sessionId~~ RESOLVED
 
-**File**: `wire-registry-to-server.ts:154-170`
+**File**: `wire-registry-to-server.ts:159-175`
 
-The subscribe/unsubscribe handlers only act when both `uri` and `sessionId` are present. A missing `sessionId` (transport bug) goes completely undetected — no log, no error. Per spec this is acceptable (subscribe should not fail), but silent drops make debugging hard.
-
-**Severity**: LOW.
+Subscribe and unsubscribe handlers now log a warning via NestJS `Logger` when `sessionId` is missing. The handlers still return `{}` (per spec, subscribe should not fail), but missing session IDs are no longer silently swallowed — transport bugs are now visible in logs.
 
 ---
 
@@ -198,4 +194,4 @@ The name map is now cached and automatically invalidated when the registry fires
 - `ping`: Handled by SDK's low-level `Server` class
 - Cancellation: SDK propagates via `AbortSignal` — correctly forwarded to `McpToolContext.signal`
 - `logging/setLevel`: SDK handles internally; `sendLog` respects the client-set level
-- All 139 `lib-server-mcp` tests and 30 `lib-server-mcp-llm-adapter` tests pass
+- All 144 `lib-server-mcp` tests and 30 `lib-server-mcp-llm-adapter` tests pass

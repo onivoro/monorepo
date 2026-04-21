@@ -44,8 +44,16 @@ describe('buildCapabilities', () => {
     registry = new McpToolRegistry();
   });
 
-  it('should always include logging capability', () => {
+  it('should include logging capability by default', () => {
     expect(buildCapabilities(registry)).toEqual({ logging: {} });
+  });
+
+  it('should include logging when explicitly enabled', () => {
+    expect(buildCapabilities(registry, { logging: true })).toEqual({ logging: {} });
+  });
+
+  it('should omit logging when explicitly disabled', () => {
+    expect(buildCapabilities(registry, { logging: false })).toEqual({});
   });
 
   it('should include tools key with listChanged when tools are registered', () => {
@@ -65,6 +73,12 @@ describe('buildCapabilities', () => {
       resources: { subscribe: true, listChanged: true },
       prompts: { listChanged: true },
     });
+  });
+
+  it('should omit logging but keep other capabilities when logging is disabled', () => {
+    registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+    const caps = buildCapabilities(registry, { logging: false });
+    expect(caps).toEqual({ tools: { listChanged: true } });
   });
 });
 
@@ -621,5 +635,52 @@ describe('wireRegistryToServer', () => {
 
     const config = mockRegisterPrompt.mock.calls[0][1];
     expect(config).not.toHaveProperty('complete');
+  });
+
+  it('should log a warning when subscribe request has no sessionId', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    const server = createMockServer();
+    wireRegistryToServer(registry, server);
+
+    const subscribeCall = mockSetRequestHandler.mock.calls.find(
+      (c: any[]) => c[0].method === 'resources/subscribe',
+    );
+    const subscribeHandler = subscribeCall[1];
+
+    subscribeHandler(
+      { params: { uri: 'app://config' } },
+      { /* no sessionId */ },
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Subscribe request for "app://config" has no sessionId'),
+    );
+    expect(registry.getResourceSubscribers('app://config').size).toBe(0);
+    warnSpy.mockRestore();
+  });
+
+  it('should log a warning when unsubscribe request has no sessionId', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    const server = createMockServer();
+    wireRegistryToServer(registry, server);
+
+    registry.subscribeResource('app://config', 'sess-1');
+
+    const unsubscribeCall = mockSetRequestHandler.mock.calls.find(
+      (c: any[]) => c[0].method === 'resources/unsubscribe',
+    );
+    const unsubscribeHandler = unsubscribeCall[1];
+
+    unsubscribeHandler(
+      { params: { uri: 'app://config' } },
+      { /* no sessionId */ },
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Unsubscribe request for "app://config" has no sessionId'),
+    );
+    // Subscription should still be intact since removal couldn't happen
+    expect(registry.getResourceSubscribers('app://config').has('sess-1')).toBe(true);
+    warnSpy.mockRestore();
   });
 });
