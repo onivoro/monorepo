@@ -1,4 +1,5 @@
 import { McpToolRegistry } from '@onivoro/server-mcp';
+import { z } from 'zod';
 import { LlmToolAdapter } from './llm-tool-adapter';
 import { LlmAdapterConfig } from './llm-adapter.config';
 
@@ -220,6 +221,123 @@ describe('LlmToolAdapter', () => {
         { x: 1 },
         expect.objectContaining({ authInfo }),
       );
+    });
+  });
+
+  describe('output schema forwarding', () => {
+    it('should use formatToolWithOutput when config provides it and tool has outputSchema', () => {
+      const formatToolWithOutput = jest.fn().mockReturnValue({ name: 'extended', inputSchema: {}, outputSchema: {} });
+      const config: LlmAdapterConfig<any> = {
+        ...SIMPLE_CONFIG,
+        formatToolWithOutput,
+      };
+      const adapter = new LlmToolAdapter(registry, config);
+      const outputSchema = z.object({ result: z.string() });
+      registry.registerTool({ name: 'structured-tool', description: 'Returns structured', schema: z.object({ q: z.string() }), outputSchema }, jest.fn());
+
+      const tools = adapter.toProviderTools();
+
+      expect(formatToolWithOutput).toHaveBeenCalledTimes(1);
+      expect(formatToolWithOutput).toHaveBeenCalledWith(
+        'structured-tool',
+        'Returns structured',
+        expect.objectContaining({ type: 'object' }),
+        expect.objectContaining({ type: 'object' }),
+      );
+      expect(tools).toHaveLength(1);
+    });
+
+    it('should fall back to formatTool when tool lacks outputSchema even if config has formatToolWithOutput', () => {
+      const formatToolWithOutput = jest.fn();
+      const config: LlmAdapterConfig<SimpleToolDef> = {
+        ...SIMPLE_CONFIG,
+        formatToolWithOutput,
+      };
+      const adapter = new LlmToolAdapter(registry, config);
+      registry.registerTool({ name: 'plain-tool', description: 'No output' }, jest.fn());
+
+      const tools = adapter.toProviderTools();
+
+      expect(formatToolWithOutput).not.toHaveBeenCalled();
+      expect(tools[0].name).toBe('plain-tool');
+    });
+
+    it('should fall back to formatTool when config lacks formatToolWithOutput (backward compat)', () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const outputSchema = z.object({ result: z.string() });
+      registry.registerTool({ name: 'tool', description: 'd', outputSchema }, jest.fn());
+
+      const tools = adapter.toProviderTools();
+
+      expect(tools[0].name).toBe('tool');
+    });
+  });
+
+  describe('getOutputSchemas', () => {
+    it('should return map of provider names to output JSON schemas', () => {
+      const adapter = new LlmToolAdapter(registry, SANITIZING_CONFIG);
+      const outputSchema = z.object({ result: z.string() });
+      registry.registerTool({ name: 'structured-tool', description: 'd', outputSchema }, jest.fn());
+      registry.registerTool({ name: 'plain-tool', description: 'd' }, jest.fn());
+
+      const schemas = adapter.getOutputSchemas();
+
+      expect(schemas.size).toBe(1);
+      expect(schemas.has('structured_tool')).toBe(true);
+      expect(schemas.get('structured_tool')).toEqual(expect.objectContaining({ type: 'object' }));
+      expect(schemas.has('plain_tool')).toBe(false);
+    });
+
+    it('should return empty map when no tools have outputSchema', () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+      const schemas = adapter.getOutputSchemas();
+
+      expect(schemas.size).toBe(0);
+    });
+  });
+
+  describe('executeToolCallForProvider', () => {
+    it('should return ProviderToolCallResult with success for valid tool', async () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      registry.registerTool({ name: 'my-tool', description: 'd' }, jest.fn().mockResolvedValue({ ok: true }));
+
+      const result = await adapter.executeToolCallForProvider({
+        providerName: 'my-tool',
+        params: { x: 1 },
+        id: 'call-42',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.result).toBe('{"ok":true}');
+      expect(result.id).toBe('call-42');
+      expect(result.providerName).toBe('my-tool');
+    });
+
+    it('should return ProviderToolCallResult with error for unknown provider name', async () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+
+      const result = await adapter.executeToolCallForProvider({
+        providerName: 'ghost',
+        params: {},
+        id: 'call-99',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('No MCP tool found');
+      expect(result.id).toBe('call-99');
+    });
+
+    it('should pass through id from input to output', async () => {
+      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn().mockResolvedValue('r'));
+
+      const withId = await adapter.executeToolCallForProvider({ providerName: 'tool', params: {}, id: 'abc' });
+      const withoutId = await adapter.executeToolCallForProvider({ providerName: 'tool', params: {} });
+
+      expect(withId.id).toBe('abc');
+      expect(withoutId.id).toBeUndefined();
     });
   });
 

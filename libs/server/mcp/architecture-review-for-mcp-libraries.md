@@ -147,13 +147,12 @@ The name map is now cached and automatically invalidated when the registry fires
 
 | Issue | Detail | Status |
 |-------|--------|--------|
-| **No output schema forwarding** | Some LLM APIs (OpenAI `response_format`, Claude `tool_result_schema`) support structured output validation. Adapter only forwards `inputSchema`. | Open |
-| **No streaming support** | `executeToolForProvider` returns a complete string. No incremental path for streaming tool results. | Open |
-| **No tool-call-id handling** | LLM APIs (OpenAI, Claude) require correlating tool calls to responses via IDs. Adapter doesn't help with this. | Open |
-| **No batch execution** | LLMs can request multiple tool calls in one turn. No `executeMultiple` method. | Open |
+| ~~**No output schema forwarding**~~ | Some LLM APIs support structured output validation. Adapter only forwarded `inputSchema`. | **RESOLVED** — `formatToolWithOutput` optional callback added to `LlmAdapterConfig`. `getOutputSchemas()` method exposes converted output JSON Schemas. Built-in configs unchanged (no current provider API supports per-tool output schema). |
+| **No streaming support** | `executeToolForProvider` returns a complete string. No incremental path for streaming tool results. | **Deferred** — requires core registry streaming primitive. `executeToolRaw` returns `Promise<unknown>`, interceptor chain is synchronous. MCP tool results are single-shot JSON-RPC responses. Progress reporting available via `sendProgress`. |
+| ~~**No tool-call-id handling**~~ | LLM APIs (OpenAI, Claude) require correlating tool calls to responses via IDs. | **RESOLVED** — `executeToolsForProvider` (batch) passes through `id`. New `executeToolCallForProvider` provides the same for single calls with `ProviderToolCallResult` return type. |
+| ~~**No batch execution**~~ | LLMs can request multiple tool calls in one turn. No `executeMultiple` method. | **RESOLVED** — `executeToolsForProvider(toolCalls, authInfo?)` added with `Promise.allSettled` for independent per-call error handling and `id` passthrough for provider correlation. |
 | ~~**Bedrock name sanitization too narrow**~~ | `replace(/-/g, '_')` handles hyphens but not dots, colons, or spaces. Bedrock requires `[a-zA-Z0-9_]+`. | **RESOLVED** — sanitization now uses `replace(/[^a-zA-Z0-9_]/g, '_')` for both Bedrock and Gemini configs. |
 | ~~**Name map not cached**~~ | `buildNameMap()` is O(n) on every call. Should cache and invalidate on registration change. | **RESOLVED** — cached with automatic invalidation via `onRegistrationChange` subscription. |
-| ~~**No batch execution**~~ | LLMs can request multiple tool calls in one turn. No `executeMultiple` method. | **RESOLVED** — `executeToolsForProvider(toolCalls, authInfo?)` added with `Promise.allSettled` for independent per-call error handling and `id` passthrough for provider correlation. |
 
 ---
 
@@ -194,4 +193,4 @@ The name map is now cached and automatically invalidated when the registry fires
 - `ping`: Handled by SDK's low-level `Server` class
 - Cancellation: SDK propagates via `AbortSignal` — correctly forwarded to `McpToolContext.signal`
 - `logging/setLevel`: SDK handles internally; `sendLog` respects the client-set level
-- All 144 `lib-server-mcp` tests and 30 `lib-server-mcp-llm-adapter` tests pass
+- All 144 `lib-server-mcp` tests and 38 `lib-server-mcp-llm-adapter` tests pass

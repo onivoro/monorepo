@@ -117,6 +117,38 @@ for (const r of results) {
 
 Each tool call goes through the full `@onivoro/server-mcp` execution pipeline independently (guards, validation, interceptors, handler) via `registry.executeToolRaw()`. The core MCP library is unchanged — the batch coordination lives entirely in the adapter.
 
+## Output schemas
+
+MCP tools can declare an `outputSchema` for structured result validation. No current LLM provider API supports per-tool output schemas in their tool definition format, so the built-in configs don't forward them. However, the adapter exposes them for consumers that need output schemas at the API call level (e.g., OpenAI `response_format`) or for custom result validation.
+
+```typescript
+// Get output schemas for tools that define them
+const outputSchemas = this.adapter.getOutputSchemas();
+// Map<string, Record<string, unknown>> — provider tool name → JSON Schema
+
+// Use with OpenAI response_format, your own validation, etc.
+for (const [toolName, schema] of outputSchemas) {
+  console.log(`${toolName} returns:`, schema);
+}
+```
+
+For custom providers that support per-tool output schemas, use `formatToolWithOutput` in your config:
+
+```typescript
+const MY_CONFIG: LlmAdapterConfig<MyToolDef> = {
+  aliasKey: 'myProvider',
+  formatTool: (name, description, inputSchema) => ({
+    name, description, inputSchema,
+  }),
+  // Called instead of formatTool when the tool has an outputSchema
+  formatToolWithOutput: (name, description, inputSchema, outputSchema) => ({
+    name, description, inputSchema, outputSchema,
+  }),
+};
+```
+
+When `formatToolWithOutput` is defined and the tool has an `outputSchema`, it is called instead of `formatTool`. Otherwise `formatTool` is used — existing configs are unaffected.
+
 ## Custom providers
 
 Use `LlmAdapterModule.forProvider()` with a custom config for any provider not included out of the box:
@@ -148,8 +180,10 @@ LlmAdapterModule.forProvider(MY_CONFIG);
 | Method | Description |
 |--------|-------------|
 | `toProviderTools()` | Returns `T[]` — tool definitions in the provider's format |
+| `getOutputSchemas()` | Returns `Map<string, Record<string, unknown>>` — provider tool names to output JSON Schemas (only tools with `outputSchema`) |
 | `resolveProviderToolName(providerName)` | Maps a provider-specific tool name back to the MCP tool name, or `undefined` |
 | `executeToolForProvider(providerName, params, authInfo?)` | Resolves name, executes tool, returns stringified result |
+| `executeToolCallForProvider(toolCall, authInfo?)` | Executes a single `ProviderToolCall`, returns `ProviderToolCallResult` with id passthrough |
 | `executeToolsForProvider(toolCalls, authInfo?)` | Executes multiple tool calls in parallel. Returns `ProviderToolCallResult[]` with per-call success/error |
 
 ## Name handling
@@ -178,9 +212,9 @@ Providers that require name sanitization (Bedrock Converse, Gemini) apply it aut
 LlmAdapterModule                // NestJS module — forProvider(), forBedrockConverse(), forOpenAi(), forClaude(), forGemini(), forMistral()
 
 // Adapter
-LlmToolAdapter                  // Injectable — toProviderTools(), resolveProviderToolName(), executeToolForProvider(), executeToolsForProvider()
-ProviderToolCall                // Input type for batch execution — { providerName, params, id? }
-ProviderToolCallResult          // Output type for batch execution — { providerName, id?, result?, error?, success }
+LlmToolAdapter                  // Injectable — toProviderTools(), getOutputSchemas(), resolveProviderToolName(), executeToolForProvider(), executeToolCallForProvider(), executeToolsForProvider()
+ProviderToolCall                // Input type for single/batch execution — { providerName, params, id? }
+ProviderToolCallResult          // Output type for single/batch execution — { providerName, id?, result?, error?, success }
 
 // Config
 LlmAdapterConfig                // Interface for custom provider configs

@@ -59,13 +59,33 @@ export class LlmToolAdapter<T = unknown> implements OnModuleInit {
   }
 
   toProviderTools(): T[] {
-    return this.registry.getTools().map(({ metadata }) =>
-      this.config.formatTool(
-        resolveProviderName(metadata, this.config),
-        metadata.description,
-        mcpSchemaToJsonSchema(metadata.schema),
-      ),
-    );
+    return this.registry.getTools().map(({ metadata }) => {
+      const name = resolveProviderName(metadata, this.config);
+      const inputSchema = mcpSchemaToJsonSchema(metadata.schema);
+
+      if (this.config.formatToolWithOutput && metadata.outputSchema) {
+        const outputSchema = mcpSchemaToJsonSchema(metadata.outputSchema);
+        return this.config.formatToolWithOutput(name, metadata.description, inputSchema, outputSchema);
+      }
+
+      return this.config.formatTool(name, metadata.description, inputSchema);
+    });
+  }
+
+  /**
+   * Returns a map of provider tool names to their converted output JSON Schemas.
+   * Only includes tools that have an `outputSchema` defined in their MCP metadata.
+   * Useful for constructing provider-level structured output configs (e.g. OpenAI `response_format`).
+   */
+  getOutputSchemas(): Map<string, Record<string, unknown>> {
+    const result = new Map<string, Record<string, unknown>>();
+    for (const { metadata } of this.registry.getTools()) {
+      if (metadata.outputSchema) {
+        const providerName = resolveProviderName(metadata, this.config);
+        result.set(providerName, mcpSchemaToJsonSchema(metadata.outputSchema));
+      }
+    }
+    return result;
   }
 
   resolveProviderToolName(providerName: string): string | undefined {
@@ -85,6 +105,15 @@ export class LlmToolAdapter<T = unknown> implements OnModuleInit {
     }
     const result = await this.registry.executeToolRaw(mcpName, params, authInfo);
     return typeof result === 'string' ? result : JSON.stringify(result);
+  }
+
+  /** Execute a single tool call, returning the full result with id passthrough. */
+  async executeToolCallForProvider(
+    toolCall: ProviderToolCall,
+    authInfo?: McpAuthInfo,
+  ): Promise<ProviderToolCallResult> {
+    const [result] = await this.executeToolsForProvider([toolCall], authInfo);
+    return result;
   }
 
   async executeToolsForProvider(
