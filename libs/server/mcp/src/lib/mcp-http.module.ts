@@ -2,8 +2,9 @@ import { All, Controller, DynamicModule, Inject, Logger, Module, OnModuleInit, R
 import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { Request, Response } from 'express';
-import { McpModuleConfig, McpModuleAsyncOptions } from './mcp-config.interface';
-import { MCP_MODULE_CONFIG } from './mcp.constants';
+import type { McpModuleConfig } from './mcp-module-config';
+import type { McpModuleAsyncOptions } from './mcp-module-async-options';
+import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-scope-guard';

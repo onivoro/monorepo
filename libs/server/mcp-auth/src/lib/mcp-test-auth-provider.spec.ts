@@ -1,5 +1,7 @@
 import * as jwt from 'jsonwebtoken';
-import { McpTestAuthProvider, createMockAuthInfo, createMockJwt } from './mcp-test-auth-provider';
+import { McpTestAuthProvider } from './mcp-test-auth-provider';
+import { createMockAuthInfo } from './create-mock-auth-info';
+import { createMockJwt } from './create-mock-jwt';
 
 describe('McpTestAuthProvider', () => {
   let provider: McpTestAuthProvider;

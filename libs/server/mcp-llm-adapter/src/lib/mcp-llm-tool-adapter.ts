@@ -1,34 +1,10 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { McpToolRegistry, McpAuthInfo, mcpSchemaToJsonSchema } from '@onivoro/server-mcp';
-import {
-  LLM_ADAPTER_CONFIG,
-  LlmAdapterConfig,
-  resolveProviderName,
-} from './llm-adapter.config';
-
-/** A single tool call in a batch request. */
-export interface ProviderToolCall {
-  /** Tool name as returned by the LLM provider (may be sanitized/aliased). */
-  providerName: string;
-  /** Parameters for the tool call. */
-  params: Record<string, unknown>;
-  /** Optional identifier from the provider (e.g. OpenAI tool_call.id, Claude tool_use.id, Bedrock toolUseId). Pass-through for correlation. */
-  id?: string;
-}
-
-/** Result of a single tool call in a batch. */
-export interface ProviderToolCallResult {
-  /** The provider-specific tool name that was called. */
-  providerName: string;
-  /** Pass-through of the id from the input, if provided. */
-  id?: string;
-  /** Stringified result on success, undefined on error. */
-  result?: string;
-  /** Error message on failure, undefined on success. */
-  error?: string;
-  /** Whether this call succeeded. */
-  success: boolean;
-}
+import { LLM_ADAPTER_CONFIG } from './llm-adapter-config-token';
+import type { LlmAdapterConfig } from './llm-adapter-config';
+import { resolveProviderName } from './resolve-provider-name';
+import type { ProviderToolCall } from './provider-tool-call';
+import type { ProviderToolCallResult } from './provider-tool-call-result';
 
 @Injectable()
 export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {

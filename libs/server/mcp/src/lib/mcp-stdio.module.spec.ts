@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { McpStdioModule } from './mcp-stdio.module';
-import { McpToolRegistry, McpAuthInfo, McpAuthProvider } from './mcp-tool-registry';
-import { McpTool, McpResource, McpPrompt } from './mcp.decorator';
+import { McpToolRegistry } from './mcp-tool-registry';
+import type { McpAuthInfo } from './mcp-auth-info';
+import type { McpAuthProvider } from './mcp-auth-provider';
+import { McpTool } from './mcp-tool.decorator';
+import { McpResource } from './mcp-resource.decorator';
+import { McpPrompt } from './mcp-prompt.decorator';
 import { z } from 'zod';
 import { PassThrough } from 'node:stream';
 

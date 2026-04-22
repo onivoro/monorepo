@@ -1,14 +1,13 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { McpRegistryModule } from '@onivoro/server-mcp';
 import { McpLlmToolAdapter } from './mcp-llm-tool-adapter';
-import { LLM_ADAPTER_CONFIG, LlmAdapterConfig } from './llm-adapter.config';
-import {
-  BEDROCK_CONVERSE_CONFIG,
-  OPENAI_CONFIG,
-  CLAUDE_CONFIG,
-  GEMINI_CONFIG,
-  MISTRAL_CONFIG,
-} from './provider-configs';
+import { LLM_ADAPTER_CONFIG } from './llm-adapter-config-token';
+import type { LlmAdapterConfig } from './llm-adapter-config';
+import { BEDROCK_CONVERSE_CONFIG } from './bedrock-converse-config';
+import { OPENAI_CONFIG } from './openai-config';
+import { CLAUDE_CONFIG } from './claude-config';
+import { GEMINI_CONFIG } from './gemini-config';
+import { MISTRAL_CONFIG } from './mistral-config';
 
 @Module({})
 export class McpLlmAdapterModule {

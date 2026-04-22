@@ -3,7 +3,7 @@ import { McpAuthModule } from './mcp-auth.module';
 import { McpJwtAuthProvider } from './mcp-jwt-auth-provider';
 import { McpJwksService } from './mcp-jwks.service';
 import { McpScopeRegistry } from './mcp-scope-registry';
-import { MCP_AUTH_CONFIG } from './mcp-auth.constants';
+import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
 
 jest.mock('jwks-rsa', () => ({
   JwksClient: jest.fn().mockImplementation(() => ({

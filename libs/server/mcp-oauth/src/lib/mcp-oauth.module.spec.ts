@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { McpOAuthModule } from './mcp-oauth.module';
-import { MCP_OAUTH_CONFIG, MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth.constants';
+import { MCP_OAUTH_CONFIG } from './mcp-oauth-config-token';
+import { MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth-server-provider-token';
 import { McpMemoryClientsStore } from './mcp-memory-clients-store';
 
 const mockMcpAuthRouter = jest.fn().mockReturnValue((_req: any, _res: any, next: any) => next());

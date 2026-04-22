@@ -1,8 +1,10 @@
 import { DynamicModule, Inject, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import type { OAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/provider.js';
-import { McpOAuthConfig, McpOAuthAsyncOptions } from './mcp-oauth.config';
-import { MCP_OAUTH_CONFIG, MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth.constants';
+import { McpOAuthConfig } from './mcp-oauth-config';
+import { McpOAuthAsyncOptions } from './mcp-oauth-async-options';
+import { MCP_OAUTH_CONFIG } from './mcp-oauth-config-token';
+import { MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth-server-provider-token';
 import { McpMemoryClientsStore } from './mcp-memory-clients-store';
 
 /**

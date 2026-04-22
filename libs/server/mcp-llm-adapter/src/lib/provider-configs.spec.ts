@@ -1,13 +1,11 @@
 import { z } from 'zod';
 import { McpToolRegistry } from '@onivoro/server-mcp';
 import { McpLlmToolAdapter } from './mcp-llm-tool-adapter';
-import {
-  BEDROCK_CONVERSE_CONFIG,
-  OPENAI_CONFIG,
-  CLAUDE_CONFIG,
-  GEMINI_CONFIG,
-  MISTRAL_CONFIG,
-} from './provider-configs';
+import { BEDROCK_CONVERSE_CONFIG } from './bedrock-converse-config';
+import { OPENAI_CONFIG } from './openai-config';
+import { CLAUDE_CONFIG } from './claude-config';
+import { GEMINI_CONFIG } from './gemini-config';
+import { MISTRAL_CONFIG } from './mistral-config';
 
 describe('provider-configs', () => {
   const schema = z.object({

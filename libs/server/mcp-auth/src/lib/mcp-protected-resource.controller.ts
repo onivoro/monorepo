@@ -1,6 +1,6 @@
 import { Controller, Get, Inject } from '@nestjs/common';
-import { MCP_AUTH_CONFIG } from './mcp-auth.constants';
-import type { McpAuthConfig } from './mcp-auth.config';
+import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
+import type { McpAuthConfig } from './mcp-auth-config';
 import { McpScopeRegistry } from './mcp-scope-registry';
 
 /**

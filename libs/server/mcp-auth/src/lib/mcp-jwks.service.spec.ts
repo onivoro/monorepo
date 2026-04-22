@@ -1,6 +1,6 @@
 import { McpJwksService } from './mcp-jwks.service';
-import { MCP_AUTH_CONFIG } from './mcp-auth.constants';
-import type { McpAuthConfig } from './mcp-auth.config';
+import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
+import type { McpAuthConfig } from './mcp-auth-config';
 
 const mockGetSigningKey = jest.fn();
 

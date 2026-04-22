@@ -1,129 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { McpToolMetadata, McpResourceMetadata, McpPromptMetadata } from './mcp.decorator';
+import type { McpToolMetadata } from './mcp-tool-metadata';
+import type { McpResourceMetadata } from './mcp-resource-metadata';
+import type { McpPromptMetadata } from './mcp-prompt-metadata';
+import type { McpAuthInfo } from './mcp-auth-info';
+import type { McpToolContext } from './mcp-tool-context';
+import type { McpToolInterceptor } from './mcp-tool-interceptor';
+import type { McpCanActivate } from './mcp-can-activate';
+import type { McpAuthProvider } from './mcp-auth-provider';
+import type { McpGuardMetadata } from './mcp-guard-metadata';
+import type { McpToolResult } from './mcp-tool-result';
+import type { McpLogLevel } from './mcp-log-level';
+import type { McpRegistrationChangeType } from './mcp-registration-change-type';
+import type { McpRegistrationChangeListener } from './mcp-registration-change-listener';
+import type { McpResourceUpdateListener } from './mcp-resource-update-listener';
 import { mcpSchemaToJsonSchema } from './mcp-schema-converters';
-
-/**
- * Authentication/authorization info from the MCP transport layer.
- * Compatible with the MCP SDK's AuthInfo but defined independently
- * so the core registry has no SDK dependency.
- */
-export interface McpAuthInfo {
-  token: string;
-  clientId: string;
-  scopes: string[];
-  expiresAt?: number;
-  /** RFC 8707 resource indicator — the audience this token was issued for. */
-  resource?: string;
-  extra?: Record<string, unknown>;
-}
-
-/**
- * Context passed to tool handlers and interceptors during execution.
- */
-export interface McpToolContext {
-  toolName: string;
-  params: Record<string, unknown>;
-  metadata: McpToolMetadata;
-  authInfo?: McpAuthInfo;
-  /** MCP session identifier from the transport layer. */
-  sessionId?: string;
-  /** Abort signal — fires when the client cancels the request. */
-  signal?: AbortSignal;
-  /**
-   * Send an incremental progress notification to the client.
-   * Only available when the client requested progress tracking via `_meta.progressToken`.
-   * No-op when progress is not supported for this request.
-   */
-  sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
-  /**
-   * Send a structured log message to the MCP client.
-   * Only available when the server is connected via a transport (HTTP/stdio).
-   * The client controls the minimum log level via `logging/setLevel`.
-   */
-  sendLog?: (level: McpLogLevel, data: unknown, logger?: string) => Promise<void>;
-  /**
-   * Request LLM sampling from the client. Only available when the client supports sampling.
-   * Sends a `sampling/createMessage` request to the client.
-   */
-  createMessage?: (params: Record<string, unknown>) => Promise<unknown>;
-  /**
-   * Request user input via an elicitation form or URL.
-   * Only available when the client supports elicitation.
-   */
-  elicitInput?: (params: Record<string, unknown>) => Promise<unknown>;
-  /**
-   * Request the list of filesystem roots from the client.
-   * Only available when the client supports roots.
-   */
-  listRoots?: () => Promise<unknown>;
-}
-
-/**
- * Interceptor interface for cross-cutting concerns around tool execution.
- * Modeled after the NestJS `NestInterceptor.intercept(context, next)` pattern.
- *
- * Implement as an injectable NestJS service and register via the registry.
- * Each interceptor wraps the next one in the chain; the innermost `next()`
- * calls the tool handler.
- */
-export interface McpToolInterceptor {
-  intercept(context: McpToolContext, next: () => Promise<unknown>): Promise<unknown>;
-}
-
-/**
- * Guard interface for per-tool authorization.
- * Implement as an injectable NestJS service and reference via @McpGuard().
- */
-export interface McpCanActivate {
-  canActivate(
-    context: McpToolContext,
-    config?: Record<string, unknown>,
-  ): boolean | Promise<boolean>;
-}
-
-/**
- * Auth provider interface that runs before guards on every tool execution.
- * Implement as an `@Injectable()` NestJS service with full DI access.
- *
- * - Return an enriched `McpAuthInfo` to add decoded claims, roles, etc.
- * - Throw to reject the request (e.g., expired token).
- * - Return `undefined` to strip auth (anonymous access).
- */
-export interface McpAuthProvider {
-  resolveAuth(authInfo: McpAuthInfo | undefined): McpAuthInfo | undefined | Promise<McpAuthInfo | undefined>;
-}
-
-/**
- * Injectable provider for listing resources that match a resource template.
- * Implement as an `@Injectable()` NestJS service with full DI access.
- *
- * Used with `McpResource({ listProvider: MyListProvider })` on template resources.
- */
-export interface McpResourceListProvider {
-  list(): any | Promise<any>;
-}
-
-/**
- * Injectable provider for argument autocompletion on resource templates and prompts.
- * Implement as an `@Injectable()` NestJS service with full DI access.
- *
- * Used with `McpResource({ completeProvider: MyCompleter })` or
- * `McpPrompt({ completeProvider: MyCompleter })`.
- *
- * The `argName` parameter identifies which URI variable or prompt argument
- * the client is requesting completions for.
- */
-export interface McpCompletionProvider {
-  complete(argName: string, value: string, context?: { arguments?: Record<string, string> }): string[] | Promise<string[]>;
-}
-
-/**
- * Metadata attached by the @McpGuard decorator.
- */
-export interface McpGuardMetadata {
-  guardClass: new (...args: any[]) => McpCanActivate;
-  config?: Record<string, unknown>;
-}
 
 interface ToolEntry {
   metadata: McpToolMetadata;
@@ -140,65 +30,6 @@ interface PromptEntry {
   metadata: McpPromptMetadata;
   handler: (...args: any[]) => Promise<any>;
 }
-
-export interface McpTextContent {
-  type: 'text';
-  text: string;
-  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
-}
-
-export interface McpImageContent {
-  type: 'image';
-  data: string;
-  mimeType: string;
-  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
-}
-
-export interface McpAudioContent {
-  type: 'audio';
-  data: string;
-  mimeType: string;
-  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
-}
-
-export interface McpEmbeddedResource {
-  type: 'resource';
-  resource: { uri: string; text?: string; blob?: string; mimeType?: string };
-  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
-}
-
-export interface McpResourceLink {
-  type: 'resource_link';
-  uri: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
-  annotations?: { audience?: Array<'user' | 'assistant'>; priority?: number };
-}
-
-export type McpContentBlock =
-  | McpTextContent
-  | McpImageContent
-  | McpAudioContent
-  | McpEmbeddedResource
-  | McpResourceLink;
-
-export interface McpToolResult {
-  content: McpContentBlock[];
-  /** Optional structured output (JSON object) returned alongside content. */
-  structuredContent?: Record<string, unknown>;
-  isError?: boolean;
-  _meta?: Record<string, unknown>;
-}
-
-/** MCP logging levels (RFC 5424 severity + notice). */
-export type McpLogLevel = 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency';
-
-export type McpRegistrationChangeType = 'tool' | 'resource' | 'prompt';
-export type McpRegistrationChangeListener = (type: McpRegistrationChangeType, name: string) => void;
-
-/** Listener called when `notifyResourceUpdated(uri)` is invoked. */
-export type McpResourceUpdateListener = (uri: string) => void;
 
 @Injectable()
 export class McpToolRegistry {

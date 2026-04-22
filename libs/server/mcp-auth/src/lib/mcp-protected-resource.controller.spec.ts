@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { McpProtectedResourceController } from './mcp-protected-resource.controller';
 import { McpScopeRegistry } from './mcp-scope-registry';
-import { MCP_AUTH_CONFIG } from './mcp-auth.constants';
-import type { McpAuthConfig } from './mcp-auth.config';
+import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
+import type { McpAuthConfig } from './mcp-auth-config';
 
 describe('McpProtectedResourceController', () => {
   function createController(config: McpAuthConfig, scopes: string[] = []) {

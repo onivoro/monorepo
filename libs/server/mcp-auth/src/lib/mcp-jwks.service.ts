@@ -1,7 +1,7 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { JwksClient } from 'jwks-rsa';
-import { MCP_AUTH_CONFIG } from './mcp-auth.constants';
-import type { McpAuthConfig } from './mcp-auth.config';
+import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
+import type { McpAuthConfig } from './mcp-auth-config';
 
 /**
  * Fetches and caches JWKS signing keys for JWT validation.

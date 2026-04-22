@@ -1,4 +1,9 @@
-import { McpToolRegistry, McpAuthInfo, McpToolContext, McpToolInterceptor, McpCanActivate, McpGuardMetadata } from './mcp-tool-registry';
+import { McpToolRegistry } from './mcp-tool-registry';
+import type { McpAuthInfo } from './mcp-auth-info';
+import type { McpToolContext } from './mcp-tool-context';
+import type { McpToolInterceptor } from './mcp-tool-interceptor';
+import type { McpCanActivate } from './mcp-can-activate';
+import type { McpGuardMetadata } from './mcp-guard-metadata';
 import { McpScopeGuard } from './mcp-scope-guard';
 import { z } from 'zod';
 

@@ -83,12 +83,3 @@ export interface McpAuthConfig {
   /** Maximum JWKS requests per minute when rate limiting is enabled. Default: `10`. */
   jwksRequestsPerMinute?: number;
 }
-
-/**
- * Async factory options for `McpAuthModule.registerAsync()`.
- */
-export interface McpAuthAsyncOptions {
-  imports?: any[];
-  inject?: any[];
-  useFactory: (...args: any[]) => McpAuthConfig | Promise<McpAuthConfig>;
-}

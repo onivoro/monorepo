@@ -1,0 +1,1 @@
+export const LLM_ADAPTER_CONFIG = Symbol('LLM_ADAPTER_CONFIG');

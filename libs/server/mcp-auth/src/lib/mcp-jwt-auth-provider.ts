@@ -3,8 +3,8 @@ import * as jwt from 'jsonwebtoken';
 import type { McpAuthProvider, McpAuthInfo } from '@onivoro/server-mcp';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
-import { MCP_AUTH_CONFIG } from './mcp-auth.constants';
-import type { McpAuthConfig } from './mcp-auth.config';
+import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
+import type { McpAuthConfig } from './mcp-auth-config';
 import { McpJwksService } from './mcp-jwks.service';
 
 /**

@@ -1,0 +1,1 @@
+export const MCP_RESOURCE_METADATA = Symbol('MCP_RESOURCE_METADATA');

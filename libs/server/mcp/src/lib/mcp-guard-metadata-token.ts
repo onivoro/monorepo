@@ -1,0 +1,1 @@
+export const MCP_GUARD_METADATA = Symbol('MCP_GUARD_METADATA');

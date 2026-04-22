@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import { McpJwtAuthProvider } from './mcp-jwt-auth-provider';
 import { McpJwksService } from './mcp-jwks.service';
-import type { McpAuthConfig } from './mcp-auth.config';
+import type { McpAuthConfig } from './mcp-auth-config';
 
 // Generate a real RSA key pair for signing test JWTs
 const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {

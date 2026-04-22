@@ -1,14 +1,7 @@
 import type { ServerOptions } from '@modelcontextprotocol/sdk/server/index.js';
 import type { EventStore } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { McpAuthProvider } from './mcp-tool-registry';
-
-export interface McpServerMetadata {
-  name: string;
-  version: string;
-  description?: string;
-  /** Human-readable instructions describing how to use the server. Included in the initialize response. */
-  instructions?: string;
-}
+import type { McpServerMetadata } from './mcp-server-metadata';
+import type { McpAuthProvider } from './mcp-auth-provider';
 
 export interface McpModuleConfig {
   metadata: McpServerMetadata;
@@ -56,14 +49,4 @@ export interface McpModuleConfig {
    * (e.g., `JwtService`, `ConfigService`, repositories).
    */
   authProvider?: new (...args: any[]) => McpAuthProvider;
-}
-
-/**
- * Async factory options for modules that need runtime configuration
- * (e.g., from environment variables, config service, or secret manager).
- */
-export interface McpModuleAsyncOptions {
-  imports?: any[];
-  inject?: any[];
-  useFactory: (...args: any[]) => McpModuleConfig | Promise<McpModuleConfig>;
 }

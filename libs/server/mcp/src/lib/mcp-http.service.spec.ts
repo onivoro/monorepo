@@ -1,6 +1,6 @@
 import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
-import { McpModuleConfig } from './mcp-config.interface';
+import type { McpModuleConfig } from './mcp-module-config';
 
 const mockTransportHandleRequest = jest.fn().mockResolvedValue(undefined);
 const mockTransportClose = jest.fn().mockResolvedValue(undefined);

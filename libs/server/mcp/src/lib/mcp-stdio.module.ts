@@ -3,12 +3,14 @@ import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { McpStdioConfig, McpStdioAsyncOptions } from './mcp-stdio-config.interface';
-import { MCP_STDIO_CONFIG } from './mcp.constants';
+import type { McpStdioConfig } from './mcp-stdio-config';
+import type { McpStdioAsyncOptions } from './mcp-stdio-async-options';
+import { MCP_STDIO_CONFIG } from './mcp-stdio-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
-import { buildCapabilities, wireRegistryToServer } from './wire-registry-to-server';
+import { buildCapabilities } from './build-capabilities';
+import { wireRegistryToServer } from './wire-registry-to-server';
 
 @Module({})
 export class McpStdioModule implements OnModuleInit, OnModuleDestroy {

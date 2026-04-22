@@ -41,12 +41,3 @@ export interface McpOAuthConfig {
   /** Pass-through options for the SDK's revocation handler. */
   revocationOptions?: Record<string, unknown>;
 }
-
-/**
- * Async factory options for `McpOAuthModule.registerAsync()`.
- */
-export interface McpOAuthAsyncOptions {
-  imports?: any[];
-  inject?: any[];
-  useFactory: (...args: any[]) => McpOAuthConfig | Promise<McpOAuthConfig>;
-}

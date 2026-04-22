@@ -1,5 +1,6 @@
 import { McpToolRegistry } from './mcp-tool-registry';
-import { buildCapabilities, wireRegistryToServer } from './wire-registry-to-server';
+import { buildCapabilities } from './build-capabilities';
+import { wireRegistryToServer } from './wire-registry-to-server';
 import { z } from 'zod';
 
 const mockEnable = jest.fn();

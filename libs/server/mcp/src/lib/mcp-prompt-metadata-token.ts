@@ -1,0 +1,1 @@
+export const MCP_PROMPT_METADATA = Symbol('MCP_PROMPT_METADATA');

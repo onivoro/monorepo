@@ -3,10 +3,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import * as crypto from 'crypto';
 import * as http from 'http';
-import { McpModuleConfig } from './mcp-config.interface';
-import { MCP_MODULE_CONFIG } from './mcp.constants';
+import type { McpModuleConfig } from './mcp-module-config';
+import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
-import { buildCapabilities, wireRegistryToServer } from './wire-registry-to-server';
+import { buildCapabilities } from './build-capabilities';
+import { wireRegistryToServer } from './wire-registry-to-server';
 
 interface SessionEntry {
   server: McpServer;

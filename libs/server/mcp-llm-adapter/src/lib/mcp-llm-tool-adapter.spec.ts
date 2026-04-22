@@ -1,7 +1,7 @@
 import { McpToolRegistry } from '@onivoro/server-mcp';
 import { z } from 'zod';
 import { McpLlmToolAdapter } from './mcp-llm-tool-adapter';
-import { LlmAdapterConfig } from './llm-adapter.config';
+import type { LlmAdapterConfig } from './llm-adapter-config';
 
 interface SimpleToolDef {
   name: string;
