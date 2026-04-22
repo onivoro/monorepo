@@ -355,39 +355,55 @@ describe('wireRegistryToServer', () => {
     expect(mockRegisterResource.mock.calls[0][1]).toEqual({ uri: 'item://{id}' });
   });
 
-  it('should pass listCallback to ResourceTemplate when provided', () => {
+  it('should resolve listProvider and pass list callback to ResourceTemplate', () => {
     const { ResourceTemplate } = require('@modelcontextprotocol/sdk/server/mcp.js');
-    const listCallback = jest.fn().mockResolvedValue([{ uri: 'item://1', name: 'Item 1' }]);
+    const mockList = jest.fn().mockResolvedValue([{ uri: 'item://1', name: 'Item 1' }]);
 
+    class TestListProvider { list = mockList; }
+
+    registry.setProviderResolver(() => new TestListProvider());
     registry.registerResource(
-      { name: 'item', uri: 'item://{id}', isTemplate: true, listCallback },
+      { name: 'item', uri: 'item://{id}', isTemplate: true, listProvider: TestListProvider as any },
       jest.fn(),
     );
 
     wireRegistryToServer(registry, createMockServer());
 
-    // ResourceTemplate should have been called with the listCallback
-    expect(ResourceTemplate).toHaveBeenCalledWith('item://{id}', { list: listCallback });
+    expect(ResourceTemplate).toHaveBeenCalledWith('item://{id}', { list: expect.any(Function) });
+
+    // Verify the resolved callback delegates to the provider
+    const listFn = ResourceTemplate.mock.calls[0][1].list;
+    listFn();
+    expect(mockList).toHaveBeenCalled();
   });
 
-  it('should pass completeCallbacks to ResourceTemplate when provided', () => {
+  it('should resolve completeProvider and create Proxy-based complete for ResourceTemplate', () => {
     const { ResourceTemplate } = require('@modelcontextprotocol/sdk/server/mcp.js');
-    const completeId = jest.fn().mockResolvedValue(['item-1', 'item-2']);
+    const mockComplete = jest.fn().mockReturnValue(['item-1', 'item-2']);
 
+    class TestCompleter { complete = mockComplete; }
+
+    registry.setProviderResolver(() => new TestCompleter());
     registry.registerResource(
-      { name: 'item', uri: 'item://{id}', isTemplate: true, completeCallbacks: { id: completeId } },
+      { name: 'item', uri: 'item://{id}', isTemplate: true, completeProvider: TestCompleter as any },
       jest.fn(),
     );
 
     wireRegistryToServer(registry, createMockServer());
 
-    expect(ResourceTemplate).toHaveBeenCalledWith('item://{id}', {
-      list: undefined,
-      complete: { id: completeId },
-    });
+    expect(ResourceTemplate).toHaveBeenCalledTimes(1);
+    const callArgs = ResourceTemplate.mock.calls[0];
+    expect(callArgs[0]).toBe('item://{id}');
+    expect(callArgs[1].list).toBeUndefined();
+    expect(callArgs[1].complete).toBeDefined();
+
+    // Verify the proxy routes argName through to the provider
+    const complete = callArgs[1].complete;
+    complete.id('item-', { arguments: {} });
+    expect(mockComplete).toHaveBeenCalledWith('id', 'item-', { arguments: {} });
   });
 
-  it('should omit complete from ResourceTemplate when completeCallbacks not provided', () => {
+  it('should omit complete from ResourceTemplate when completeProvider not provided', () => {
     const { ResourceTemplate } = require('@modelcontextprotocol/sdk/server/mcp.js');
 
     registry.registerResource(
@@ -397,7 +413,6 @@ describe('wireRegistryToServer', () => {
 
     wireRegistryToServer(registry, createMockServer());
 
-    // Should only have list, no complete key
     expect(ResourceTemplate).toHaveBeenCalledWith('item://{id}', { list: undefined });
   });
 
@@ -608,13 +623,17 @@ describe('wireRegistryToServer', () => {
     expect(config.icons).toEqual(icons);
   });
 
-  it('should pass prompt completeCallbacks as complete config', () => {
-    const completeLang = jest.fn().mockReturnValue(['typescript', 'python']);
+  it('should resolve prompt completeProvider and create Proxy-based complete config', () => {
+    const mockComplete = jest.fn().mockReturnValue(['typescript', 'python']);
+
+    class TestCompleter { complete = mockComplete; }
+
+    registry.setProviderResolver(() => new TestCompleter());
     registry.registerPrompt(
       {
         name: 'code-prompt',
         description: 'Generate code',
-        completeCallbacks: { language: completeLang },
+        completeProvider: TestCompleter as any,
       },
       jest.fn(),
     );
@@ -622,10 +641,12 @@ describe('wireRegistryToServer', () => {
     wireRegistryToServer(registry, createMockServer());
 
     const config = mockRegisterPrompt.mock.calls[0][1];
-    expect(config.complete).toEqual({ language: completeLang });
+    expect(config.complete).toBeDefined();
+    config.complete.language('type');
+    expect(mockComplete).toHaveBeenCalledWith('language', 'type', undefined);
   });
 
-  it('should omit complete from prompt config when completeCallbacks not provided', () => {
+  it('should omit complete from prompt config when completeProvider not provided', () => {
     registry.registerPrompt(
       { name: 'simple-prompt', description: 'No completions' },
       jest.fn(),

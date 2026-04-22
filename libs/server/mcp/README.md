@@ -419,22 +419,46 @@ The library handles `resources/subscribe` and `resources/unsubscribe` requests a
 
 ### Resource template completion
 
-Resource templates can provide autocompletion for URI variables via `completeCallbacks`:
+Resource templates can provide autocompletion for URI variables and listing via injectable providers. Both `listProvider` and `completeProvider` are resolved through NestJS DI, so they can inject any service:
 
 ```typescript
+@Injectable()
+export class UserListProvider implements McpResourceListProvider {
+  constructor(private readonly userService: UserService) {}
+
+  async list() {
+    const users = await this.userService.findAll();
+    return { resources: users.map(u => ({ uri: `app://users/${u.id}`, name: u.name })) };
+  }
+}
+
+@Injectable()
+export class UserCompleter implements McpCompletionProvider {
+  constructor(private readonly userService: UserService) {}
+
+  async complete(argName: string, value: string) {
+    if (argName === 'userId') {
+      const users = await this.userService.search(value);
+      return users.map(u => u.id);
+    }
+    return [];
+  }
+}
+
+// In the service:
 @McpResource({
   name: 'user-profile',
   uri: 'app://users/{userId}',
   isTemplate: true,
-  listCallback: async () => ({ resources: users.map(u => ({ uri: `app://users/${u.id}`, name: u.name })) }),
-  completeCallbacks: {
-    userId: (value) => users.filter(u => u.id.startsWith(value)).map(u => u.id),
-  },
+  listProvider: UserListProvider,
+  completeProvider: UserCompleter,
 })
 async getProfile(uri: URL, variables: { userId: string }) {
   return { contents: [{ uri: uri.href, text: JSON.stringify(await this.userService.get(variables.userId)) }] };
 }
 ```
+
+Both providers must be registered as NestJS providers (e.g., in the module's `providers` array or exported from an imported module).
 
 ### Output schema
 
@@ -534,17 +558,25 @@ async getStatus() { ... }
 
 ### Prompt argument completions
 
-Prompts can provide autocompletion for their arguments via `completeCallbacks`:
+Prompts can provide autocompletion for their arguments via an injectable `completeProvider`:
 
 ```typescript
+@Injectable()
+export class LanguageCompleter implements McpCompletionProvider {
+  async complete(argName: string, value: string) {
+    if (argName === 'language') {
+      return ['typescript', 'python', 'rust', 'go'].filter(l => l.startsWith(value));
+    }
+    return [];
+  }
+}
+
+// In the service:
 @McpPrompt({
   name: 'generate-code',
   description: 'Generate code in a specific language',
   argsSchema: { language: z.string(), task: z.string() },
-  completeCallbacks: {
-    language: (value) => ['typescript', 'python', 'rust', 'go']
-      .filter(l => l.startsWith(value)),
-  },
+  completeProvider: LanguageCompleter,
 })
 async generateCode(params: { language: string; task: string }) {
   return { messages: [{ role: 'user', content: { type: 'text', text: `Write ${params.language}: ${params.task}` } }] };
@@ -1232,7 +1264,7 @@ McpServerMetadata            // { name, version, description? }
 McpToolMetadata              // { name, description, title?, schema?, aliases?, annotations? }
 McpToolOptions               // { aliases?, annotations?, title? } — options object form for @McpTool
 McpToolAnnotations           // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
-McpResourceMetadata          // { name, uri, title?, description?, mimeType?, size?, isTemplate?, listCallback? }
+McpResourceMetadata          // { name, uri, title?, description?, mimeType?, size?, isTemplate?, listProvider?, completeProvider? }
 McpPromptMetadata            // { name, title?, description?, argsSchema? }
 
 // Service

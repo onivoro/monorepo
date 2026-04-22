@@ -94,6 +94,30 @@ export interface McpAuthProvider {
 }
 
 /**
+ * Injectable provider for listing resources that match a resource template.
+ * Implement as an `@Injectable()` NestJS service with full DI access.
+ *
+ * Used with `McpResource({ listProvider: MyListProvider })` on template resources.
+ */
+export interface McpResourceListProvider {
+  list(): any | Promise<any>;
+}
+
+/**
+ * Injectable provider for argument autocompletion on resource templates and prompts.
+ * Implement as an `@Injectable()` NestJS service with full DI access.
+ *
+ * Used with `McpResource({ completeProvider: MyCompleter })` or
+ * `McpPrompt({ completeProvider: MyCompleter })`.
+ *
+ * The `argName` parameter identifies which URI variable or prompt argument
+ * the client is requesting completions for.
+ */
+export interface McpCompletionProvider {
+  complete(argName: string, value: string, context?: { arguments?: Record<string, string> }): string[] | Promise<string[]>;
+}
+
+/**
  * Metadata attached by the @McpGuard decorator.
  */
 export interface McpGuardMetadata {
@@ -189,6 +213,7 @@ export class McpToolRegistry {
   private readonly resourceUpdateListeners: McpResourceUpdateListener[] = [];
   private toolEnabledDelegate?: (name: string, enabled: boolean) => void;
   private guardResolver?: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate;
+  private providerResolver?: (cls: new (...args: any[]) => any) => any;
   private authProvider?: McpAuthProvider;
 
   // -- Registration --
@@ -281,6 +306,19 @@ export class McpToolRegistry {
 
   setAuthProvider(provider: McpAuthProvider): void {
     this.authProvider = provider;
+  }
+
+  setProviderResolver(resolver: (cls: new (...args: any[]) => any) => any): void {
+    this.providerResolver = resolver;
+  }
+
+  resolveProvider<T>(cls: new (...args: any[]) => T): T {
+    if (!this.providerResolver) {
+      throw new Error(
+        'No provider resolver set. Ensure the module supports provider resolution.',
+      );
+    }
+    return this.providerResolver(cls);
   }
 
   /**

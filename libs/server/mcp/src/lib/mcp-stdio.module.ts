@@ -81,6 +81,9 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     this.registry.setGuardResolver((guardClass) =>
       this.moduleRef.get(guardClass, { strict: false }),
     );
+    this.registry.setProviderResolver((cls) =>
+      this.moduleRef.get(cls, { strict: false }),
+    );
     if (this.config.authProvider) {
       const provider = this.moduleRef.get(this.config.authProvider, { strict: false });
       this.registry.setAuthProvider(provider);

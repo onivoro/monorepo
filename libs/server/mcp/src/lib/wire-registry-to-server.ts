@@ -98,11 +98,28 @@ function wireResourceToServer(registry: McpToolRegistry, server: McpServer, reso
   if (metadata.annotations) resourceConfig['annotations'] = metadata.annotations;
 
   if (metadata.isTemplate) {
+    let listCallback: ((...args: any[]) => any) | undefined;
+    if (metadata.listProvider) {
+      const provider = registry.resolveProvider(metadata.listProvider);
+      listCallback = () => provider.list();
+    }
+
+    let completeCallbacks: Record<string, (value: string, context?: any) => string[] | Promise<string[]>> | undefined;
+    if (metadata.completeProvider) {
+      const provider = registry.resolveProvider(metadata.completeProvider);
+      completeCallbacks = new Proxy({} as any, {
+        get: (_target, prop: string | symbol) => {
+          if (prop === 'then' || typeof prop !== 'string') return undefined;
+          return (value: string, context?: any) => provider.complete(prop, value, context);
+        },
+      });
+    }
+
     server.registerResource(
       metadata.name,
       new ResourceTemplate(metadata.uri, {
-        list: metadata.listCallback ?? undefined,
-        ...(metadata.completeCallbacks && { complete: metadata.completeCallbacks }),
+        list: listCallback,
+        ...(completeCallbacks && { complete: completeCallbacks }),
       }),
       resourceConfig,
       handler,
@@ -118,6 +135,17 @@ function wirePromptToServer(registry: McpToolRegistry, server: McpServer, prompt
   if (!entry) return;
   const { metadata, handler } = entry;
 
+  let completeCallbacks: Record<string, (value: string, context?: any) => string[] | Promise<string[]>> | undefined;
+  if (metadata.completeProvider) {
+    const provider = registry.resolveProvider(metadata.completeProvider);
+    completeCallbacks = new Proxy({} as any, {
+      get: (_target, prop: string | symbol) => {
+        if (prop === 'then' || typeof prop !== 'string') return undefined;
+        return (value: string, context?: any) => provider.complete(prop, value, context);
+      },
+    });
+  }
+
   server.registerPrompt(
     metadata.name,
     {
@@ -125,7 +153,7 @@ function wirePromptToServer(registry: McpToolRegistry, server: McpServer, prompt
       argsSchema: metadata.argsSchema,
       ...(metadata.title && { title: metadata.title }),
       ...(metadata.icons && { icons: metadata.icons }),
-      ...(metadata.completeCallbacks && { complete: metadata.completeCallbacks }),
+      ...(completeCallbacks && { complete: completeCallbacks }),
     },
     handler,
   );

@@ -5,6 +5,7 @@ import {
   MCP_RESOURCE_METADATA,
   MCP_PROMPT_METADATA,
 } from './mcp.constants';
+import type { McpResourceListProvider, McpCompletionProvider } from './mcp-tool-registry';
 
 /**
  * Behavioral hints for MCP clients (spec 2025-03-26+).
@@ -81,21 +82,17 @@ export interface McpResourceMetadata {
   annotations?: McpResourceAnnotations;
   isTemplate?: boolean;
   /**
-   * Callback to list all resources matching this template. Only used when isTemplate is true.
-   * Must return `{ resources: [...] }` matching the MCP ListResourcesResult shape.
+   * Injectable provider that lists all resources matching this template. Only used when isTemplate is true.
+   * Must implement `McpResourceListProvider` and be decorated with `@Injectable()`.
    */
-  listCallback?: (...args: any[]) => any;
+  listProvider?: new (...args: any[]) => McpResourceListProvider;
   /**
-   * Autocompletion callbacks for URI template variables. Only used when isTemplate is true.
-   * Each key is a variable name from the URI template; the callback returns possible completions.
+   * Injectable provider for autocompletion of URI template variables. Only used when isTemplate is true.
+   * Must implement `McpCompletionProvider` and be decorated with `@Injectable()`.
    *
-   * ```ts
-   * completeCallbacks: {
-   *   id: (value) => items.filter(i => i.startsWith(value)).map(i => i.id),
-   * }
-   * ```
+   * The provider's `complete(argName, value, context)` method is called for each URI variable.
    */
-  completeCallbacks?: Record<string, (value: string, context?: { arguments?: Record<string, string> }) => string[] | Promise<string[]>>;
+  completeProvider?: new (...args: any[]) => McpCompletionProvider;
 }
 
 export interface McpPromptMetadata {
@@ -107,16 +104,12 @@ export interface McpPromptMetadata {
   /** Icons for client UI rendering (spec 2025-11-25+). */
   icons?: McpIcon[];
   /**
-   * Autocompletion callbacks for prompt arguments.
-   * Each key is an argument name from argsSchema; the callback returns possible completions.
+   * Injectable provider for autocompletion of prompt arguments.
+   * Must implement `McpCompletionProvider` and be decorated with `@Injectable()`.
    *
-   * ```ts
-   * completeCallbacks: {
-   *   language: (value) => ['typescript', 'python', 'rust'].filter(l => l.startsWith(value)),
-   * }
-   * ```
+   * The provider's `complete(argName, value, context)` method is called for each argument.
    */
-  completeCallbacks?: Record<string, (value: string, context?: { arguments?: Record<string, string> }) => string[] | Promise<string[]>>;
+  completeProvider?: new (...args: any[]) => McpCompletionProvider;
 }
 
 export interface McpToolOptions {

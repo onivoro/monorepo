@@ -45,5 +45,8 @@ export class McpRegistryModule implements OnModuleInit {
     this.registry.setGuardResolver((guardClass) =>
       this.moduleRef.get(guardClass, { strict: false }),
     );
+    this.registry.setProviderResolver((cls) =>
+      this.moduleRef.get(cls, { strict: false }),
+    );
   }
 }
