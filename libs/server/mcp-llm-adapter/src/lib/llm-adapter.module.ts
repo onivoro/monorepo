@@ -1,4 +1,5 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { McpRegistryModule } from '@onivoro/server-mcp';
 import { LlmToolAdapter } from './llm-tool-adapter';
 import { LLM_ADAPTER_CONFIG, LlmAdapterConfig } from './llm-adapter.config';
 import {
@@ -14,6 +15,7 @@ export class LlmAdapterModule {
   static forProvider<T>(config: LlmAdapterConfig<T>): DynamicModule {
     return {
       module: LlmAdapterModule,
+      imports: [McpRegistryModule.registerOnly()],
       providers: [
         LlmToolAdapter,
         { provide: LLM_ADAPTER_CONFIG, useValue: config },
