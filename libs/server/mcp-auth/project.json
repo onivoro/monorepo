@@ -1,0 +1,24 @@
+{
+  "name": "lib-server-mcp-auth",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/mcp-auth/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/mcp-auth",
+        "main": "libs/server/mcp-auth/src/index.ts",
+        "tsConfig": "libs/server/mcp-auth/tsconfig.lib.json",
+        "assets": [
+          "libs/server/mcp-auth/README.md",
+          "libs/server/mcp-auth/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": { "executor": "@nx/js:release-publish" }
+  },
+  "tags": []
+}

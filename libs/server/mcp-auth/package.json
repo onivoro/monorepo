@@ -1,0 +1,29 @@
+{
+  "name": "@onivoro/server-mcp-auth",
+  "version": "24.33.21",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "dependencies": {
+    "@onivoro/server-mcp": "^24.33.21",
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "jwks-rsa": "^3.0.0"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}

@@ -101,20 +101,7 @@ bak
 _tmp
 **/vite.config.{js,ts,mjs,mts,cjs,cts}.timestamp*
 
-# Botvim logs & artefacts
-apps/server/botvim/logs/
-apps/browser/botvim/logs/
-tests/playwright/botvim/screenshots/
-reports/botvim/
-
-ui_snapshots/botvim/render-log*.ndjson
-/ui_snapshots/botvim/
-
-
-/apps/browser/botvim/logs
-/ui_snapshots/botvim/latest/
-/ui_snapshots
-apps/server/botvim/logs
-
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
+
+.onyvore/

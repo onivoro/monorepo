@@ -1,0 +1,2 @@
+export const MCP_OAUTH_CONFIG = Symbol('MCP_OAUTH_CONFIG');
+export const MCP_OAUTH_SERVER_PROVIDER = Symbol('MCP_OAUTH_SERVER_PROVIDER');

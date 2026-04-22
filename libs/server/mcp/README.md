@@ -1251,11 +1251,13 @@ MCP_CORS_EXPOSED_HEADERS     // CORS exposed headers array
 MCP_CORS_CONFIG              // Complete CORS config object (methods, allowedHeaders, exposedHeaders)
 ```
 
-## Consumer libraries
+## Companion libraries
 
 | Library | Purpose |
 |---------|---------|
 | [`@onivoro/server-mcp-llm-adapter`](../mcp-llm-adapter/README.md) | Generic LLM adapter — Bedrock Converse, OpenAI, Anthropic, Gemini, Mistral |
+| [`@onivoro/server-mcp-auth`](../mcp-auth/README.md) | Resource server auth — JWT validation, JWKS, scope auto-discovery, RFC 9728 Protected Resource Metadata |
+| [`@onivoro/server-mcp-oauth`](../mcp-oauth/README.md) | Embedded OAuth 2.1 authorization server — wraps SDK's `OAuthServerProvider` + `mcpAuthRouter` into NestJS |
 
 ## Peer dependencies
 

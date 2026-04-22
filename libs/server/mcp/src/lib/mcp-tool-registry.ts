@@ -373,6 +373,11 @@ export class McpToolRegistry {
     return this.tools.has(name);
   }
 
+  /** Returns the guard metadata for a registered tool, or an empty array if not found. */
+  getToolGuards(name: string): ReadonlyArray<McpGuardMetadata> {
+    return this.tools.get(name)?.guards ?? [];
+  }
+
   // -- Execution --
 
   async executeToolRaw(

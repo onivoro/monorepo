@@ -1,9 +1,11 @@
 # MCP Library Audit: Spec Compliance, Integrity, and Gap Analysis
 
-**Date**: 2026-04-20
+**Date**: 2026-04-21
 **Libraries Analyzed**:
 1. `@onivoro/server-mcp` v24.33.21 — MCP protocol server for NestJS
 2. `@onivoro/server-mcp-llm-adapter` v24.33.21 — LLM provider tool format adapter
+3. `@onivoro/server-mcp-auth` v24.33.21 — Resource server auth (JWT validation, JWKS, scope registry, PRM)
+4. `@onivoro/server-mcp-oauth` v24.33.21 — Embedded OAuth 2.1 authorization server
 
 **MCP Spec Version**: 2025-11-25 (third major revision)
 **SDK Version Installed**: `@modelcontextprotocol/sdk ^1.28.0` (latest stable: 1.29.0)
@@ -118,6 +120,19 @@ The name map is now cached and automatically invalidated when the registry fires
 | Server description | `metadata.description` forwarded to SDK `ServerInfo` |
 | Async module config | `registerAndServeHttpAsync` / `registerAndServeStdioAsync` |
 | Auth provider | `McpAuthProvider` interface — DI-resolved `@Injectable()` service, runs before guards for centralized token validation/enrichment |
+| JWT validation (auth library) | `McpJwtAuthProvider` — JWKS-backed JWT verification, issuer/audience/expiry checks, configurable claims extraction |
+| JWKS fetching + caching (auth library) | `McpJwksService` — wraps `jwks-rsa` with configurable cache TTL and rate limiting |
+| Scope auto-discovery (auth library) | `McpScopeRegistry` — scans `@McpGuard(McpScopeGuard, { scopes })` metadata, subscribes to dynamic registration changes |
+| Protected Resource Metadata (auth library) | `McpProtectedResourceController` — serves `/.well-known/oauth-protected-resource` per RFC 9728 |
+| Auth enrichment (auth library) | Extracts `clientId`, `scopes`, `expiresAt`, `extra` claims into `McpAuthInfo` from JWT payload |
+| Provider-agnostic JWT config (auth library) | Configurable `clientIdClaim`, `scopeClaim`, `scopeFormat`, `extraClaims` — supports Cognito, Auth0, Entra ID out of the box |
+| SDK token verifier bridge (auth library) | `McpJwtAuthProvider` implements both `McpAuthProvider` and SDK's `OAuthTokenVerifier` |
+| Auth testing utilities (auth library) | `McpTestAuthProvider`, `createMockAuthInfo()`, `createMockJwt()` for integration and unit tests |
+| Embedded OAuth 2.1 server (oauth library) | `McpOAuthModule` — mounts SDK's `mcpAuthRouter` as Express middleware via NestJS `MiddlewareConsumer` |
+| OAuth endpoints (oauth library) | `/.well-known/oauth-authorization-server`, `/authorize`, `/token`, `/register`, `/revoke` |
+| OAuth provider DI (oauth library) | Accepts `OAuthServerProvider` as class reference (DI-resolved) or instance (e.g. `ProxyOAuthServerProvider`) |
+| Memory clients store (oauth library) | `McpMemoryClientsStore` — in-memory `OAuthRegisteredClientsStore` with `seedClient()` for dev/testing |
+| Async module config (auth + oauth) | Both libraries support `registerAsync()` with `{ imports, inject, useFactory }` pattern |
 
 ---
 
@@ -194,4 +209,7 @@ The name map is now cached and automatically invalidated when the registry fires
 - `ping`: Handled by SDK's low-level `Server` class
 - Cancellation: SDK propagates via `AbortSignal` — correctly forwarded to `McpToolContext.signal`
 - `logging/setLevel`: SDK handles internally; `sendLog` respects the client-set level
-- All 163 `lib-server-mcp` tests and 38 `lib-server-mcp-llm-adapter` tests pass
+- All 163 `lib-server-mcp` tests pass
+- All 38 `lib-server-mcp-llm-adapter` tests pass
+- All 52 `lib-server-mcp-auth` tests pass (JWT validation, JWKS service, scope registry, PRM controller, module integration, test utilities)
+- All 12 `lib-server-mcp-oauth` tests pass (module register/registerAsync, config forwarding, memory clients store, McpMemoryClientsStore exports)
