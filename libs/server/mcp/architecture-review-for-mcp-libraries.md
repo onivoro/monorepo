@@ -40,7 +40,7 @@ Both modules now forward `metadata.description` to the SDK's `McpServer` constru
 
 ### ~~4. Express-only HTTP transport~~ RESOLVED
 
-**File**: `mcp.module.ts`
+**File**: `mcp-http.module.ts`
 
 The controller now includes a runtime guard that returns a clear JSON-RPC error when `req.body` is undefined (Fastify platform, missing body parser). JSDoc on `McpHttpModule` documents the Express-only requirement and recommends `McpRegistryModule.registerOnly()` for Fastify users. README includes a "Platform requirement" section.
 

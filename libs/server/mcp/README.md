@@ -169,14 +169,14 @@ Use `McpRegistryModule.registerOnly()` when you need the tool registry without a
 // app.module.ts
 import { Module } from '@nestjs/common';
 import { McpRegistryModule } from '@onivoro/server-mcp';
-import { LlmAdapterModule } from '@onivoro/server-mcp-llm-adapter';
+import { McpLlmAdapterModule } from '@onivoro/server-mcp-llm-adapter';
 import { EmojiService } from './services/emoji.service';
 import { ChatService } from './services/chat.service';
 
 @Module({
   imports: [
     McpRegistryModule.registerOnly(),
-    LlmAdapterModule.forBedrockConverse(),  // or forOpenAi(), forClaude(), etc.
+    McpLlmAdapterModule.forBedrockConverse(),  // or forOpenAi(), forClaude(), etc.
   ],
   providers: [EmojiService, ChatService],
 })

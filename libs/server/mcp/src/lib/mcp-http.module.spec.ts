@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { McpHttpModule } from './mcp.module';
+import { McpHttpModule } from './mcp-http.module';
 import { McpToolRegistry, McpAuthInfo, McpAuthProvider } from './mcp-tool-registry';
 import { McpTool, McpResource, McpPrompt } from './mcp.decorator';
 import { z } from 'zod';

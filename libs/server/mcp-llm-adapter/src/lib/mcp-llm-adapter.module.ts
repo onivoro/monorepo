@@ -11,10 +11,10 @@ import {
 } from './provider-configs';
 
 @Module({})
-export class LlmAdapterModule {
+export class McpLlmAdapterModule {
   static forProvider<T>(config: LlmAdapterConfig<T>): DynamicModule {
     return {
-      module: LlmAdapterModule,
+      module: McpLlmAdapterModule,
       imports: [McpRegistryModule.registerOnly()],
       providers: [
         LlmToolAdapter,

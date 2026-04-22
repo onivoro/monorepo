@@ -44,19 +44,19 @@ The same principle applies outside Bedrock — pick the config that matches the 
 
 ## Usage
 
-Import `LlmAdapterModule` alongside whichever MCP module provides the tool registry:
+Import `McpLlmAdapterModule` alongside whichever MCP module provides the tool registry:
 
 ```typescript
 import { Module } from '@nestjs/common';
 import { McpRegistryModule } from '@onivoro/server-mcp';
-import { LlmAdapterModule } from '@onivoro/server-mcp-llm-adapter';
+import { McpLlmAdapterModule } from '@onivoro/server-mcp-llm-adapter';
 import { EmojiToolService } from './services/emoji-tool.service';
 import { ChatService } from './services/chat.service';
 
 @Module({
   imports: [
     McpRegistryModule.registerOnly(),
-    LlmAdapterModule.forBedrockConverse(),
+    McpLlmAdapterModule.forBedrockConverse(),
   ],
   providers: [EmojiToolService, ChatService],
 })
@@ -151,10 +151,10 @@ When `formatToolWithOutput` is defined and the tool has an `outputSchema`, it is
 
 ## Custom providers
 
-Use `LlmAdapterModule.forProvider()` with a custom config for any provider not included out of the box:
+Use `McpLlmAdapterModule.forProvider()` with a custom config for any provider not included out of the box:
 
 ```typescript
-import { LlmAdapterModule, LlmAdapterConfig } from '@onivoro/server-mcp-llm-adapter';
+import { McpLlmAdapterModule, LlmAdapterConfig } from '@onivoro/server-mcp-llm-adapter';
 
 interface MyToolDef {
   name: string;
@@ -172,7 +172,7 @@ const MY_CONFIG: LlmAdapterConfig<MyToolDef> = {
   }),
 };
 
-LlmAdapterModule.forProvider(MY_CONFIG);
+McpLlmAdapterModule.forProvider(MY_CONFIG);
 ```
 
 ## LlmToolAdapter API
@@ -209,7 +209,7 @@ Providers that require name sanitization (Bedrock Converse, Gemini) apply it aut
 
 ```typescript
 // Module
-LlmAdapterModule                // NestJS module — forProvider(), forBedrockConverse(), forOpenAi(), forClaude(), forGemini(), forMistral()
+McpLlmAdapterModule                // NestJS module — forProvider(), forBedrockConverse(), forOpenAi(), forClaude(), forGemini(), forMistral()
 
 // Adapter
 LlmToolAdapter                  // Injectable — toProviderTools(), getOutputSchemas(), resolveProviderToolName(), executeToolForProvider(), executeToolCallForProvider(), executeToolsForProvider()
