@@ -58,21 +58,6 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  /** @deprecated Use McpStdioModule.registerAndServeStdio() instead */
-  static configure(config: McpStdioConfig): DynamicModule {
-    return {
-      module: McpStdioModule,
-      imports: [DiscoveryModule],
-      providers: [
-        McpToolRegistry,
-        McpScopeGuard,
-        { provide: MCP_STDIO_CONFIG, useValue: config },
-        ...(config.authProvider ? [config.authProvider] : []),
-      ],
-      exports: [McpToolRegistry],
-    };
-  }
-
   async onModuleInit() {
     discoverAndRegisterMcpEntities(
       this.discoveryService,

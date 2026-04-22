@@ -25,16 +25,6 @@ export class McpRegistryModule implements OnModuleInit {
     };
   }
 
-  /** @deprecated Use McpRegistryModule.registerOnly() instead. Note: McpModule has been renamed to McpHttpModule. */
-  static forFeature(): DynamicModule {
-    return {
-      module: McpRegistryModule,
-      imports: [DiscoveryModule],
-      providers: [McpToolRegistry, McpScopeGuard],
-      exports: [McpToolRegistry],
-    };
-  }
-
   async onModuleInit() {
     discoverAndRegisterMcpEntities(
       this.discoveryService,

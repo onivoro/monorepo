@@ -279,7 +279,7 @@ The `z.infer<typeof insertEmojisSchema>` resolves to `{ text: string; intensity?
 })
 ```
 
-The positional form (`@McpTool(name, desc, schema, aliases, annotations)`) is still supported but deprecated.
+All three decorators (`@McpTool`, `@McpResource`, `@McpPrompt`) follow the same pattern — a single metadata object.
 
 ### Accessing auth context
 
@@ -1300,17 +1300,16 @@ McpModuleAsyncOptions        // Async configuration for McpHttpModule.registerAn
 McpStdioConfig               // Configuration for McpStdioModule.registerAndServeStdio()
 McpStdioAsyncOptions         // Async configuration for McpStdioModule.registerAndServeStdio()
 McpServerMetadata            // { name, version, description? }
-McpToolMetadata              // { name, description, title?, schema?, aliases?, annotations? }
-McpToolOptions               // @deprecated — use McpToolMetadata directly with @McpTool({ ... })
+McpToolMetadata              // { name, description, title?, schema?, outputSchema?, aliases?, annotations?, icons? }
 McpToolAnnotations           // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
-McpIcon                      // { uri: string, mediaType?: string } — icon for tools/resources/prompts
-McpResourceMetadata          // { name, uri, title?, description?, mimeType?, size?, isTemplate?, listProvider?, completeProvider? }
+McpIcon                      // { url: string, mediaType?, size? } — icon for tools/resources/prompts
+McpResourceMetadata          // { name, uri, title?, description?, mimeType?, size?, icons?, annotations?, isTemplate?, listProvider?, completeProvider? }
 McpResourceAnnotations       // { audience?, priority? } — annotations for resources
-McpPromptMetadata            // { name, title?, description?, argsSchema? }
+McpPromptMetadata            // { name, title?, description?, argsSchema?, icons?, completeProvider? }
 
 // Provider interfaces
 McpResourceListProvider      // Interface — list() for resource template list callbacks
-McpCompletionProvider        // Interface — complete(paramName, value, context?) for completion callbacks
+McpCompletionProvider        // Interface — complete(argName, value, context?) for completion callbacks
 
 // Service
 McpHttpService                   // HTTP session manager (rarely needed directly)

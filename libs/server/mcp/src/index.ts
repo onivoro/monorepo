@@ -37,7 +37,6 @@ export { McpStdioAsyncOptions } from './lib/mcp-stdio-async-options';
 
 // Tool metadata & options
 export { McpToolMetadata } from './lib/mcp-tool-metadata';
-export { McpToolOptions } from './lib/mcp-tool-options';
 export { McpToolAnnotations } from './lib/mcp-tool-annotations';
 export { McpIcon } from './lib/mcp-icon';
 

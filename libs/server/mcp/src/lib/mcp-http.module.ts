@@ -96,21 +96,6 @@ export class McpHttpModule implements OnModuleInit {
     };
   }
 
-  /** @deprecated Use McpHttpModule.registerAndServeHttp() instead */
-  static configure(config: McpModuleConfig): DynamicModule {
-    return {
-      module: McpHttpModule,
-      imports: [DiscoveryModule],
-      controllers: [createMcpController(config.routePrefix)],
-      providers: [
-        McpToolRegistry, McpHttpService, McpScopeGuard,
-        { provide: MCP_MODULE_CONFIG, useValue: config },
-        ...(config.authProvider ? [config.authProvider] : []),
-      ],
-      exports: [McpHttpService, McpToolRegistry],
-    };
-  }
-
   async onModuleInit() {
     discoverAndRegisterMcpEntities(
       this.discoveryService,
