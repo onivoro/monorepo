@@ -8,7 +8,7 @@ MCP tools are business logic with a protocol wrapper. The problem is that the sa
 
 This library solves that by separating **tool definition** (decorators on NestJS services) from **tool consumption** (HTTP sessions, stdio, raw execution). You write your tools once. The registry handles discovery, schema conversion, and per-consumer format wrapping automatically.
 
-Consumer-specific formatting (e.g. Bedrock Converse tool definitions, OpenAI function calling, Anthropic Messages API) lives in a separate adapter library that layers on top of the registry. See [`@onivoro/server-mcp-llm-adapter`](../mcp-llm-adapter/README.md) for the generic LLM adapter.
+Consumer-specific formatting (e.g. Bedrock Converse tool definitions, OpenAI function calling, Anthropic Messages API) lives in a separate adapter library that layers on top of the registry. See [`@onivoro/server-mcp-llm-adapter`](https://www.npmjs.com/package/@onivoro/server-mcp-llm-adapter) for the generic LLM adapter.
 
 ### Design goals
 
@@ -183,7 +183,7 @@ import { ChatService } from './services/chat.service';
 export class AppModule {}
 ```
 
-See [`@onivoro/server-mcp-llm-adapter`](../mcp-llm-adapter/README.md) for provider-specific usage.
+See [`@onivoro/server-mcp-llm-adapter`](https://www.npmjs.com/package/@onivoro/server-mcp-llm-adapter) for provider-specific usage.
 
 ### Custom transport
 
@@ -1255,9 +1255,9 @@ MCP_CORS_CONFIG              // Complete CORS config object (methods, allowedHea
 
 | Library | Purpose |
 |---------|---------|
-| [`@onivoro/server-mcp-llm-adapter`](../mcp-llm-adapter/README.md) | Generic LLM adapter — Bedrock Converse, OpenAI, Anthropic, Gemini, Mistral |
-| [`@onivoro/server-mcp-auth`](../mcp-auth/README.md) | Resource server auth — JWT validation, JWKS, scope auto-discovery, RFC 9728 Protected Resource Metadata |
-| [`@onivoro/server-mcp-oauth`](../mcp-oauth/README.md) | Embedded OAuth 2.1 authorization server — wraps SDK's `OAuthServerProvider` + `mcpAuthRouter` into NestJS |
+| [`@onivoro/server-mcp-llm-adapter`](https://www.npmjs.com/package/@onivoro/server-mcp-llm-adapter) | Generic LLM adapter — Bedrock Converse, OpenAI, Anthropic, Gemini, Mistral |
+| [`@onivoro/server-mcp-auth`](https://www.npmjs.com/package/@onivoro/server-mcp-auth) | Resource server auth — JWT validation, JWKS, scope auto-discovery, RFC 9728 Protected Resource Metadata |
+| [`@onivoro/server-mcp-oauth`](https://www.npmjs.com/package/@onivoro/server-mcp-oauth) | Embedded OAuth 2.1 authorization server — wraps SDK's `OAuthServerProvider` + `mcpAuthRouter` into NestJS |
 
 ## Peer dependencies
 

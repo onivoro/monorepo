@@ -2,7 +2,7 @@
 
 Embedded OAuth 2.1 authorization server for MCP. Wraps the MCP SDK's `OAuthServerProvider` infrastructure into NestJS modules.
 
-Use this when your MCP server needs to BE the OAuth provider (no external Cognito/Auth0/Entra). For the more common case of validating tokens from an external provider, use `@onivoro/server-mcp-auth` instead.
+Use this when your MCP server needs to BE the OAuth provider (no external Cognito/Auth0/Entra). For the more common case of validating tokens from an external provider, use [`@onivoro/server-mcp-auth`](https://www.npmjs.com/package/@onivoro/server-mcp-auth) instead.
 
 ## Installation
 
@@ -147,7 +147,7 @@ store.clear();
 
 For production, implement `OAuthRegisteredClientsStore` with a persistent backend (database, Redis, etc.).
 
-## Using with @onivoro/server-mcp-auth
+## Using with [@onivoro/server-mcp-auth](https://www.npmjs.com/package/@onivoro/server-mcp-auth)
 
 For the full auth stack (issue AND validate tokens), combine both libraries:
 

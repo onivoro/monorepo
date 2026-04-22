@@ -1,6 +1,6 @@
 # @onivoro/server-mcp-llm-adapter
 
-Generic adapter for `@onivoro/server-mcp`. Converts MCP tool registry entries to any LLM provider's tool definition format and provides a unified execution path. Ships with prebuilt configs for AWS Bedrock Converse, OpenAI, Anthropic, Google Gemini, and Mistral.
+Generic adapter for [`@onivoro/server-mcp`](https://www.npmjs.com/package/@onivoro/server-mcp). Converts MCP tool registry entries to any LLM provider's tool definition format and provides a unified execution path. Ships with prebuilt configs for AWS Bedrock Converse, OpenAI, Anthropic, Google Gemini, and Mistral.
 
 ## Install
 
@@ -239,4 +239,4 @@ GeminiToolDefinition             // { name, description, parameters }
 
 | Library | Purpose |
 |---------|---------|
-| [`@onivoro/server-mcp`](../mcp/README.md) | Transport-agnostic MCP tool registry, decorators, HTTP and stdio transports |
+| [`@onivoro/server-mcp`](https://www.npmjs.com/package/@onivoro/server-mcp) | Transport-agnostic MCP tool registry, decorators, HTTP and stdio transports |

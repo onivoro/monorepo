@@ -1,6 +1,6 @@
 # @onivoro/server-mcp-auth
 
-Resource server auth for MCP servers built with `@onivoro/server-mcp`. Validates incoming JWT tokens, enriches auth context, auto-discovers scopes, and serves RFC 9728 Protected Resource Metadata.
+Resource server auth for MCP servers built with [`@onivoro/server-mcp`](https://www.npmjs.com/package/@onivoro/server-mcp). Validates incoming JWT tokens, enriches auth context, auto-discovers scopes, and serves RFC 9728 Protected Resource Metadata.
 
 ## Installation
 
