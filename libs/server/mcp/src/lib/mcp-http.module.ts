@@ -4,9 +4,9 @@ import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { Request, Response } from 'express';
 import { McpModuleConfig, McpModuleAsyncOptions } from './mcp-config.interface';
 import { MCP_MODULE_CONFIG } from './mcp.constants';
-import { McpService } from './mcp.service';
+import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
-import { McpScopeGuard } from './mcp-guard';
+import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
 
 function createMcpController(routePrefix?: string) {
@@ -14,7 +14,7 @@ function createMcpController(routePrefix?: string) {
 
   @Controller()
   class DynamicMcpController {
-    constructor(private readonly mcpService: McpService) {}
+    constructor(private readonly mcpService: McpHttpService) {}
 
     @All(route)
     async handleMcp(@Req() req: Request, @Res() res: Response) {
@@ -48,7 +48,7 @@ function createMcpController(routePrefix?: string) {
  * incompatible with this module's controller. If you need Fastify, use
  * `McpRegistryModule.registerOnly()` and implement a custom controller that
  * extracts the body from Fastify's request object and passes raw Node
- * `http.IncomingMessage` / `http.ServerResponse` to `McpService.handleRequest()`.
+ * `http.IncomingMessage` / `http.ServerResponse` to `McpHttpService.handleRequest()`.
  */
 @Module({})
 export class McpHttpModule implements OnModuleInit {
@@ -68,11 +68,11 @@ export class McpHttpModule implements OnModuleInit {
       imports: [DiscoveryModule],
       controllers: [createMcpController(config.routePrefix)],
       providers: [
-        McpToolRegistry, McpService, McpScopeGuard,
+        McpToolRegistry, McpHttpService, McpScopeGuard,
         { provide: MCP_MODULE_CONFIG, useValue: config },
         ...(config.authProvider ? [config.authProvider] : []),
       ],
-      exports: [McpService, McpToolRegistry],
+      exports: [McpHttpService, McpToolRegistry],
     };
   }
 
@@ -83,7 +83,7 @@ export class McpHttpModule implements OnModuleInit {
       controllers: [createMcpController()],
       providers: [
         McpToolRegistry,
-        McpService,
+        McpHttpService,
         McpScopeGuard,
         {
           provide: MCP_MODULE_CONFIG,
@@ -91,7 +91,7 @@ export class McpHttpModule implements OnModuleInit {
           inject: options.inject || [],
         },
       ],
-      exports: [McpService, McpToolRegistry],
+      exports: [McpHttpService, McpToolRegistry],
     };
   }
 
@@ -102,11 +102,11 @@ export class McpHttpModule implements OnModuleInit {
       imports: [DiscoveryModule],
       controllers: [createMcpController(config.routePrefix)],
       providers: [
-        McpToolRegistry, McpService, McpScopeGuard,
+        McpToolRegistry, McpHttpService, McpScopeGuard,
         { provide: MCP_MODULE_CONFIG, useValue: config },
         ...(config.authProvider ? [config.authProvider] : []),
       ],
-      exports: [McpService, McpToolRegistry],
+      exports: [McpHttpService, McpToolRegistry],
     };
   }
 

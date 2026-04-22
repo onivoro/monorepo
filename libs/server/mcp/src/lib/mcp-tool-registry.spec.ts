@@ -1,5 +1,5 @@
 import { McpToolRegistry, McpAuthInfo, McpToolContext, McpToolInterceptor, McpCanActivate, McpGuardMetadata } from './mcp-tool-registry';
-import { McpScopeGuard } from './mcp-guard';
+import { McpScopeGuard } from './mcp-scope-guard';
 import { z } from 'zod';
 
 const MOCK_AUTH: McpAuthInfo = {

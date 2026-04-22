@@ -2,7 +2,7 @@ import { DynamicModule, Logger, Module, OnModuleInit } from '@nestjs/common';
 import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { McpToolRegistry } from './mcp-tool-registry';
-import { McpScopeGuard } from './mcp-guard';
+import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
 
 @Module({})

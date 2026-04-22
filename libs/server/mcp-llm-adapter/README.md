@@ -63,15 +63,15 @@ import { ChatService } from './services/chat.service';
 export class AppModule {}
 ```
 
-Then inject `LlmToolAdapter` wherever you need provider-specific functionality:
+Then inject `McpLlmToolAdapter` wherever you need provider-specific functionality:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { LlmToolAdapter } from '@onivoro/server-mcp-llm-adapter';
+import { McpLlmToolAdapter } from '@onivoro/server-mcp-llm-adapter';
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly adapter: LlmToolAdapter) {}
+  constructor(private readonly adapter: McpLlmToolAdapter) {}
 
   async chat(userMessage: string) {
     // Build provider tool definitions from the registry
@@ -175,7 +175,7 @@ const MY_CONFIG: LlmAdapterConfig<MyToolDef> = {
 McpLlmAdapterModule.forProvider(MY_CONFIG);
 ```
 
-## LlmToolAdapter API
+## McpLlmToolAdapter API
 
 | Method | Description |
 |--------|-------------|
@@ -212,7 +212,7 @@ Providers that require name sanitization (Bedrock Converse, Gemini) apply it aut
 McpLlmAdapterModule                // NestJS module — forProvider(), forBedrockConverse(), forOpenAi(), forClaude(), forGemini(), forMistral()
 
 // Adapter
-LlmToolAdapter                  // Injectable — toProviderTools(), getOutputSchemas(), resolveProviderToolName(), executeToolForProvider(), executeToolCallForProvider(), executeToolsForProvider()
+McpLlmToolAdapter                  // Injectable — toProviderTools(), getOutputSchemas(), resolveProviderToolName(), executeToolForProvider(), executeToolCallForProvider(), executeToolsForProvider()
 ProviderToolCall                // Input type for single/batch execution — { providerName, params, id? }
 ProviderToolCallResult          // Output type for single/batch execution — { providerName, id?, result?, error?, success }
 

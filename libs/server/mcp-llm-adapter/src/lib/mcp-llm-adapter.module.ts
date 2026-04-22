@@ -1,6 +1,6 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { McpRegistryModule } from '@onivoro/server-mcp';
-import { LlmToolAdapter } from './llm-tool-adapter';
+import { McpLlmToolAdapter } from './mcp-llm-tool-adapter';
 import { LLM_ADAPTER_CONFIG, LlmAdapterConfig } from './llm-adapter.config';
 import {
   BEDROCK_CONVERSE_CONFIG,
@@ -17,10 +17,10 @@ export class McpLlmAdapterModule {
       module: McpLlmAdapterModule,
       imports: [McpRegistryModule.registerOnly()],
       providers: [
-        LlmToolAdapter,
+        McpLlmToolAdapter,
         { provide: LLM_ADAPTER_CONFIG, useValue: config },
       ],
-      exports: [LlmToolAdapter],
+      exports: [McpLlmToolAdapter],
     };
   }
 

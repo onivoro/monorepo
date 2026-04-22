@@ -31,7 +31,7 @@ export interface ProviderToolCallResult {
 }
 
 @Injectable()
-export class LlmToolAdapter<T = unknown> implements OnModuleInit {
+export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
   private nameMapCache: Map<string, string> | null = null;
   private unsubscribe?: () => void;
 

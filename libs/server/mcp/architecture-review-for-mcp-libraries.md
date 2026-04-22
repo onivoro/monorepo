@@ -24,7 +24,7 @@ The `in` check now includes all `McpToolOptions` keys: `aliases`, `annotations`,
 
 ### ~~2. `description` not passed to McpServer constructor~~ RESOLVED
 
-**Files**: `mcp.service.ts`, `mcp-stdio.module.ts`
+**Files**: `mcp-http.service.ts`, `mcp-stdio.module.ts`
 
 Both modules now forward `metadata.description` to the SDK's `McpServer` constructor via conditional spread.
 
@@ -54,9 +54,9 @@ Subscribe and unsubscribe handlers now log a warning via NestJS `Logger` when `s
 
 ---
 
-### ~~6. `LlmToolAdapter.buildNameMap()` rebuilds on every call~~ RESOLVED
+### ~~6. `McpLlmToolAdapter.buildNameMap()` rebuilds on every call~~ RESOLVED
 
-**File**: `llm-tool-adapter.ts`
+**File**: `mcp-llm-tool-adapter.ts`
 
 The name map is now cached and automatically invalidated when the registry fires a registration change event. The adapter implements `OnModuleInit` to subscribe to the registry's `onRegistrationChange` listener.
 
@@ -80,7 +80,7 @@ The name map is now cached and automatically invalidated when the registry fires
 | **Tasks (experimental)** | Long-running tools return `CreateTaskResult`. Status polling, cancellation, notifications via `ExperimentalServerTasks`. | Not implemented. Experimental in SDK — defer until stable. |
 | ~~**Resumability config**~~ | SSE streams can have event IDs. Client reconnects with `Last-Event-ID` for replay. SDK supports with event store config. | **RESOLVED** — `McpModuleConfig` now accepts `eventStore`, `enableJsonResponse`, and `sessionIdGenerator`. Forwarded to `StreamableHTTPServerTransport`. `EventStore`, `StreamId`, `EventId` re-exported from barrel. |
 | **Sampling with tools** | `sampling/createMessage` can include a `tools` array and `toolChoice` for multi-turn agentic loops | `createMessage` is a raw passthrough (`Record<string, unknown>`), which works but provides no typed helper. |
-| **`MCP-Protocol-Version` validation** | After init, clients include `MCP-Protocol-Version` header. Server should validate. | Header is in CORS allowed list but not validated by `McpService`. SDK transport likely handles this internally. |
+| **`MCP-Protocol-Version` validation** | After init, clients include `MCP-Protocol-Version` header. Server should validate. | Header is in CORS allowed list but not validated by `McpHttpService`. SDK transport likely handles this internally. |
 
 ### LOW PRIORITY
 

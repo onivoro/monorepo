@@ -16,8 +16,8 @@ interface SessionEntry {
 }
 
 @Injectable()
-export class McpService implements OnModuleDestroy {
-  private readonly logger = new Logger(McpService.name);
+export class McpHttpService implements OnModuleDestroy {
+  private readonly logger = new Logger(McpHttpService.name);
 
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly sessionTtlMs: number;

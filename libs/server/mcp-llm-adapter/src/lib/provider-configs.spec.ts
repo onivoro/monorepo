@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { McpToolRegistry } from '@onivoro/server-mcp';
-import { LlmToolAdapter } from './llm-tool-adapter';
+import { McpLlmToolAdapter } from './mcp-llm-tool-adapter';
 import {
   BEDROCK_CONVERSE_CONFIG,
   OPENAI_CONFIG,
@@ -27,7 +27,7 @@ describe('provider-configs', () => {
 
   describe('BEDROCK_CONVERSE_CONFIG', () => {
     it('should format as Bedrock Converse toolSpec with sanitized name', () => {
-      const adapter = new LlmToolAdapter(registry, BEDROCK_CONVERSE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, BEDROCK_CONVERSE_CONFIG);
       const tools = adapter.toProviderTools();
 
       expect(tools).toHaveLength(1);
@@ -42,7 +42,7 @@ describe('provider-configs', () => {
         { name: 'my.tool:v2-beta', description: 'd' },
         jest.fn(),
       );
-      const adapter = new LlmToolAdapter(registry, BEDROCK_CONVERSE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, BEDROCK_CONVERSE_CONFIG);
       const tools = adapter.toProviderTools();
       const sanitized = tools.find((t) => t.toolSpec.name === 'my_tool_v2_beta');
       expect(sanitized).toBeDefined();
@@ -53,7 +53,7 @@ describe('provider-configs', () => {
         { name: 'other', description: 'd', aliases: { bedrock: 'myAlias' } },
         jest.fn(),
       );
-      const adapter = new LlmToolAdapter(registry, BEDROCK_CONVERSE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, BEDROCK_CONVERSE_CONFIG);
       const tools = adapter.toProviderTools();
       const other = tools.find((t) => t.toolSpec.name === 'myAlias');
       expect(other).toBeDefined();
@@ -62,7 +62,7 @@ describe('provider-configs', () => {
 
   describe('OPENAI_CONFIG', () => {
     it('should format as OpenAI function definition', () => {
-      const adapter = new LlmToolAdapter(registry, OPENAI_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, OPENAI_CONFIG);
       const tools = adapter.toProviderTools();
 
       expect(tools).toHaveLength(1);
@@ -77,7 +77,7 @@ describe('provider-configs', () => {
         { name: 'other', description: 'd', aliases: { openai: 'customFn' } },
         jest.fn(),
       );
-      const adapter = new LlmToolAdapter(registry, OPENAI_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, OPENAI_CONFIG);
       const tools = adapter.toProviderTools();
       const other = tools.find((t) => t.function.name === 'customFn');
       expect(other).toBeDefined();
@@ -86,7 +86,7 @@ describe('provider-configs', () => {
 
   describe('CLAUDE_CONFIG', () => {
     it('should format as Anthropic tool definition', () => {
-      const adapter = new LlmToolAdapter(registry, CLAUDE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, CLAUDE_CONFIG);
       const tools = adapter.toProviderTools();
 
       expect(tools).toHaveLength(1);
@@ -100,7 +100,7 @@ describe('provider-configs', () => {
         { name: 'other', description: 'd', aliases: { claude: 'custom' } },
         jest.fn(),
       );
-      const adapter = new LlmToolAdapter(registry, CLAUDE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, CLAUDE_CONFIG);
       const tools = adapter.toProviderTools();
       const other = tools.find((t) => t.name === 'custom');
       expect(other).toBeDefined();
@@ -109,7 +109,7 @@ describe('provider-configs', () => {
 
   describe('GEMINI_CONFIG', () => {
     it('should format as Gemini function declaration with sanitized name', () => {
-      const adapter = new LlmToolAdapter(registry, GEMINI_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, GEMINI_CONFIG);
       const tools = adapter.toProviderTools();
 
       expect(tools).toHaveLength(1);
@@ -123,7 +123,7 @@ describe('provider-configs', () => {
         { name: 'other', description: 'd', aliases: { gemini: 'geminiFn' } },
         jest.fn(),
       );
-      const adapter = new LlmToolAdapter(registry, GEMINI_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, GEMINI_CONFIG);
       const tools = adapter.toProviderTools();
       const other = tools.find((t) => t.name === 'geminiFn');
       expect(other).toBeDefined();
@@ -132,7 +132,7 @@ describe('provider-configs', () => {
 
   describe('MISTRAL_CONFIG', () => {
     it('should format as OpenAI-compatible function definition', () => {
-      const adapter = new LlmToolAdapter(registry, MISTRAL_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, MISTRAL_CONFIG);
       const tools = adapter.toProviderTools();
 
       expect(tools).toHaveLength(1);
@@ -151,7 +151,7 @@ describe('provider-configs', () => {
         },
         jest.fn(),
       );
-      const adapter = new LlmToolAdapter(registry, MISTRAL_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, MISTRAL_CONFIG);
       const tools = adapter.toProviderTools();
       const other = tools.find((t) => t.function.name === 'mistralName');
       expect(other).toBeDefined();

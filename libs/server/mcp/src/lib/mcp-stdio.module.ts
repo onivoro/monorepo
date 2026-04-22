@@ -6,7 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { McpStdioConfig, McpStdioAsyncOptions } from './mcp-stdio-config.interface';
 import { MCP_STDIO_CONFIG } from './mcp.constants';
 import { McpToolRegistry } from './mcp-tool-registry';
-import { McpScopeGuard } from './mcp-guard';
+import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
 import { buildCapabilities, wireRegistryToServer } from './wire-registry-to-server';
 

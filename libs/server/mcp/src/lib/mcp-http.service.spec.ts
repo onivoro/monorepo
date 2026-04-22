@@ -1,4 +1,4 @@
-import { McpService } from './mcp.service';
+import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpModuleConfig } from './mcp-config.interface';
 
@@ -46,8 +46,8 @@ jest.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
   }),
 }));
 
-describe('McpService', () => {
-  let service: McpService;
+describe('McpHttpService', () => {
+  let service: McpHttpService;
   let registry: McpToolRegistry;
   const config: McpModuleConfig = {
     metadata: { name: 'test-server', version: '1.0.0' },
@@ -58,7 +58,7 @@ describe('McpService', () => {
     capturedOnSessionInitialized = undefined;
     capturedTransportOptions = undefined;
     registry = new McpToolRegistry();
-    service = new McpService(config as any, registry);
+    service = new McpHttpService(config as any, registry);
   });
 
   afterEach(async () => {
@@ -219,10 +219,10 @@ describe('McpService', () => {
   });
 
   describe('DNS rebinding protection', () => {
-    let protectedService: McpService;
+    let protectedService: McpHttpService;
 
     beforeEach(() => {
-      protectedService = new McpService(
+      protectedService = new McpHttpService(
         { ...config, allowedOrigins: ['http://localhost:3000', 'https://app.example.com'] } as any,
         registry,
       );
@@ -284,7 +284,7 @@ describe('McpService', () => {
         storeEvent: jest.fn(),
         replayEventsAfter: jest.fn(),
       };
-      const customService = new McpService(
+      const customService = new McpHttpService(
         { ...config, eventStore: mockEventStore } as any,
         registry,
       );
@@ -308,7 +308,7 @@ describe('McpService', () => {
     });
 
     it('should forward enableJsonResponse as false when set in config', async () => {
-      const customService = new McpService(
+      const customService = new McpHttpService(
         { ...config, enableJsonResponse: false } as any,
         registry,
       );
@@ -331,7 +331,7 @@ describe('McpService', () => {
 
     it('should forward custom sessionIdGenerator when provided', async () => {
       const customGenerator = () => 'custom-session-id';
-      const customService = new McpService(
+      const customService = new McpHttpService(
         { ...config, sessionIdGenerator: customGenerator } as any,
         registry,
       );
@@ -343,7 +343,7 @@ describe('McpService', () => {
     });
 
     it('should pass undefined sessionIdGenerator for stateless mode', async () => {
-      const customService = new McpService(
+      const customService = new McpHttpService(
         { ...config, sessionIdGenerator: undefined } as any,
         registry,
       );
@@ -357,7 +357,7 @@ describe('McpService', () => {
 
   describe('session TTL', () => {
     it('should use custom TTL from config', () => {
-      const customService = new McpService(
+      const customService = new McpHttpService(
         { ...config, sessionTtlMinutes: 5 } as any,
         new McpToolRegistry(),
       );

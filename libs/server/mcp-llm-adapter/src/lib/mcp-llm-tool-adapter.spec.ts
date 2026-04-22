@@ -1,6 +1,6 @@
 import { McpToolRegistry } from '@onivoro/server-mcp';
 import { z } from 'zod';
-import { LlmToolAdapter } from './llm-tool-adapter';
+import { McpLlmToolAdapter } from './mcp-llm-tool-adapter';
 import { LlmAdapterConfig } from './llm-adapter.config';
 
 interface SimpleToolDef {
@@ -28,7 +28,7 @@ const SANITIZING_CONFIG: LlmAdapterConfig<SimpleToolDef> = {
   }),
 };
 
-describe('LlmToolAdapter', () => {
+describe('McpLlmToolAdapter', () => {
   let registry: McpToolRegistry;
 
   beforeEach(() => {
@@ -37,19 +37,19 @@ describe('LlmToolAdapter', () => {
 
   describe('resolveProviderToolName', () => {
     it('should resolve name using pass-through when no sanitizer', () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool({ name: 'my-tool', description: 'desc' }, jest.fn());
       expect(adapter.resolveProviderToolName('my-tool')).toBe('my-tool');
     });
 
     it('should resolve sanitized name to MCP name', () => {
-      const adapter = new LlmToolAdapter(registry, SANITIZING_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SANITIZING_CONFIG);
       registry.registerTool({ name: 'my-cool-tool', description: 'desc' }, jest.fn());
       expect(adapter.resolveProviderToolName('my_cool_tool')).toBe('my-cool-tool');
     });
 
     it('should resolve explicit alias to MCP name', () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool(
         { name: 'my-tool', description: 'desc', aliases: { test: 'custom_name' } },
         jest.fn(),
@@ -58,14 +58,14 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should return undefined for unknown name', () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       expect(adapter.resolveProviderToolName('unknown')).toBeUndefined();
     });
   });
 
   describe('toProviderTools', () => {
     it('should convert all tools to provider format', () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool({ name: 'tool-a', description: 'Desc A' }, jest.fn());
       registry.registerTool({ name: 'tool-b', description: 'Desc B' }, jest.fn());
 
@@ -78,7 +78,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should apply name sanitization', () => {
-      const adapter = new LlmToolAdapter(registry, SANITIZING_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SANITIZING_CONFIG);
       registry.registerTool({ name: 'my-tool', description: 'desc' }, jest.fn());
 
       const tools = adapter.toProviderTools();
@@ -86,7 +86,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should use explicit alias over sanitization', () => {
-      const adapter = new LlmToolAdapter(registry, SANITIZING_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SANITIZING_CONFIG);
       registry.registerTool(
         { name: 'my-tool', description: 'desc', aliases: { test: 'custom' } },
         jest.fn(),
@@ -99,7 +99,7 @@ describe('LlmToolAdapter', () => {
 
   describe('executeToolForProvider', () => {
     it('should resolve provider name and return stringified result', async () => {
-      const adapter = new LlmToolAdapter(registry, SANITIZING_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SANITIZING_CONFIG);
       const handler = jest.fn().mockResolvedValue({ enhanced: true });
       registry.registerTool({ name: 'my-tool', description: 'd' }, handler);
 
@@ -112,7 +112,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should return strings as-is', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       const handler = jest.fn().mockResolvedValue('raw text');
       registry.registerTool({ name: 'my-tool', description: 'd' }, handler);
 
@@ -121,7 +121,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should use explicit alias for resolution', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       const handler = jest.fn().mockResolvedValue('ok');
       registry.registerTool(
         { name: 'tool-x', description: 'd', aliases: { test: 'toolX' } },
@@ -133,7 +133,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should throw for unknown provider name', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       await expect(
         adapter.executeToolForProvider('unknown', {}),
       ).rejects.toThrow(/No MCP tool found/);
@@ -142,7 +142,7 @@ describe('LlmToolAdapter', () => {
 
   describe('executeToolsForProvider', () => {
     it('should execute multiple tools in parallel and return results', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool({ name: 'tool-a', description: 'd' }, jest.fn().mockResolvedValue({ a: 1 }));
       registry.registerTool({ name: 'tool-b', description: 'd' }, jest.fn().mockResolvedValue('text'));
 
@@ -157,7 +157,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should handle partial failures independently', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool({ name: 'ok-tool', description: 'd' }, jest.fn().mockResolvedValue('ok'));
       registry.registerTool({ name: 'bad-tool', description: 'd' }, jest.fn().mockRejectedValue(new Error('boom')));
 
@@ -173,7 +173,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should report unknown provider names as errors without blocking siblings', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool({ name: 'real-tool', description: 'd' }, jest.fn().mockResolvedValue('done'));
 
       const results = await adapter.executeToolsForProvider([
@@ -188,13 +188,13 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should return empty array for empty input', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       const results = await adapter.executeToolsForProvider([]);
       expect(results).toEqual([]);
     });
 
     it('should pass through id from input to output', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool({ name: 'tool', description: 'd' }, jest.fn().mockResolvedValue('r'));
 
       const results = await adapter.executeToolsForProvider([
@@ -207,7 +207,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should forward authInfo to all tool executions', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       const handler = jest.fn().mockResolvedValue('ok');
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
@@ -231,7 +231,7 @@ describe('LlmToolAdapter', () => {
         ...SIMPLE_CONFIG,
         formatToolWithOutput,
       };
-      const adapter = new LlmToolAdapter(registry, config);
+      const adapter = new McpLlmToolAdapter(registry, config);
       const outputSchema = z.object({ result: z.string() });
       registry.registerTool({ name: 'structured-tool', description: 'Returns structured', schema: z.object({ q: z.string() }), outputSchema }, jest.fn());
 
@@ -253,7 +253,7 @@ describe('LlmToolAdapter', () => {
         ...SIMPLE_CONFIG,
         formatToolWithOutput,
       };
-      const adapter = new LlmToolAdapter(registry, config);
+      const adapter = new McpLlmToolAdapter(registry, config);
       registry.registerTool({ name: 'plain-tool', description: 'No output' }, jest.fn());
 
       const tools = adapter.toProviderTools();
@@ -263,7 +263,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should fall back to formatTool when config lacks formatToolWithOutput (backward compat)', () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       const outputSchema = z.object({ result: z.string() });
       registry.registerTool({ name: 'tool', description: 'd', outputSchema }, jest.fn());
 
@@ -275,7 +275,7 @@ describe('LlmToolAdapter', () => {
 
   describe('getOutputSchemas', () => {
     it('should return map of provider names to output JSON schemas', () => {
-      const adapter = new LlmToolAdapter(registry, SANITIZING_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SANITIZING_CONFIG);
       const outputSchema = z.object({ result: z.string() });
       registry.registerTool({ name: 'structured-tool', description: 'd', outputSchema }, jest.fn());
       registry.registerTool({ name: 'plain-tool', description: 'd' }, jest.fn());
@@ -289,7 +289,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should return empty map when no tools have outputSchema', () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
 
       const schemas = adapter.getOutputSchemas();
@@ -300,7 +300,7 @@ describe('LlmToolAdapter', () => {
 
   describe('executeToolCallForProvider', () => {
     it('should return ProviderToolCallResult with success for valid tool', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool({ name: 'my-tool', description: 'd' }, jest.fn().mockResolvedValue({ ok: true }));
 
       const result = await adapter.executeToolCallForProvider({
@@ -316,7 +316,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should return ProviderToolCallResult with error for unknown provider name', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
 
       const result = await adapter.executeToolCallForProvider({
         providerName: 'ghost',
@@ -330,7 +330,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should pass through id from input to output', async () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool({ name: 'tool', description: 'd' }, jest.fn().mockResolvedValue('r'));
 
       const withId = await adapter.executeToolCallForProvider({ providerName: 'tool', params: {}, id: 'abc' });
@@ -343,7 +343,7 @@ describe('LlmToolAdapter', () => {
 
   describe('name map caching', () => {
     it('should invalidate cache when a new tool is registered', () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       adapter.onModuleInit();
 
       registry.registerTool({ name: 'tool-a', description: 'd' }, jest.fn());
@@ -354,7 +354,7 @@ describe('LlmToolAdapter', () => {
     });
 
     it('should reuse cached map on repeated calls without changes', () => {
-      const adapter = new LlmToolAdapter(registry, SIMPLE_CONFIG);
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       adapter.onModuleInit();
 
       registry.registerTool({ name: 'tool-a', description: 'd' }, jest.fn());

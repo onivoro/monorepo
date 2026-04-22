@@ -5,4 +5,4 @@ export { McpJwksService } from './lib/mcp-jwks.service';
 export { McpJwtAuthProvider } from './lib/mcp-jwt-auth-provider';
 export { McpScopeRegistry } from './lib/mcp-scope-registry';
 export { McpProtectedResourceController } from './lib/mcp-protected-resource.controller';
-export { McpTestAuthProvider, createMockAuthInfo, createMockJwt } from './lib/mcp-test-auth';
+export { McpTestAuthProvider, createMockAuthInfo, createMockJwt } from './lib/mcp-test-auth-provider';
