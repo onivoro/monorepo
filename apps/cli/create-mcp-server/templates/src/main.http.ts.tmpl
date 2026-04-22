@@ -1,0 +1,12 @@
+import { NestFactory } from '@nestjs/core';
+import { MCP_CORS_CONFIG } from '@onivoro/server-mcp';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.enableCors(MCP_CORS_CONFIG);
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+  console.log(`__PROJECT_NAME__ MCP server listening on port ${port}`);
+}
+bootstrap();

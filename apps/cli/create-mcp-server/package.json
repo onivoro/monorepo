@@ -1,0 +1,13 @@
+{
+  "name": "@onivoro/create-mcp-server",
+  "version": "24.34.0",
+  "description": "Scaffold a NestJS MCP server with @onivoro/server-mcp",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "create-mcp-server": "./src/index.js"
+  },
+  "dependencies": {
+    "prompts": "^2.4.2"
+  }
+}

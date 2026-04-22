@@ -1,0 +1,20 @@
+import { Injectable } from '@nestjs/common';
+import { McpResource } from '@onivoro/server-mcp';
+
+@Injectable()
+export class ExampleResourceService {
+  @McpResource({
+    name: 'server-info',
+    uri: 'app://server-info',
+    description: 'Returns server information',
+    mimeType: 'application/json',
+  })
+  async getServerInfo() {
+    // Return a plain object — auto-wrapped into { contents: [{ uri, mimeType, text }] }
+    return {
+      name: '__PROJECT_NAME__',
+      version: '0.0.1',
+      uptime: process.uptime(),
+    };
+  }
+}

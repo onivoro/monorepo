@@ -1334,6 +1334,7 @@ MCP_CORS_CONFIG              // Complete CORS config object (methods, allowedHea
 | [`@onivoro/server-mcp-llm-adapter`](https://www.npmjs.com/package/@onivoro/server-mcp-llm-adapter) | Generic LLM adapter — Bedrock Converse, OpenAI, Anthropic, Gemini, Mistral |
 | [`@onivoro/server-mcp-auth`](https://www.npmjs.com/package/@onivoro/server-mcp-auth) | Resource server auth — JWT validation, JWKS, scope auto-discovery, RFC 9728 Protected Resource Metadata |
 | [`@onivoro/server-mcp-oauth`](https://www.npmjs.com/package/@onivoro/server-mcp-oauth) | Embedded OAuth 2.1 authorization server — wraps SDK's `OAuthServerProvider` + `mcpAuthRouter` into NestJS |
+| [`@onivoro/create-mcp-server`](https://www.npmjs.com/package/@onivoro/create-mcp-server) | Scaffold CLI — `npx @onivoro/create-mcp-server` bootstraps a ready-to-run NestJS MCP server |
 
 ## Peer dependencies
 

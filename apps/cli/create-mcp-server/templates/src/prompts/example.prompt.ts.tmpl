@@ -1,0 +1,16 @@
+import { Injectable } from '@nestjs/common';
+import { McpPrompt } from '@onivoro/server-mcp';
+import { z } from 'zod';
+
+@Injectable()
+export class ExamplePromptService {
+  @McpPrompt({
+    name: 'summarize',
+    description: 'Generate a summary prompt for a given topic',
+    argsSchema: { topic: z.string().describe('The topic to summarize') },
+  })
+  async summarize(params: { topic: string }) {
+    // Return a plain string — auto-wrapped into { messages: [{ role: 'user', content: { type: 'text', text } }] }
+    return `Please provide a concise summary of: ${params.topic}`;
+  }
+}

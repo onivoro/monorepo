@@ -1,0 +1,30 @@
+{
+  "name": "__PROJECT_NAME__",
+  "version": "0.0.1",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "start:dev": "ts-node src/main.ts",
+    "claude:http": "claude mcp add my-mcp-server --transport http http://localhost:3000/mcp" 
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "@onivoro/server-mcp": "^__LIB_VERSION__",
+__AUTH_DEP__
+__OAUTH_DEP__
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0",
+    "zod": "^4.0.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^20.0.0"
+  }
+}

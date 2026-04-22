@@ -1,0 +1,28 @@
+{
+  "name": "app-cli-create-mcp-server",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/cli/create-mcp-server/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/cli/create-mcp-server",
+        "main": "apps/cli/create-mcp-server/src/index.ts",
+        "tsConfig": "apps/cli/create-mcp-server/tsconfig.lib.json",
+        "assets": [
+          "apps/cli/create-mcp-server/README.md",
+          "apps/cli/create-mcp-server/package.json",
+          {
+            "input": "apps/cli/create-mcp-server/templates",
+            "glob": "**/*",
+            "output": "templates"
+          }
+        ]
+      }
+    },
+    "nx-release-publish": { "executor": "@nx/js:release-publish" }
+  },
+  "tags": []
+}
