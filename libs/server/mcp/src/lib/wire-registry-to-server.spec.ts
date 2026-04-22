@@ -705,4 +705,128 @@ describe('wireRegistryToServer', () => {
     expect(registry.getResourceSubscribers('app://config').has('sess-1')).toBe(true);
     warnSpy.mockRestore();
   });
+
+  describe('resource auto-wrapping', () => {
+    it('should auto-wrap string resource handler return value', async () => {
+      registry.registerResource(
+        { name: 'text-res', uri: 'app://text' },
+        jest.fn().mockResolvedValue('hello world'),
+      );
+
+      wireRegistryToServer(registry, createMockServer());
+
+      const callback = mockRegisterResource.mock.calls[0][3];
+      const result = await callback(new URL('app://text'), {});
+      expect(result).toEqual({
+        contents: [{ uri: 'app://text', mimeType: 'text/plain', text: 'hello world' }],
+      });
+    });
+
+    it('should auto-wrap object resource handler return value', async () => {
+      registry.registerResource(
+        { name: 'json-res', uri: 'app://json' },
+        jest.fn().mockResolvedValue({ key: 'value' }),
+      );
+
+      wireRegistryToServer(registry, createMockServer());
+
+      const callback = mockRegisterResource.mock.calls[0][3];
+      const result = await callback(new URL('app://json'), {});
+      expect(result.contents).toHaveLength(1);
+      expect(result.contents[0].uri).toBe('app://json');
+      expect(result.contents[0].mimeType).toBe('application/json');
+      expect(JSON.parse(result.contents[0].text)).toEqual({ key: 'value' });
+    });
+
+    it('should pass through resource handler returning contents array', async () => {
+      const fullResult = { contents: [{ uri: 'app://data', text: 'existing' }] };
+      registry.registerResource(
+        { name: 'full-res', uri: 'app://data' },
+        jest.fn().mockResolvedValue(fullResult),
+      );
+
+      wireRegistryToServer(registry, createMockServer());
+
+      const callback = mockRegisterResource.mock.calls[0][3];
+      const result = await callback(new URL('app://data'), {});
+      expect(result).toEqual(fullResult);
+    });
+
+    it('should use metadata mimeType for auto-wrapped resource results', async () => {
+      registry.registerResource(
+        { name: 'csv-res', uri: 'app://csv', mimeType: 'text/csv' },
+        jest.fn().mockResolvedValue('a,b,c'),
+      );
+
+      wireRegistryToServer(registry, createMockServer());
+
+      const callback = mockRegisterResource.mock.calls[0][3];
+      const result = await callback(new URL('app://csv'), {});
+      expect(result.contents[0].mimeType).toBe('text/csv');
+    });
+
+    it('should auto-wrap template resource handler return value', async () => {
+      registry.registerResource(
+        { name: 'item', uri: 'item://{id}', isTemplate: true },
+        jest.fn().mockResolvedValue('item data'),
+      );
+
+      wireRegistryToServer(registry, createMockServer());
+
+      const callback = mockRegisterResource.mock.calls[0][3];
+      const result = await callback(new URL('item://123'), { id: '123' }, {});
+      expect(result).toEqual({
+        contents: [{ uri: 'item://123', mimeType: 'text/plain', text: 'item data' }],
+      });
+    });
+  });
+
+  describe('prompt auto-wrapping', () => {
+    it('should auto-wrap string prompt handler return value', async () => {
+      registry.registerPrompt(
+        { name: 'text-prompt', description: 'Returns text' },
+        jest.fn().mockResolvedValue('Generate a summary'),
+      );
+
+      wireRegistryToServer(registry, createMockServer());
+
+      const callback = mockRegisterPrompt.mock.calls[0][2];
+      const result = await callback({});
+      expect(result).toEqual({
+        messages: [{ role: 'user', content: { type: 'text', text: 'Generate a summary' } }],
+      });
+    });
+
+    it('should auto-wrap object prompt handler return value', async () => {
+      registry.registerPrompt(
+        { name: 'obj-prompt', description: 'Returns object' },
+        jest.fn().mockResolvedValue({ topic: 'testing' }),
+      );
+
+      wireRegistryToServer(registry, createMockServer());
+
+      const callback = mockRegisterPrompt.mock.calls[0][2];
+      const result = await callback({});
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].role).toBe('user');
+      expect(result.messages[0].content.type).toBe('text');
+      expect(JSON.parse(result.messages[0].content.text)).toEqual({ topic: 'testing' });
+    });
+
+    it('should pass through prompt handler returning messages array', async () => {
+      const fullResult = {
+        messages: [{ role: 'user', content: { type: 'text', text: 'existing' } }],
+      };
+      registry.registerPrompt(
+        { name: 'full-prompt', description: 'Returns full shape' },
+        jest.fn().mockResolvedValue(fullResult),
+      );
+
+      wireRegistryToServer(registry, createMockServer());
+
+      const callback = mockRegisterPrompt.mock.calls[0][2];
+      const result = await callback({});
+      expect(result).toEqual(fullResult);
+    });
+  });
 });

@@ -2,6 +2,8 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpLogLevel } from './mcp-log-level';
+import { wrapResourceResult } from './wrap-resource-result';
+import { wrapPromptResult } from './wrap-prompt-result';
 
 function buildSendProgress(
   server: McpServer,
@@ -101,10 +103,17 @@ function wireResourceToServer(registry: McpToolRegistry, server: McpServer, reso
         ...(completeCallbacks && { complete: completeCallbacks }),
       }),
       resourceConfig,
-      handler,
+      (async (uri: URL, variables: any, extra: any) =>
+        wrapResourceResult(await handler(uri, variables, extra), uri.href, metadata.mimeType)) as any,
     );
   } else {
-    server.registerResource(metadata.name, metadata.uri, resourceConfig, handler);
+    server.registerResource(
+      metadata.name,
+      metadata.uri,
+      resourceConfig,
+      (async (uri: URL, extra: any) =>
+        wrapResourceResult(await handler(uri, extra), uri.href, metadata.mimeType)) as any,
+    );
   }
 }
 
@@ -134,7 +143,7 @@ function wirePromptToServer(registry: McpToolRegistry, server: McpServer, prompt
       ...(metadata.icons && { icons: metadata.icons }),
       ...(completeCallbacks && { complete: completeCallbacks }),
     },
-    handler,
+    (async (...args: any[]) => wrapPromptResult(await handler(...args))) as any,
   );
 }
 

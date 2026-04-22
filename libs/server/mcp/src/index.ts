@@ -59,6 +59,10 @@ export { McpLogLevel } from './lib/mcp-log-level';
 
 // Content types & results
 export { McpToolResult } from './lib/mcp-tool-result';
+export { McpResourceContents } from './lib/mcp-resource-contents';
+export { McpResourceResult } from './lib/mcp-resource-result';
+export { McpPromptMessage } from './lib/mcp-prompt-message';
+export { McpPromptResult } from './lib/mcp-prompt-result';
 export { McpContentBlock } from './lib/mcp-content-block';
 export { McpTextContent } from './lib/mcp-text-content';
 export { McpImageContent } from './lib/mcp-image-content';
@@ -81,6 +85,8 @@ export { mcpSchemaToJsonSchema } from './lib/mcp-schema-converters';
 // Wiring utilities
 export { wireRegistryToServer } from './lib/wire-registry-to-server';
 export { buildCapabilities } from './lib/build-capabilities';
+export { wrapResourceResult } from './lib/wrap-resource-result';
+export { wrapPromptResult } from './lib/wrap-prompt-result';
 
 // Re-exported SDK types
 export type { EventStore, StreamId, EventId } from '@modelcontextprotocol/sdk/server/streamableHttp.js';

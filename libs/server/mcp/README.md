@@ -638,6 +638,30 @@ Your `@McpTool` methods can return any of these — the registry wraps automatic
 
 When auto-wrapping, the result is always wrapped as `type: 'text'`. If you need to return other content types, return the full `McpToolResult` structure directly — it passes through unchanged.
 
+#### Resource return value handling
+
+`@McpResource` handlers benefit from the same auto-wrapping. Return a plain value and it becomes the correct `{ contents: [...] }` shape:
+
+| Your method returns | What the MCP client receives |
+|---|---|
+| `{ contents: [{ uri, text: '...' }] }` | Passed through |
+| `'plain string'` | `{ contents: [{ uri, mimeType: 'text/plain', text: 'plain string' }] }` |
+| `{ key: 'value' }` | `{ contents: [{ uri, mimeType: 'application/json', text: '...' }] }` (JSON-stringified) |
+
+The `uri` is automatically populated from the request. When the resource metadata specifies a `mimeType`, that value is used instead of the defaults (`text/plain` for strings, `application/json` for objects). If you need to return binary content or multiple content items, return the full `McpResourceResult` structure directly.
+
+#### Prompt return value handling
+
+`@McpPrompt` handlers work the same way:
+
+| Your method returns | What the MCP client receives |
+|---|---|
+| `{ messages: [{ role: 'user', content: { type: 'text', text: '...' } }] }` | Passed through |
+| `'Generate a summary'` | `{ messages: [{ role: 'user', content: { type: 'text', text: 'Generate a summary' } }] }` |
+| `{ topic: 'testing' }` | `{ messages: [{ role: 'user', content: { type: 'text', text: '...' } }] }` (JSON-stringified) |
+
+Auto-wrapped prompts always use `role: 'user'`. If you need assistant messages, multiple messages, or non-text content, return the full `McpPromptResult` structure directly.
+
 ### MCP content types
 
 The MCP spec defines five content block types for tool results:
@@ -709,9 +733,8 @@ All annotations are optional and advisory — clients MAY use them but are not r
   mimeType: 'application/json',
 })
 async getConfig() {
-  return {
-    contents: [{ uri: 'app://config', text: JSON.stringify(config) }],
-  };
+  // Return a plain object — auto-wrapped into { contents: [{ uri, mimeType, text }] }
+  return config;
 }
 ```
 
@@ -739,12 +762,8 @@ async getItemDetail(uri: URL, params: { id: string }) {
 })
 async summarize(params: { itemId: string }) {
   const item = await this.itemService.find(params.itemId);
-  return {
-    messages: [{
-      role: 'user',
-      content: { type: 'text', text: `Summarize: ${item.content}` },
-    }],
-  };
+  // Return a plain string — auto-wrapped into { messages: [{ role: 'user', content: { type: 'text', text } }] }
+  return `Summarize: ${item.content}`;
 }
 ```
 
@@ -1221,11 +1240,16 @@ McpImageContent              // { type: 'image', data, mimeType, annotations? }
 McpAudioContent              // { type: 'audio', data, mimeType, annotations? }
 McpEmbeddedResource          // { type: 'resource', resource: { uri, text?, blob? }, annotations? }
 McpResourceLink              // { type: 'resource_link', uri, name, mimeType?, annotations? }
+McpResourceContents          // { uri, mimeType?, text?, blob?, _meta? }
+McpResourceResult            // { contents: McpResourceContents[], _meta? }
+McpPromptMessage             // { role: 'user' | 'assistant', content: McpContentBlock }
+McpPromptResult              // { description?, messages: McpPromptMessage[], _meta? }
 
 // Auth & execution context
 McpAuthInfo                  // { token, clientId, scopes, expiresAt?, resource?, extra? }
 McpAuthProvider              // Interface — resolveAuth(authInfo?) for centralized auth validation and enrichment
 McpToolContext               // { toolName, params, metadata, authInfo?, sessionId?, signal?, sendProgress? }
+McpLogLevel                  // 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'
 
 // Guards
 McpGuard                     // Method decorator — @McpGuard(GuardClass, config?)
@@ -1239,6 +1263,7 @@ McpToolInterceptor           // Interface — intercept(context, next) onion-mod
 // Registration change events
 McpRegistrationChangeType    // 'tool' | 'resource' | 'prompt'
 McpRegistrationChangeListener // (type, name) => void — callback for dynamic registration
+McpResourceUpdateListener    // (uri: string) => void — callback for resource update notifications
 
 // Decorators
 McpTool                      // Method decorator for tools (schema: z.ZodObject)
@@ -1251,6 +1276,8 @@ mcpSchemaToJsonSchema        // z.ZodObject → JSON Schema object (via zod v4 n
 // Wiring helpers
 wireRegistryToServer         // Register all entries onto McpServer + subscribe to future changes; returns unsubscribe fn
 buildCapabilities            // Build MCP capabilities object from current registry state
+wrapResourceResult           // Auto-wrap raw handler return → McpResourceResult
+wrapPromptResult             // Auto-wrap raw handler return → McpPromptResult
 
 // SDK re-exports (types)
 EventStore                   // Interface for SSE resumability event storage
@@ -1259,13 +1286,21 @@ EventId                      // String alias for event identifiers
 
 // Interfaces
 McpModuleConfig              // Configuration for McpHttpModule.registerAndServeHttp()
+McpModuleAsyncOptions        // Async configuration for McpHttpModule.registerAndServeHttp()
 McpStdioConfig               // Configuration for McpStdioModule.registerAndServeStdio()
+McpStdioAsyncOptions         // Async configuration for McpStdioModule.registerAndServeStdio()
 McpServerMetadata            // { name, version, description? }
 McpToolMetadata              // { name, description, title?, schema?, aliases?, annotations? }
 McpToolOptions               // { aliases?, annotations?, title? } — options object form for @McpTool
 McpToolAnnotations           // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
+McpIcon                      // { uri: string, mediaType?: string } — icon for tools/resources/prompts
 McpResourceMetadata          // { name, uri, title?, description?, mimeType?, size?, isTemplate?, listProvider?, completeProvider? }
+McpResourceAnnotations       // { audience?, priority? } — annotations for resources
 McpPromptMetadata            // { name, title?, description?, argsSchema? }
+
+// Provider interfaces
+McpResourceListProvider      // Interface — list() for resource template list callbacks
+McpCompletionProvider        // Interface — complete(paramName, value, context?) for completion callbacks
 
 // Service
 McpHttpService                   // HTTP session manager (rarely needed directly)
