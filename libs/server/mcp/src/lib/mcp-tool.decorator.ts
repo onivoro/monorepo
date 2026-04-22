@@ -1,39 +1,49 @@
 import { SetMetadata } from '@nestjs/common';
-import { z } from 'zod';
 import { MCP_TOOL_METADATA } from './mcp-tool-metadata-token';
 import type { McpToolMetadata } from './mcp-tool-metadata';
-import type { McpToolOptions } from './mcp-tool-options';
-import type { McpToolAnnotations } from './mcp-tool-annotations';
 
 /**
  * Decorator for MCP tool methods.
  *
- * Accepts either positional `aliases`/`annotations` args (backward-compatible)
- * or a single options object as the 4th parameter:
+ * Preferred form — single metadata object (consistent with @McpResource and @McpPrompt):
  *
  * ```ts
- * @McpTool('name', 'desc', schema, { title: 'Display Name', aliases: { bedrock: 'name' }, annotations: { readOnlyHint: true } })
+ * @McpTool({
+ *   name: 'insert-emojis',
+ *   description: 'Insert emojis into text',
+ *   schema: insertEmojisSchema,
+ *   aliases: { bedrock: 'insertEmojis' },
+ *   annotations: { readOnlyHint: true },
+ * })
+ * ```
+ *
+ * @deprecated Positional form — supported for backward compatibility:
+ * ```ts
+ * @McpTool('name', 'desc', schema)
  * ```
  */
-export const McpTool = (
+export function McpTool(metadata: McpToolMetadata): MethodDecorator;
+/** @deprecated Use the object form: `@McpTool({ name, description, schema?, ... })` */
+export function McpTool(
   name: string,
   description: string,
-  schema?: z.ZodObject<any>,
-  aliasesOrOptions?: Record<string, string> | McpToolOptions,
-  annotations?: McpToolAnnotations,
-) => {
-  return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
-    let metadata: McpToolMetadata;
+  schema?: McpToolMetadata['schema'],
+  aliases?: Record<string, string>,
+  annotations?: McpToolMetadata['annotations'],
+): MethodDecorator;
+export function McpTool(
+  nameOrMetadata: string | McpToolMetadata,
+  description?: string,
+  schema?: McpToolMetadata['schema'],
+  aliases?: Record<string, string>,
+  annotations?: McpToolMetadata['annotations'],
+): MethodDecorator {
+  return (target: any, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const metadata: McpToolMetadata =
+      typeof nameOrMetadata === 'object'
+        ? nameOrMetadata
+        : { name: nameOrMetadata, description: description!, schema, aliases, annotations };
 
-    if (aliasesOrOptions && ('aliases' in aliasesOrOptions || 'annotations' in aliasesOrOptions || 'title' in aliasesOrOptions || 'outputSchema' in aliasesOrOptions || 'icons' in aliasesOrOptions)) {
-      // Options object form
-      const opts = aliasesOrOptions as McpToolOptions;
-      metadata = { name, description, schema, ...opts };
-    } else {
-      // Positional form (backward-compatible)
-      metadata = { name, description, schema, aliases: aliasesOrOptions as Record<string, string> | undefined, annotations };
-    }
-
-    SetMetadata(MCP_TOOL_METADATA, metadata)(target, propertyKey, descriptor);
+    SetMetadata(MCP_TOOL_METADATA, metadata)(target, propertyKey as string, descriptor);
   };
-};
+}

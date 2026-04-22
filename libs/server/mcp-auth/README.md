@@ -144,7 +144,7 @@ When a tool is called, the auth provider runs as stage 2 of the pipeline:
 Auto-discovers all scopes declared via `@McpGuard(McpScopeGuard, { scopes: [...] })`:
 
 ```typescript
-@McpTool('delete-item', 'Delete an item', schema)
+@McpTool({ name: 'delete-item', description: 'Delete an item', schema })
 @McpGuard(McpScopeGuard, { scopes: ['write', 'admin'] })
 async deleteItem(params: DeleteParams) { ... }
 ```

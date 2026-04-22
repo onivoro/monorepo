@@ -7,7 +7,7 @@ import type { McpToolContext } from './mcp-tool-context';
  * Pass `{ scopes: ['read', 'write'] }` as the config — all listed scopes must be present.
  *
  * @example
- * @McpTool('delete-item', 'Delete an item', schema)
+ * @McpTool({ name: 'delete-item', description: 'Delete an item', schema })
  * @McpGuard(McpScopeGuard, { scopes: ['write'] })
  * async deleteItem(params: { id: string }) { ... }
  */

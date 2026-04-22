@@ -29,12 +29,12 @@ jest.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
 
 @Injectable()
 class TestToolService {
-  @McpTool('test-tool', 'A test tool', z.object({ input: z.string().describe('test input') }))
+  @McpTool({ name: 'test-tool', description: 'A test tool', schema: z.object({ input: z.string().describe('test input') }) })
   async myTool(params: { input: string }) {
     return { content: [{ type: 'text', text: `echo: ${params.input}` }] };
   }
 
-  @McpTool('string-tool', 'Returns a string')
+  @McpTool({ name: 'string-tool', description: 'Returns a string' })
   async stringTool() {
     return 'plain string result';
   }
@@ -296,7 +296,7 @@ describe('McpHttpModule', () => {
     it('should catch tool execution errors and return error content', async () => {
       @Injectable()
       class FailingToolService {
-        @McpTool('failing-tool', 'A tool that fails')
+        @McpTool({ name: 'failing-tool', description: 'A tool that fails' })
         async failTool() {
           throw new Error('tool exploded');
         }

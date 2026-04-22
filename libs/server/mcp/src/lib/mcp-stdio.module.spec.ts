@@ -51,7 +51,7 @@ const testToolSchema = z.object({
 
 @Injectable()
 class TestToolService {
-  @McpTool('test-tool', 'A test tool', testToolSchema)
+  @McpTool({ name: 'test-tool', description: 'A test tool', schema: testToolSchema })
   async myTool(params: z.infer<typeof testToolSchema>) {
     return { content: [{ type: 'text', text: `echo: ${params.input}` }] };
   }

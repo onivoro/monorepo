@@ -1,0 +1,19 @@
+import { Injectable } from '@nestjs/common';
+import { McpTool } from '@onivoro/server-mcp';
+import { z } from 'zod';
+
+const helloSchema = z.object({
+  name: z.string().describe('The name to greet'),
+});
+
+@Injectable()
+export class ExampleToolService {
+  @McpTool({
+    name: 'hello',
+    description: 'Says hello to a name',
+    schema: helloSchema,
+  })
+  async hello(params: z.infer<typeof helloSchema>) {
+    return `Hello, ${params.name}!`;
+  }
+}

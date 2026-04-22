@@ -197,10 +197,10 @@ Resolution order:
 
 ```typescript
 // Explicit alias for Bedrock Converse
-@McpTool('insert-emojis', 'Insert emojis', schema, { bedrock: 'insertEmojis' })
+@McpTool({ name: 'insert-emojis', description: 'Insert emojis', schema, aliases: { bedrock: 'insertEmojis' } })
 
 // No alias needed for OpenAI (hyphens are valid)
-@McpTool('insert-emojis', 'Insert emojis', schema)
+@McpTool({ name: 'insert-emojis', description: 'Insert emojis', schema })
 ```
 
 Providers that require name sanitization (Bedrock Converse, Gemini) apply it automatically — hyphens are replaced with underscores.

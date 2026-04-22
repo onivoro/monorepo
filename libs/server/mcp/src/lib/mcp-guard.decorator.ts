@@ -11,13 +11,13 @@ import type { McpGuardMetadata } from './mcp-guard-metadata';
  *
  * @example
  * // Built-in scope check
- * @McpTool('delete-item', 'Delete an item', schema)
+ * @McpTool({ name: 'delete-item', description: 'Delete an item', schema })
  * @McpGuard(McpScopeGuard, { scopes: ['write'] })
  * async deleteItem(params: { id: string }) { ... }
  *
  * @example
  * // Custom guard
- * @McpTool('admin-action', 'Admin only', schema)
+ * @McpTool({ name: 'admin-action', description: 'Admin only', schema })
  * @McpGuard(RateLimitGuard, { maxPerMinute: 10 })
  * @McpGuard(McpScopeGuard, { scopes: ['admin'] })
  * async adminAction(params: {}) { ... }

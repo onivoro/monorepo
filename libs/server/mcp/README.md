@@ -247,12 +247,12 @@ const insertEmojisSchema = z.object({
 
 @Injectable()
 export class EmojiService {
-  @McpTool(
-    'insert-emojis',
-    'Insert emojis into text based on semantic meaning',
-    insertEmojisSchema,
-    { bedrock: 'insert_emojis' },  // explicit alias for consumer libraries (optional)
-  )
+  @McpTool({
+    name: 'insert-emojis',
+    description: 'Insert emojis into text based on semantic meaning',
+    schema: insertEmojisSchema,
+    aliases: { bedrock: 'insert_emojis' },  // explicit alias for consumer libraries (optional)
+  })
   async insertEmojis(params: z.infer<typeof insertEmojisSchema>) {
     const enhanced = this.addEmojis(params.text, params.intensity);
     return { text: enhanced, emojiCount: 5 };
@@ -264,19 +264,22 @@ export class EmojiService {
 
 The `z.infer<typeof insertEmojisSchema>` resolves to `{ text: string; intensity?: "subtle" | "moderate" | "heavy" }` at compile time — the schema and the params type can never drift apart.
 
-### Options object form
+### Decorator forms
 
-When you need `title`, `aliases`, and/or `annotations` together, pass a single options object as the 4th parameter instead of positional args:
+`@McpTool` accepts a single metadata object — the same pattern as `@McpResource` and `@McpPrompt`:
 
 ```typescript
-@McpTool('insert-emojis', 'Insert emojis into text', insertEmojisSchema, {
+@McpTool({
+  name: 'insert-emojis',
+  description: 'Insert emojis into text',
+  schema: insertEmojisSchema,
   title: 'Insert Emojis',
   aliases: { bedrock: 'insert_emojis' },
   annotations: { readOnlyHint: false },
 })
 ```
 
-The positional form (`@McpTool(name, desc, schema, aliases, annotations)`) is still supported for backward compatibility.
+The positional form (`@McpTool(name, desc, schema, aliases, annotations)`) is still supported but deprecated.
 
 ### Accessing auth context
 
@@ -285,7 +288,7 @@ Tool handlers receive an optional second parameter — `McpToolContext` — cont
 ```typescript
 import { McpTool, McpToolContext } from '@onivoro/server-mcp';
 
-@McpTool('delete-item', 'Delete an item', deleteItemSchema)
+@McpTool({ name: 'delete-item', description: 'Delete an item', schema: deleteItemSchema })
 async deleteItem(
   params: z.infer<typeof deleteItemSchema>,
   context?: McpToolContext,
@@ -313,7 +316,7 @@ const importSchema = z.object({
 
 @Injectable()
 export class DataService {
-  @McpTool('import-data', 'Import a large dataset', importSchema)
+  @McpTool({ name: 'import-data', description: 'Import a large dataset', schema: importSchema })
   async importData(
     params: z.infer<typeof importSchema>,
     context?: McpToolContext,
@@ -345,7 +348,7 @@ The `?.` chain on `context?.sendProgress?.()` is important — `sendProgress` is
 The context also carries `signal` — an `AbortSignal` that fires when the client cancels the request. Use it to abort expensive work early:
 
 ```typescript
-@McpTool('import-data', 'Import a large dataset', importSchema)
+@McpTool({ name: 'import-data', description: 'Import a large dataset', schema: importSchema })
 async importData(
   params: z.infer<typeof importSchema>,
   context?: McpToolContext,
@@ -371,7 +374,7 @@ async importData(
 The context includes `sessionId` — the MCP session identifier from the transport layer. This is useful for per-session caching, rate limiting, or audit logging:
 
 ```typescript
-@McpTool('get-status', 'Get system status', statusSchema)
+@McpTool({ name: 'get-status', description: 'Get system status', schema: statusSchema })
 async getStatus(
   params: z.infer<typeof statusSchema>,
   context?: McpToolContext,
@@ -388,7 +391,7 @@ async getStatus(
 Tool handlers can send structured log messages to MCP clients via `context.sendLog()`. The client controls the minimum log level via the `logging/setLevel` protocol message.
 
 ```typescript
-@McpTool('import-data', 'Import data from source', importSchema)
+@McpTool({ name: 'import-data', description: 'Import data from source', schema: importSchema })
 async importData(params: z.infer<typeof importSchema>, context?: McpToolContext) {
   await context?.sendLog?.('info', { phase: 'starting', source: params.source }, 'import-data');
   const result = await this.importService.run(params.source);
@@ -467,7 +470,7 @@ Tools can declare an output schema for structured output validation. When presen
 ```typescript
 const resultSchema = z.object({ count: z.number(), items: z.array(z.string()) });
 
-@McpTool('list-items', 'List all items', inputSchema, { outputSchema: resultSchema })
+@McpTool({ name: 'list-items', description: 'List all items', schema: inputSchema, outputSchema: resultSchema })
 async listItems(params: z.infer<typeof inputSchema>) {
   const items = await this.itemService.list(params.filter);
   return { content: [{ type: 'text', text: 'Done' }], structuredContent: { count: items.length, items } };
@@ -520,7 +523,10 @@ These are always present on the context but may reject if the client doesn't sup
 Tools, resources, and prompts can provide icons for client UI rendering (spec 2025-11-25+):
 
 ```typescript
-@McpTool('deploy-app', 'Deploy application', deploySchema, {
+@McpTool({
+  name: 'deploy-app',
+  description: 'Deploy application',
+  schema: deploySchema,
   icons: [
     { url: 'https://cdn.example.com/deploy-icon.svg', mediaType: 'image/svg+xml' },
     { url: 'https://cdn.example.com/deploy-icon-32.png', mediaType: 'image/png', size: '32x32' },
@@ -678,39 +684,43 @@ All content blocks support optional `annotations` with `audience` (`'user'`, `'a
 
 ### Aliases
 
-Consumer-specific libraries may require different tool naming conventions. The `aliases` parameter accepts a `Record<string, string>` where each key is a consumer identifier:
+Consumer-specific libraries may require different tool naming conventions. The `aliases` field accepts a `Record<string, string>` where each key is a consumer identifier:
 
 ```typescript
-@McpTool('my-tool', 'description', myToolSchema, { bedrock: 'my_tool' })
+@McpTool({
+  name: 'my-tool',
+  description: 'description',
+  schema: myToolSchema,
+  aliases: { bedrock: 'my_tool' },
+})
 ```
 
-The `aliases` parameter is optional. Consumer libraries read the alias key they care about (e.g. `@onivoro/server-mcp-llm-adapter` reads `aliases['bedrock']` for Bedrock Converse) falling back to the first argument provided to the decorator.
+The `aliases` field is optional. Consumer libraries read the alias key they care about (e.g. `@onivoro/server-mcp-llm-adapter` reads `aliases['bedrock']` for Bedrock Converse) falling back to `name`.
 
 ### Tool annotations
 
-The MCP spec defines behavioral hints that clients use for UX decisions — for example, Claude Desktop skips confirmation prompts for tools marked `readOnlyHint: true`. Pass annotations as the 6th parameter to `@McpTool`:
+The MCP spec defines behavioral hints that clients use for UX decisions — for example, Claude Desktop skips confirmation prompts for tools marked `readOnlyHint: true`:
 
 ```typescript
-@McpTool(
-  'list-items',
-  'List all items',
-  listItemsSchema,
-  undefined,  // no aliases
-  { readOnlyHint: true, openWorldHint: false },
-)
+@McpTool({
+  name: 'list-items',
+  description: 'List all items',
+  schema: listItemsSchema,
+  annotations: { readOnlyHint: true, openWorldHint: false },
+})
 async listItems(params: z.infer<typeof listItemsSchema>) { ... }
 ```
 
 With aliases and annotations together:
 
 ```typescript
-@McpTool(
-  'delete-item',
-  'Delete an item permanently',
-  deleteItemSchema,
-  { bedrock: 'delete_item' },
-  { destructiveHint: true },
-)
+@McpTool({
+  name: 'delete-item',
+  description: 'Delete an item permanently',
+  schema: deleteItemSchema,
+  aliases: { bedrock: 'delete_item' },
+  annotations: { destructiveHint: true },
+})
 async deleteItem(params: z.infer<typeof deleteItemSchema>) { ... }
 ```
 
@@ -815,7 +825,7 @@ import { McpTool, McpGuard, McpScopeGuard } from '@onivoro/server-mcp';
 
 @Injectable()
 export class ItemService {
-  @McpTool('delete-item', 'Delete an item', deleteItemSchema)
+  @McpTool({ name: 'delete-item', description: 'Delete an item', schema: deleteItemSchema })
   @McpGuard(McpScopeGuard, { scopes: ['write'] })
   async deleteItem(params: z.infer<typeof deleteItemSchema>) {
     // Only reached if authInfo.scopes includes 'write'
@@ -852,7 +862,7 @@ export class RateLimitGuard implements McpCanActivate {
 Then reference it in the decorator:
 
 ```typescript
-@McpTool('expensive-op', 'Expensive operation', schema)
+@McpTool({ name: 'expensive-op', description: 'Expensive operation', schema })
 @McpGuard(RateLimitGuard, { maxPerMinute: 10 })
 async expensiveOp(params: z.infer<typeof schema>) { ... }
 ```
@@ -864,7 +874,7 @@ Custom guards must be registered as providers in the NestJS module tree (so the 
 Multiple `@McpGuard` decorators stack. They run in top-to-bottom order; the first rejection stops execution:
 
 ```typescript
-@McpTool('admin-action', 'Admin only', schema)
+@McpTool({ name: 'admin-action', description: 'Admin only', schema })
 @McpGuard(McpScopeGuard, { scopes: ['admin'] })
 @McpGuard(RateLimitGuard, { maxPerMinute: 5 })
 async adminAction(params: z.infer<typeof schema>) { ... }
@@ -1112,11 +1122,11 @@ The module automatically includes the class in its providers and resolves it thr
 When the MCP SDK's OAuth 2.1 flow is in use, `authInfo` (token, clientId, scopes) flows from the transport through the auth provider (if configured), then to guards and tool handlers. Use `@McpGuard` for declarative per-tool scope checks:
 
 ```typescript
-@McpTool('read-data', 'Read data', schema)
+@McpTool({ name: 'read-data', description: 'Read data', schema })
 @McpGuard(McpScopeGuard, { scopes: ['read'] })
 async readData(params: z.infer<typeof schema>) { ... }
 
-@McpTool('delete-data', 'Delete data', schema)
+@McpTool({ name: 'delete-data', description: 'Delete data', schema })
 @McpGuard(McpScopeGuard, { scopes: ['admin'] })
 async deleteData(params: z.infer<typeof schema>) { ... }
 ```
@@ -1291,7 +1301,7 @@ McpStdioConfig               // Configuration for McpStdioModule.registerAndServ
 McpStdioAsyncOptions         // Async configuration for McpStdioModule.registerAndServeStdio()
 McpServerMetadata            // { name, version, description? }
 McpToolMetadata              // { name, description, title?, schema?, aliases?, annotations? }
-McpToolOptions               // { aliases?, annotations?, title? } — options object form for @McpTool
+McpToolOptions               // @deprecated — use McpToolMetadata directly with @McpTool({ ... })
 McpToolAnnotations           // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
 McpIcon                      // { uri: string, mediaType?: string } — icon for tools/resources/prompts
 McpResourceMetadata          // { name, uri, title?, description?, mimeType?, size?, isTemplate?, listProvider?, completeProvider? }
@@ -1366,7 +1376,7 @@ export class EmojiService {
 export class EmojiToolService {
   constructor(private readonly emoji: EmojiService) {}
 
-  @McpTool('insert-emojis', 'Insert emojis into text', insertEmojisSchema)
+  @McpTool({ name: 'insert-emojis', description: 'Insert emojis into text', schema: insertEmojisSchema })
   async insertEmojis(
     params: z.infer<typeof insertEmojisSchema>,
     context?: McpToolContext,
