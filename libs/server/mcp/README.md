@@ -24,7 +24,7 @@ Consumer-specific formatting (e.g. Bedrock Converse tool definitions, OpenAI fun
 - **Automatic format wrapping**: The registry provides per-consumer execution methods. Your service methods return whatever is natural — the registry wraps for the target transport.
 - **Schema conversion**: Zod schemas on decorators are converted to JSON Schema automatically via zod v4's native `z.toJSONSchema()`.
 - **Consistent infrastructure**: Sessions, transport, discovery, cleanup, duplicate detection, error handling — all handled.
-- **Auth-aware execution**: MCP SDK `authInfo`, `sessionId`, `signal` (AbortSignal), and `sendProgress` flow through the registry to tool handlers. Per-tool authorization is declarative via `@McpGuard`.
+- **Auth-aware execution**: MCP SDK `authInfo`, `sessionId`, `signal` (AbortSignal), and `sendProgress` flow through the registry to tool handlers. Centralized auth enrichment via `McpAuthProvider`, per-tool authorization via `@McpGuard`.
 - **Extensible execution pipeline**: Guards, interceptors, and the handler compose in the same order as the NestJS HTTP lifecycle. Interceptors use the `intercept(context, next)` onion model.
 
 ## Three entry points
@@ -723,29 +723,31 @@ The registry's tool execution pipeline is modeled after the [NestJS HTTP request
 | Stage | NestJS HTTP | MCP Registry | Responsibility |
 |:-----:|---|---|---|
 | 1 | Middleware | Transport layer | NestJS middleware on the MCP route (authentication, logging) |
-| 2 | Guards | `@McpGuard` | Authorization — should this call proceed? |
-| 3 | Pipes | `schema.parse()` | Validation and transformation of input params (internally executed based on the Zod schema) |
-| 4 | Interceptors | `McpToolInterceptor` chain | Cross-cutting concerns wrapping execution (auditing, caching, timing, transformation) |
-| 5 | Route handler | Tool handler | Business logic (innermost `next()` of the interceptor chain) |
-| 6 | Exception filters | `executeToolWrapped` try/catch | Error wrapping for MCP clients |
+| 2 | — | Auth provider | Centralized auth enrichment/validation (`McpAuthProvider.resolveAuth`) |
+| 3 | Guards | `@McpGuard` | Authorization — should this call proceed? |
+| 4 | Pipes | `schema.parse()` | Validation and transformation of input params (internally executed based on the Zod schema) |
+| 5 | Interceptors | `McpToolInterceptor` chain | Cross-cutting concerns wrapping execution (auditing, caching, timing, transformation) |
+| 6 | Route handler | Tool handler | Business logic (innermost `next()` of the interceptor chain) |
+| 7 | Exception filters | `executeToolWrapped` try/catch | Error wrapping for MCP clients |
 
 ```
-Transport middleware → Guards → Validation → Interceptor₁ → Interceptor₂ → ... → Handler
-                                                  ↑              ↑                    |
-                                                  |   result ←── ┘  ←──── result ←───┘
-                                                  ↓
-                                   executeToolWrapped catches errors
+Transport middleware → Auth provider → Guards → Validation → Interceptor₁ → ... → Handler
+                                                                  ↑                    |
+                                                                  |   result ←── ←────┘
+                                                                  ↓
+                                                   executeToolWrapped catches errors
 ```
 
 Interceptors use the **onion model** — identical to NestJS `NestInterceptor`. Each interceptor's `intercept(context, next)` wraps the next interceptor in the chain; the innermost `next()` calls the tool handler. This means each interceptor can run logic both before and after the handler in a single method.
 
 **Key behaviors at each stage:**
 
-- **Guards** receive raw (unvalidated) params. They check authorization, not input shape. If a guard rejects, validation never runs — an unauthorized caller doesn't get a validation error revealing your schema.
+- **Auth provider** (optional) runs first, transforming raw `authInfo` from the transport. All downstream stages (guards, interceptors, handler) receive the resolved auth. If the provider throws, execution stops immediately. See [Auth provider](#auth-provider-centralized-auth-enrichment).
+- **Guards** receive raw (unvalidated) params but resolved auth. They check authorization, not input shape. If a guard rejects, validation never runs — an unauthorized caller doesn't get a validation error revealing your schema.
 - **Validation** runs `schema.parse()`, applying Zod defaults, transforms, and refinements. From this point forward, all downstream stages (interceptors and handler) see the validated params.
 - **Interceptors** see validated params and the full `McpToolContext`. Each interceptor decides whether to call `next()` (proceed) or short-circuit. They can also transform the result returned by `next()`.
 - **Handler** receives validated params as the first argument and `McpToolContext` as the optional second argument. It is the innermost `next()` in the interceptor chain.
-- **Error handling** in `executeToolWrapped` catches any error from any stage and returns it as MCP error content — guards rejecting, validation failing, interceptors throwing, or the handler itself failing all produce structured error responses to the MCP client.
+- **Error handling** in `executeToolWrapped` catches any error from any stage and returns it as MCP error content — the auth provider throwing, guards rejecting, validation failing, interceptors throwing, or the handler itself failing all produce structured error responses to the MCP client.
 
 The pipeline runs identically regardless of transport — the same guards, validation, and interceptors apply whether the tool is called via MCP HTTP, MCP stdio, `executeToolRaw`, or `executeToolForProvider` from the LLM adapter.
 
@@ -908,6 +910,7 @@ Called automatically by the module's discovery phase. You don't call these direc
 | `registerPrompt(metadata, handler)` | Register a prompt. Throws on duplicate name. |
 | `registerInterceptor(interceptor)` | Register a `McpToolInterceptor` for all tool executions. |
 | `setGuardResolver(resolver)` | Set the function used to resolve guard class instances. Called automatically by all modules. |
+| `setAuthProvider(provider)` | Set the auth provider instance. Called automatically by modules when `authProvider` is configured. |
 | `onRegistrationChange(listener)` | Subscribe to registration events (`'tool'`, `'resource'`, `'prompt'`). Returns an unsubscribe function. Used by `wireRegistryToServer` for dynamic wiring. |
 
 ### Introspection
@@ -953,6 +956,7 @@ McpHttpModule.registerAndServeHttp({
     'http://localhost:3000',
     'https://my-app.example.com',
   ],
+  authProvider: JwtAuthProvider, // Optional. @Injectable() class implementing McpAuthProvider.
 });
 ```
 
@@ -968,12 +972,13 @@ McpStdioModule.registerAndServeStdio({
   serverOptions: {},           // Optional. Passed to McpServer from @modelcontextprotocol/sdk.
   stdin: process.stdin,        // Optional. Defaults to process.stdin.
   stdout: process.stdout,      // Optional. Defaults to process.stdout.
+  authProvider: JwtAuthProvider, // Optional. @Injectable() class implementing McpAuthProvider.
 });
 ```
 
 ## Authentication
 
-Authentication works at two layers:
+Authentication works at three layers:
 
 ### Transport-level authentication
 
@@ -992,9 +997,68 @@ export class AppModule implements NestModule {
 }
 ```
 
+### Auth provider (centralized auth enrichment)
+
+The `authProvider` config option registers a centralized auth provider that runs before guards on every tool execution. It receives the raw `authInfo` from the transport and can validate tokens, decode JWTs, hydrate user context, or reject unauthenticated requests — all in one place, with full access to NestJS DI.
+
+Implement `McpAuthProvider` as an `@Injectable()` service:
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { McpAuthProvider, McpAuthInfo } from '@onivoro/server-mcp';
+import { JwtService } from '@nestjs/jwt';
+import { UsersService } from './users.service';
+
+@Injectable()
+export class JwtAuthProvider implements McpAuthProvider {
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly usersService: UsersService,
+  ) {}
+
+  async resolveAuth(authInfo: McpAuthInfo | undefined) {
+    if (!authInfo) return undefined;
+
+    const decoded = await this.jwtService.verifyAsync(authInfo.token);
+    const user = await this.usersService.findById(decoded.sub);
+
+    return {
+      ...authInfo,
+      extra: {
+        userId: user.id,
+        roles: user.roles,
+        organizationId: user.organizationId,
+      },
+    };
+  }
+}
+```
+
+Then pass the class to the module config:
+
+```typescript
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  authProvider: JwtAuthProvider,
+})
+```
+
+The module automatically includes the class in its providers and resolves it through `ModuleRef`, so it can inject any NestJS service. This follows the same DI pattern as guards.
+
+**What the auth provider can do:**
+
+| Action | How | Effect |
+|--------|-----|--------|
+| **Enrich** | Return a new `McpAuthInfo` with extra claims | Guards and handlers receive the enriched auth |
+| **Reject** | Throw an error | Execution stops before guards run |
+| **Clear** | Return `undefined` | Guards and handlers receive no auth (anonymous) |
+| **Pass through** | Return the input unchanged | Same as no provider |
+
+**Why use an auth provider instead of a guard?** Guards return `boolean` — they can approve or deny, but cannot modify the auth context. An auth provider transforms `authInfo` before any guards see it. This means you decode a JWT once centrally, and all guards receive the decoded claims without each needing to parse the token independently.
+
 ### Tool-level authorization
 
-When the MCP SDK's OAuth 2.1 flow is in use, `authInfo` (token, clientId, scopes) flows from the transport through the registry to tool handlers and guards. Use `@McpGuard` for declarative per-tool scope checks:
+When the MCP SDK's OAuth 2.1 flow is in use, `authInfo` (token, clientId, scopes) flows from the transport through the auth provider (if configured), then to guards and tool handlers. Use `@McpGuard` for declarative per-tool scope checks:
 
 ```typescript
 @McpTool('read-data', 'Read data', schema)
@@ -1128,6 +1192,7 @@ McpResourceLink              // { type: 'resource_link', uri, name, mimeType?, a
 
 // Auth & execution context
 McpAuthInfo                  // { token, clientId, scopes, expiresAt?, resource?, extra? }
+McpAuthProvider              // Interface — resolveAuth(authInfo?) for centralized auth validation and enrichment
 McpToolContext               // { toolName, params, metadata, authInfo?, sessionId?, signal?, sendProgress? }
 
 // Guards

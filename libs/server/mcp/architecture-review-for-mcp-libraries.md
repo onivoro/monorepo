@@ -117,6 +117,7 @@ The name map is now cached and automatically invalidated when the registry fires
 | Server instructions | `metadata.instructions` merged into `ServerOptions` |
 | Server description | `metadata.description` forwarded to SDK `ServerInfo` |
 | Async module config | `registerAndServeHttpAsync` / `registerAndServeStdioAsync` |
+| Auth provider | `McpAuthProvider` interface — DI-resolved `@Injectable()` service, runs before guards for centralized token validation/enrichment |
 
 ---
 
@@ -135,7 +136,7 @@ The name map is now cached and automatically invalidated when the registry fires
 
 1. **Single McpServer per session in HTTP mode** — Each session creates its own `McpServer` + `wireRegistryToServer`. With 100 concurrent sessions, that's 100 sets of registered tools/resources/prompts and 100 entries in the registry's change listener array. O(sessions x registrations).
 
-2. **No auth extraction middleware** — `authInfo` comes from the SDK transport's `extra.authInfo`, but there's no hook to inject custom auth logic (validate JWT, hydrate user) without writing a guard. A dedicated auth middleware would reduce per-tool boilerplate.
+2. ~~**No auth extraction middleware**~~ — **RESOLVED** — `McpAuthProvider` interface added to `McpToolRegistry`. Implemented as an `@Injectable()` NestJS service with full DI access (can inject `JwtService`, repositories, etc.). Runs before guards in `executeToolRaw()` to validate tokens, decode JWTs, hydrate user context, or reject unauthenticated requests centrally. Configured via `authProvider` class reference on both `McpModuleConfig` and `McpStdioConfig`. Modules auto-include the class in providers and resolve it through `ModuleRef` — follows the same DI pattern as guards.
 
 3. **CORS config exported but not auto-applied** — `MCP_CORS_CONFIG` is exported as a constant, but consumers must manually apply it. Could be auto-configured by the HTTP module.
 
@@ -182,7 +183,7 @@ The name map is now cached and automatically invalidated when the registry fires
 11. ~~Resumability config passthrough (event store option)~~ **DONE**
 12. Tasks support (wait for SDK to stabilize experimental API)
 13. Auto-apply CORS in HTTP module
-14. Add auth extraction middleware hook
+14. ~~Add auth extraction middleware hook~~ **DONE**
 
 ---
 
@@ -193,4 +194,4 @@ The name map is now cached and automatically invalidated when the registry fires
 - `ping`: Handled by SDK's low-level `Server` class
 - Cancellation: SDK propagates via `AbortSignal` — correctly forwarded to `McpToolContext.signal`
 - `logging/setLevel`: SDK handles internally; `sendLog` respects the client-set level
-- All 151 `lib-server-mcp` tests and 38 `lib-server-mcp-llm-adapter` tests pass
+- All 163 `lib-server-mcp` tests and 38 `lib-server-mcp-llm-adapter` tests pass

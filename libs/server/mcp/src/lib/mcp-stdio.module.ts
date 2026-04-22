@@ -33,6 +33,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
         McpToolRegistry,
         McpScopeGuard,
         { provide: MCP_STDIO_CONFIG, useValue: config },
+        ...(config.authProvider ? [config.authProvider] : []),
       ],
       exports: [McpToolRegistry],
     };
@@ -64,6 +65,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
         McpToolRegistry,
         McpScopeGuard,
         { provide: MCP_STDIO_CONFIG, useValue: config },
+        ...(config.authProvider ? [config.authProvider] : []),
       ],
       exports: [McpToolRegistry],
     };
@@ -79,6 +81,10 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     this.registry.setGuardResolver((guardClass) =>
       this.moduleRef.get(guardClass, { strict: false }),
     );
+    if (this.config.authProvider) {
+      const provider = this.moduleRef.get(this.config.authProvider, { strict: false });
+      this.registry.setAuthProvider(provider);
+    }
 
     this.server = new McpServer(
       {

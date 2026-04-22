@@ -1,5 +1,6 @@
 import type { ServerOptions } from '@modelcontextprotocol/sdk/server/index.js';
 import type { EventStore } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import type { McpAuthProvider } from './mcp-tool-registry';
 
 export interface McpServerMetadata {
   name: string;
@@ -48,6 +49,13 @@ export interface McpModuleConfig {
    * When absent from config, the default UUID generator is used.
    */
   sessionIdGenerator?: (() => string) | undefined;
+  /**
+   * Optional auth provider class that runs before guards on every tool execution.
+   * Must implement `McpAuthProvider` and be an `@Injectable()` NestJS service.
+   * The module resolves it through DI, so it can inject other services
+   * (e.g., `JwtService`, `ConfigService`, repositories).
+   */
+  authProvider?: new (...args: any[]) => McpAuthProvider;
 }
 
 /**

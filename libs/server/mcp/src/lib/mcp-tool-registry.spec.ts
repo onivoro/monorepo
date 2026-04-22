@@ -562,6 +562,143 @@ describe('McpToolRegistry', () => {
     });
   });
 
+  describe('auth provider', () => {
+    it('should enrich authInfo before guards see it', async () => {
+      registry.setAuthProvider({
+        resolveAuth: (authInfo) => ({ ...authInfo!, extra: { userId: 'user-42' } }),
+      });
+
+      let guardReceivedAuth: McpAuthInfo | undefined;
+      class InspectGuard implements McpCanActivate {
+        canActivate(ctx: McpToolContext) {
+          guardReceivedAuth = ctx.authInfo;
+          return true;
+        }
+      }
+      registry.setGuardResolver(() => new InspectGuard());
+
+      const handler = jest.fn().mockResolvedValue('ok');
+      const guards: McpGuardMetadata[] = [{ guardClass: InspectGuard }];
+      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+
+      await registry.executeToolRaw('tool', {}, MOCK_AUTH);
+      expect(guardReceivedAuth?.extra).toEqual({ userId: 'user-42' });
+    });
+
+    it('should reject by throwing before guards run', async () => {
+      registry.setAuthProvider({
+        resolveAuth: () => { throw new Error('Token expired'); },
+      });
+
+      const guardCalled = jest.fn().mockReturnValue(true);
+      class SpyGuard implements McpCanActivate {
+        canActivate() { guardCalled(); return true; }
+      }
+      registry.setGuardResolver(() => new SpyGuard());
+
+      const handler = jest.fn().mockResolvedValue('ok');
+      const guards: McpGuardMetadata[] = [{ guardClass: SpyGuard }];
+      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+
+      await expect(registry.executeToolRaw('tool', {}, MOCK_AUTH)).rejects.toThrow('Token expired');
+      expect(guardCalled).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('should clear auth when provider returns undefined', async () => {
+      registry.setAuthProvider({ resolveAuth: () => undefined });
+
+      let handlerAuth: McpAuthInfo | undefined = MOCK_AUTH;
+      const handler = jest.fn().mockImplementation((_params: any, ctx: McpToolContext) => {
+        handlerAuth = ctx.authInfo;
+        return 'ok';
+      });
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      await registry.executeToolRaw('tool', {}, MOCK_AUTH);
+      expect(handlerAuth).toBeUndefined();
+    });
+
+    it('should support async providers', async () => {
+      registry.setAuthProvider({
+        async resolveAuth(authInfo) {
+          return { ...authInfo!, extra: { resolved: true } };
+        },
+      });
+
+      let handlerAuth: McpAuthInfo | undefined;
+      const handler = jest.fn().mockImplementation((_params: any, ctx: McpToolContext) => {
+        handlerAuth = ctx.authInfo;
+        return 'ok';
+      });
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      await registry.executeToolRaw('tool', {}, MOCK_AUTH);
+      expect(handlerAuth?.extra).toEqual({ resolved: true });
+    });
+
+    it('should run before guards (ordering)', async () => {
+      const order: string[] = [];
+      registry.setAuthProvider({
+        resolveAuth: (authInfo) => { order.push('provider'); return authInfo; },
+      });
+
+      class OrderGuard implements McpCanActivate {
+        canActivate() { order.push('guard'); return true; }
+      }
+      registry.setGuardResolver(() => new OrderGuard());
+
+      const handler = jest.fn().mockResolvedValue('ok');
+      const guards: McpGuardMetadata[] = [{ guardClass: OrderGuard }];
+      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+
+      await registry.executeToolRaw('tool', {}, MOCK_AUTH);
+      expect(order).toEqual(['provider', 'guard']);
+    });
+
+    it('should pass enriched auth to handler context', async () => {
+      registry.setAuthProvider({
+        resolveAuth: (authInfo) => ({ ...authInfo!, extra: { role: 'admin' } }),
+      });
+
+      let handlerAuth: McpAuthInfo | undefined;
+      const handler = jest.fn().mockImplementation((_params: any, ctx: McpToolContext) => {
+        handlerAuth = ctx.authInfo;
+        return 'ok';
+      });
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      await registry.executeToolRaw('tool', {}, MOCK_AUTH);
+      expect(handlerAuth?.token).toBe('tok_123');
+      expect(handlerAuth?.extra).toEqual({ role: 'admin' });
+    });
+
+    it('should pass through raw authInfo when no provider is set', async () => {
+      let handlerAuth: McpAuthInfo | undefined;
+      const handler = jest.fn().mockImplementation((_params: any, ctx: McpToolContext) => {
+        handlerAuth = ctx.authInfo;
+        return 'ok';
+      });
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      await registry.executeToolRaw('tool', {}, MOCK_AUTH);
+      expect(handlerAuth).toBe(MOCK_AUTH);
+    });
+
+    it('should call provider with undefined when no authInfo is present', async () => {
+      let providerReceived: McpAuthInfo | undefined | null = null;
+      registry.setAuthProvider({
+        resolveAuth: (authInfo) => { providerReceived = authInfo; return authInfo; },
+      });
+
+      const handler = jest.fn().mockResolvedValue('ok');
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      await registry.executeToolRaw('tool', {});
+      expect(providerReceived).toBeUndefined();
+    });
+  });
+
   describe('onRegistrationChange', () => {
     it('should notify listeners when a tool is registered', () => {
       const listener = jest.fn();

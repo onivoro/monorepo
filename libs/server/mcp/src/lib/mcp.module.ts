@@ -1,4 +1,4 @@
-import { All, Controller, DynamicModule, Logger, Module, OnModuleInit, Req, Res } from '@nestjs/common';
+import { All, Controller, DynamicModule, Inject, Logger, Module, OnModuleInit, Req, Res } from '@nestjs/common';
 import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { Request, Response } from 'express';
@@ -55,6 +55,7 @@ export class McpHttpModule implements OnModuleInit {
   private readonly logger = new Logger(McpHttpModule.name);
 
   constructor(
+    @Inject(MCP_MODULE_CONFIG) private readonly config: McpModuleConfig,
     private readonly discoveryService: DiscoveryService,
     private readonly metadataScanner: MetadataScanner,
     private readonly registry: McpToolRegistry,
@@ -66,7 +67,11 @@ export class McpHttpModule implements OnModuleInit {
       module: McpHttpModule,
       imports: [DiscoveryModule],
       controllers: [createMcpController(config.routePrefix)],
-      providers: [McpToolRegistry, McpService, McpScopeGuard, { provide: MCP_MODULE_CONFIG, useValue: config }],
+      providers: [
+        McpToolRegistry, McpService, McpScopeGuard,
+        { provide: MCP_MODULE_CONFIG, useValue: config },
+        ...(config.authProvider ? [config.authProvider] : []),
+      ],
       exports: [McpService, McpToolRegistry],
     };
   }
@@ -96,7 +101,11 @@ export class McpHttpModule implements OnModuleInit {
       module: McpHttpModule,
       imports: [DiscoveryModule],
       controllers: [createMcpController(config.routePrefix)],
-      providers: [McpToolRegistry, McpService, McpScopeGuard, { provide: MCP_MODULE_CONFIG, useValue: config }],
+      providers: [
+        McpToolRegistry, McpService, McpScopeGuard,
+        { provide: MCP_MODULE_CONFIG, useValue: config },
+        ...(config.authProvider ? [config.authProvider] : []),
+      ],
       exports: [McpService, McpToolRegistry],
     };
   }
@@ -111,5 +120,9 @@ export class McpHttpModule implements OnModuleInit {
     this.registry.setGuardResolver((guardClass) =>
       this.moduleRef.get(guardClass, { strict: false }),
     );
+    if (this.config.authProvider) {
+      const provider = this.moduleRef.get(this.config.authProvider, { strict: false });
+      this.registry.setAuthProvider(provider);
+    }
   }
 }

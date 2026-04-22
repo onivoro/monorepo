@@ -82,6 +82,18 @@ export interface McpCanActivate {
 }
 
 /**
+ * Auth provider interface that runs before guards on every tool execution.
+ * Implement as an `@Injectable()` NestJS service with full DI access.
+ *
+ * - Return an enriched `McpAuthInfo` to add decoded claims, roles, etc.
+ * - Throw to reject the request (e.g., expired token).
+ * - Return `undefined` to strip auth (anonymous access).
+ */
+export interface McpAuthProvider {
+  resolveAuth(authInfo: McpAuthInfo | undefined): McpAuthInfo | undefined | Promise<McpAuthInfo | undefined>;
+}
+
+/**
  * Metadata attached by the @McpGuard decorator.
  */
 export interface McpGuardMetadata {
@@ -177,6 +189,7 @@ export class McpToolRegistry {
   private readonly resourceUpdateListeners: McpResourceUpdateListener[] = [];
   private toolEnabledDelegate?: (name: string, enabled: boolean) => void;
   private guardResolver?: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate;
+  private authProvider?: McpAuthProvider;
 
   // -- Registration --
 
@@ -264,6 +277,10 @@ export class McpToolRegistry {
     resolver: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate,
   ): void {
     this.guardResolver = resolver;
+  }
+
+  setAuthProvider(provider: McpAuthProvider): void {
+    this.authProvider = provider;
   }
 
   /**
@@ -377,13 +394,19 @@ export class McpToolRegistry {
       throw new Error(`MCP tool "${name}" is not registered.`);
     }
 
+    // -- Auth provider (enrichment/validation) --
+    // Runs before guards so all guards receive a consistently resolved authInfo.
+    const resolvedAuthInfo = this.authProvider
+      ? await this.authProvider.resolveAuth(authInfo)
+      : authInfo;
+
     // -- Guards (authorization) --
     // Run first with raw params. Guards check auth, not input shape.
     const guardContext: McpToolContext = {
       toolName: name,
       params,
       metadata: entry.metadata,
-      authInfo,
+      authInfo: resolvedAuthInfo,
       sessionId: extra?.sessionId,
       signal: extra?.signal,
       sendProgress: extra?.sendProgress,
@@ -420,7 +443,7 @@ export class McpToolRegistry {
       toolName: name,
       params: validatedParams,
       metadata: entry.metadata,
-      authInfo,
+      authInfo: resolvedAuthInfo,
       sessionId: extra?.sessionId,
       signal: extra?.signal,
       sendProgress: extra?.sendProgress,
