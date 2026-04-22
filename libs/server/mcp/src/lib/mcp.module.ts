@@ -18,7 +18,7 @@ function createMcpController(routePrefix?: string) {
 
     @All(route)
     async handleMcp(@Req() req: Request, @Res() res: Response) {
-      if (typeof (req as any).body === 'undefined') {
+      if (req.method === 'POST' && typeof (req as any).body === 'undefined') {
         res.status(500).json({
           jsonrpc: '2.0',
           error: {
