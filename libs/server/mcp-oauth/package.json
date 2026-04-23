@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-mcp-oauth",
-  "version": "24.34.2",
+  "version": "24.35.0",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
