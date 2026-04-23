@@ -66,7 +66,7 @@ export function composeAppModule(options: ScaffoldOptions): string {
   }
 
   if (options.auth) {
-    imports.push(`import { McpAuthModule, McpJwtAuthProvider } from '@onivoro/server-mcp-auth';`);
+    imports.push(`import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';`);
   }
 
   if (options.oauth) {
@@ -95,19 +95,19 @@ export function composeAppModule(options: ScaffoldOptions): string {
     // }),`);
   }
 
-  const authProviderOption = options.auth
-    ? `\n      authProvider: McpJwtAuthProvider,`
+  const authStrategyOption = options.auth
+    ? `\n      authStrategy: McpJwtAuthStrategy,`
     : '';
 
   if (options.transport === 'http' || options.transport === 'both') {
     registrations.push(`    McpHttpModule.registerAndServeHttp({
-      metadata: { name: '${options.projectName}', version: '0.0.1' },${authProviderOption}
+      metadata: { name: '${options.projectName}', version: '0.0.1' },${authStrategyOption}
     }),`);
   }
 
   if (options.transport === 'stdio' || options.transport === 'both') {
     registrations.push(`    McpStdioModule.registerAndServeStdio({
-      metadata: { name: '${options.projectName}', version: '0.0.1' },${authProviderOption}
+      metadata: { name: '${options.projectName}', version: '0.0.1' },${authStrategyOption}
     }),`);
   }
 

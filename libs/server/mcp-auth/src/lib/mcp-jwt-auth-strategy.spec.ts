@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
-import { McpJwtAuthProvider } from './mcp-jwt-auth-provider';
+import { McpJwtAuthStrategy } from './mcp-jwt-auth-strategy';
 import { McpJwksService } from './mcp-jwks.service';
 import type { McpAuthConfig } from './mcp-auth-config';
 
@@ -20,8 +20,8 @@ function signToken(claims: Record<string, unknown>, options?: jwt.SignOptions): 
   });
 }
 
-describe('McpJwtAuthProvider', () => {
-  let provider: McpJwtAuthProvider;
+describe('McpJwtAuthStrategy', () => {
+  let provider: McpJwtAuthStrategy;
   let mockJwksService: jest.Mocked<McpJwksService>;
 
   const baseConfig: McpAuthConfig = {
@@ -37,9 +37,9 @@ describe('McpJwtAuthProvider', () => {
     } as any;
   });
 
-  function createProvider(configOverrides?: Partial<McpAuthConfig>): McpJwtAuthProvider {
+  function createProvider(configOverrides?: Partial<McpAuthConfig>): McpJwtAuthStrategy {
     const config = { ...baseConfig, ...configOverrides };
-    return new McpJwtAuthProvider(config, mockJwksService);
+    return new McpJwtAuthStrategy(config, mockJwksService);
   }
 
   describe('resolveAuth', () => {

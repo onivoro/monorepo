@@ -567,9 +567,9 @@ describe('McpToolRegistry', () => {
     });
   });
 
-  describe('auth provider', () => {
+  describe('auth strategy', () => {
     it('should enrich authInfo before guards see it', async () => {
-      registry.setAuthProvider({
+      registry.setAuthStrategy({
         resolveAuth: (authInfo) => ({ ...authInfo!, extra: { userId: 'user-42' } }),
       });
 
@@ -591,7 +591,7 @@ describe('McpToolRegistry', () => {
     });
 
     it('should reject by throwing before guards run', async () => {
-      registry.setAuthProvider({
+      registry.setAuthStrategy({
         resolveAuth: () => { throw new Error('Token expired'); },
       });
 
@@ -611,7 +611,7 @@ describe('McpToolRegistry', () => {
     });
 
     it('should clear auth when provider returns undefined', async () => {
-      registry.setAuthProvider({ resolveAuth: () => undefined });
+      registry.setAuthStrategy({ resolveAuth: () => undefined });
 
       let handlerAuth: McpAuthInfo | undefined = MOCK_AUTH;
       const handler = jest.fn().mockImplementation((_params: any, ctx: McpToolContext) => {
@@ -625,7 +625,7 @@ describe('McpToolRegistry', () => {
     });
 
     it('should support async providers', async () => {
-      registry.setAuthProvider({
+      registry.setAuthStrategy({
         async resolveAuth(authInfo) {
           return { ...authInfo!, extra: { resolved: true } };
         },
@@ -644,7 +644,7 @@ describe('McpToolRegistry', () => {
 
     it('should run before guards (ordering)', async () => {
       const order: string[] = [];
-      registry.setAuthProvider({
+      registry.setAuthStrategy({
         resolveAuth: (authInfo) => { order.push('provider'); return authInfo; },
       });
 
@@ -662,7 +662,7 @@ describe('McpToolRegistry', () => {
     });
 
     it('should pass enriched auth to handler context', async () => {
-      registry.setAuthProvider({
+      registry.setAuthStrategy({
         resolveAuth: (authInfo) => ({ ...authInfo!, extra: { role: 'admin' } }),
       });
 
@@ -692,7 +692,7 @@ describe('McpToolRegistry', () => {
 
     it('should call provider with undefined when no authInfo is present', async () => {
       let providerReceived: McpAuthInfo | undefined | null = null;
-      registry.setAuthProvider({
+      registry.setAuthStrategy({
         resolveAuth: (authInfo) => { providerReceived = authInfo; return authInfo; },
       });
 

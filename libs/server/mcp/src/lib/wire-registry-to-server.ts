@@ -80,14 +80,14 @@ function wireResourceToServer(registry: McpToolRegistry, server: McpServer, reso
 
   if (metadata.isTemplate) {
     let listCallback: ((...args: any[]) => any) | undefined;
-    if (metadata.listProvider) {
-      const provider = registry.resolveProvider(metadata.listProvider);
+    if (metadata.listStrategy) {
+      const provider = registry.resolveProvider(metadata.listStrategy);
       listCallback = () => provider.list();
     }
 
     let completeCallbacks: Record<string, (value: string, context?: any) => string[] | Promise<string[]>> | undefined;
-    if (metadata.completeProvider) {
-      const provider = registry.resolveProvider(metadata.completeProvider);
+    if (metadata.completeStrategy) {
+      const provider = registry.resolveProvider(metadata.completeStrategy);
       completeCallbacks = new Proxy({} as any, {
         get: (_target, prop: string | symbol) => {
           if (prop === 'then' || typeof prop !== 'string') return undefined;
@@ -124,8 +124,8 @@ function wirePromptToServer(registry: McpToolRegistry, server: McpServer, prompt
   const { metadata, handler } = entry;
 
   let completeCallbacks: Record<string, (value: string, context?: any) => string[] | Promise<string[]>> | undefined;
-  if (metadata.completeProvider) {
-    const provider = registry.resolveProvider(metadata.completeProvider);
+  if (metadata.completeStrategy) {
+    const provider = registry.resolveProvider(metadata.completeStrategy);
     completeCallbacks = new Proxy({} as any, {
       get: (_target, prop: string | symbol) => {
         if (prop === 'then' || typeof prop !== 'string') return undefined;

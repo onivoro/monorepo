@@ -71,7 +71,7 @@ export class McpHttpModule implements OnModuleInit {
       providers: [
         McpToolRegistry, McpHttpService, McpScopeGuard,
         { provide: MCP_MODULE_CONFIG, useValue: config },
-        ...(config.authProvider ? [config.authProvider] : []),
+        ...(config.authStrategy ? [config.authStrategy] : []),
       ],
       exports: [McpHttpService, McpToolRegistry],
     };
@@ -109,9 +109,9 @@ export class McpHttpModule implements OnModuleInit {
     this.registry.setProviderResolver((cls) =>
       this.moduleRef.get(cls, { strict: false }),
     );
-    if (this.config.authProvider) {
-      const provider = this.moduleRef.get(this.config.authProvider, { strict: false });
-      this.registry.setAuthProvider(provider);
+    if (this.config.authStrategy) {
+      const provider = this.moduleRef.get(this.config.authStrategy, { strict: false });
+      this.registry.setAuthStrategy(provider);
     }
   }
 }

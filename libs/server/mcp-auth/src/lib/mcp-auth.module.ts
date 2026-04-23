@@ -3,7 +3,7 @@ import type { McpAuthConfig } from './mcp-auth-config';
 import type { McpAuthAsyncOptions } from './mcp-auth-async-options';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
 import { McpJwksService } from './mcp-jwks.service';
-import { McpJwtAuthProvider } from './mcp-jwt-auth-provider';
+import { McpJwtAuthStrategy } from './mcp-jwt-auth-strategy';
 import { McpScopeRegistry } from './mcp-scope-registry';
 import { McpProtectedResourceController } from './mcp-protected-resource.controller';
 
@@ -26,7 +26,7 @@ import { McpProtectedResourceController } from './mcp-protected-resource.control
  *     }),
  *     McpHttpModule.registerAndServeHttp({
  *       metadata: { name: 'my-server', version: '1.0.0' },
- *       authProvider: McpJwtAuthProvider,
+ *       authStrategy: McpJwtAuthStrategy,
  *     }),
  *   ],
  * })
@@ -47,10 +47,10 @@ export class McpAuthModule {
       providers: [
         { provide: MCP_AUTH_CONFIG, useValue: config },
         McpJwksService,
-        McpJwtAuthProvider,
+        McpJwtAuthStrategy,
         McpScopeRegistry,
       ],
-      exports: [McpJwtAuthProvider, McpJwksService, McpScopeRegistry, MCP_AUTH_CONFIG],
+      exports: [McpJwtAuthStrategy, McpJwksService, McpScopeRegistry, MCP_AUTH_CONFIG],
     };
   }
 
@@ -66,10 +66,10 @@ export class McpAuthModule {
           inject: options.inject || [],
         },
         McpJwksService,
-        McpJwtAuthProvider,
+        McpJwtAuthStrategy,
         McpScopeRegistry,
       ],
-      exports: [McpJwtAuthProvider, McpJwksService, McpScopeRegistry, MCP_AUTH_CONFIG],
+      exports: [McpJwtAuthStrategy, McpJwksService, McpScopeRegistry, MCP_AUTH_CONFIG],
     };
   }
 }

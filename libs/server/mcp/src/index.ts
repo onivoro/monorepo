@@ -47,7 +47,7 @@ export { McpPromptMetadata } from './lib/mcp-prompt-metadata';
 
 // Auth & guards
 export { McpAuthInfo } from './lib/mcp-auth-info';
-export { McpAuthProvider } from './lib/mcp-auth-provider';
+export { McpAuthStrategy } from './lib/mcp-auth-strategy';
 export { McpCanActivate } from './lib/mcp-can-activate';
 export { McpGuardMetadata } from './lib/mcp-guard-metadata';
 
@@ -74,9 +74,9 @@ export { McpRegistrationChangeType } from './lib/mcp-registration-change-type';
 export { McpRegistrationChangeListener } from './lib/mcp-registration-change-listener';
 export { McpResourceUpdateListener } from './lib/mcp-resource-update-listener';
 
-// Provider interfaces
-export { McpResourceListProvider } from './lib/mcp-resource-list-provider';
-export { McpCompletionProvider } from './lib/mcp-completion-provider';
+// Strategy interfaces
+export { McpResourceListStrategy } from './lib/mcp-resource-list-strategy';
+export { McpCompletionStrategy } from './lib/mcp-completion-strategy';
 
 // Schema utilities
 export { mcpSchemaToJsonSchema } from './lib/mcp-schema-converters';

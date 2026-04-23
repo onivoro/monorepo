@@ -1,7 +1,7 @@
 import type { McpIcon } from './mcp-icon';
 import type { McpResourceAnnotations } from './mcp-resource-annotations';
-import type { McpResourceListProvider } from './mcp-resource-list-provider';
-import type { McpCompletionProvider } from './mcp-completion-provider';
+import type { McpResourceListStrategy } from './mcp-resource-list-strategy';
+import type { McpCompletionStrategy } from './mcp-completion-strategy';
 
 export interface McpResourceMetadata {
   name: string;
@@ -18,15 +18,15 @@ export interface McpResourceMetadata {
   annotations?: McpResourceAnnotations;
   isTemplate?: boolean;
   /**
-   * Injectable provider that lists all resources matching this template. Only used when isTemplate is true.
-   * Must implement `McpResourceListProvider` and be decorated with `@Injectable()`.
+   * Injectable strategy that lists all resources matching this template. Only used when isTemplate is true.
+   * Must implement `McpResourceListStrategy` and be decorated with `@Injectable()`.
    */
-  listProvider?: new (...args: any[]) => McpResourceListProvider;
+  listStrategy?: new (...args: any[]) => McpResourceListStrategy;
   /**
-   * Injectable provider for autocompletion of URI template variables. Only used when isTemplate is true.
-   * Must implement `McpCompletionProvider` and be decorated with `@Injectable()`.
+   * Injectable strategy for autocompletion of URI template variables. Only used when isTemplate is true.
+   * Must implement `McpCompletionStrategy` and be decorated with `@Injectable()`.
    *
-   * The provider's `complete(argName, value, context)` method is called for each URI variable.
+   * The strategy's `complete(argName, value, context)` method is called for each URI variable.
    */
-  completeProvider?: new (...args: any[]) => McpCompletionProvider;
+  completeStrategy?: new (...args: any[]) => McpCompletionStrategy;
 }

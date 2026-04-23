@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpIcon } from './mcp-icon';
-import type { McpCompletionProvider } from './mcp-completion-provider';
+import type { McpCompletionStrategy } from './mcp-completion-strategy';
 
 export interface McpPromptMetadata {
   name: string;
@@ -11,10 +11,10 @@ export interface McpPromptMetadata {
   /** Icons for client UI rendering (spec 2025-11-25+). */
   icons?: McpIcon[];
   /**
-   * Injectable provider for autocompletion of prompt arguments.
-   * Must implement `McpCompletionProvider` and be decorated with `@Injectable()`.
+   * Injectable strategy for autocompletion of prompt arguments.
+   * Must implement `McpCompletionStrategy` and be decorated with `@Injectable()`.
    *
-   * The provider's `complete(argName, value, context)` method is called for each argument.
+   * The strategy's `complete(argName, value, context)` method is called for each argument.
    */
-  completeProvider?: new (...args: any[]) => McpCompletionProvider;
+  completeStrategy?: new (...args: any[]) => McpCompletionStrategy;
 }

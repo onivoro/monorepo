@@ -1,13 +1,13 @@
 import * as jwt from 'jsonwebtoken';
-import { McpTestAuthProvider } from './mcp-test-auth-provider';
+import { McpTestAuthStrategy } from './mcp-test-auth-strategy';
 import { createMockAuthInfo } from './create-mock-auth-info';
 import { createMockJwt } from './create-mock-jwt';
 
-describe('McpTestAuthProvider', () => {
-  let provider: McpTestAuthProvider;
+describe('McpTestAuthStrategy', () => {
+  let provider: McpTestAuthStrategy;
 
   beforeEach(() => {
-    provider = new McpTestAuthProvider();
+    provider = new McpTestAuthStrategy();
   });
 
   it('should pass through authInfo by default', () => {

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
-import type { McpAuthProvider, McpAuthInfo } from '@onivoro/server-mcp';
+import type { McpAuthStrategy, McpAuthInfo } from '@onivoro/server-mcp';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
@@ -11,22 +11,22 @@ import { McpJwksService } from './mcp-jwks.service';
  * JWT-based auth provider for MCP servers.
  *
  * Implements both:
- * - `McpAuthProvider` — plugs into the `McpToolRegistry` execution pipeline
+ * - `McpAuthStrategy` — plugs into the `McpToolRegistry` execution pipeline
  * - `OAuthTokenVerifier` — compatible with the SDK's `requireBearerAuth` middleware
  *
  * Validates JWT signature via JWKS, checks issuer/audience/expiry,
  * and extracts claims into `McpAuthInfo`.
  */
 @Injectable()
-export class McpJwtAuthProvider implements McpAuthProvider, OAuthTokenVerifier {
-  private readonly logger = new Logger(McpJwtAuthProvider.name);
+export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
+  private readonly logger = new Logger(McpJwtAuthStrategy.name);
 
   constructor(
     @Inject(MCP_AUTH_CONFIG) private readonly config: McpAuthConfig,
     private readonly jwksService: McpJwksService,
   ) {}
 
-  // -- McpAuthProvider interface --
+  // -- McpAuthStrategy interface --
 
   async resolveAuth(authInfo: McpAuthInfo | undefined): Promise<McpAuthInfo | undefined> {
     if (!authInfo?.token) return undefined;

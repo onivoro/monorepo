@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { McpAuthModule } from './mcp-auth.module';
-import { McpJwtAuthProvider } from './mcp-jwt-auth-provider';
+import { McpJwtAuthStrategy } from './mcp-jwt-auth-strategy';
 import { McpJwksService } from './mcp-jwks.service';
 import { McpScopeRegistry } from './mcp-scope-registry';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
@@ -22,7 +22,7 @@ describe('McpAuthModule', () => {
       ],
     }).compile();
 
-    expect(module.get(McpJwtAuthProvider)).toBeDefined();
+    expect(module.get(McpJwtAuthStrategy)).toBeDefined();
     expect(module.get(McpJwksService)).toBeDefined();
     expect(module.get(McpScopeRegistry)).toBeDefined();
     expect(module.get(MCP_AUTH_CONFIG)).toBeDefined();
@@ -57,7 +57,7 @@ describe('McpAuthModule', () => {
       ],
     }).compile();
 
-    expect(module.get(McpJwtAuthProvider)).toBeDefined();
+    expect(module.get(McpJwtAuthStrategy)).toBeDefined();
     expect(module.get(McpScopeRegistry)).toBeDefined();
   });
 
@@ -73,14 +73,14 @@ describe('McpAuthModule', () => {
       ],
     }).compile();
 
-    expect(module.get(McpJwtAuthProvider)).toBeDefined();
+    expect(module.get(McpJwtAuthStrategy)).toBeDefined();
     expect(module.get(MCP_AUTH_CONFIG)).toEqual({
       jwksUri: 'https://example.com/.well-known/jwks.json',
       issuer: 'https://example.com',
     });
   });
 
-  it('should export McpJwtAuthProvider for use as authProvider in MCP modules', async () => {
+  it('should export McpJwtAuthStrategy for use as authStrategy in MCP modules', async () => {
     const module = await Test.createTestingModule({
       imports: [
         McpAuthModule.register({
@@ -89,7 +89,7 @@ describe('McpAuthModule', () => {
       ],
     }).compile();
 
-    const provider = module.get(McpJwtAuthProvider);
+    const provider = module.get(McpJwtAuthStrategy);
     expect(provider.resolveAuth).toBeDefined();
     expect(provider.verifyAccessToken).toBeDefined();
   });

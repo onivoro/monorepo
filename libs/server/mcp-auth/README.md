@@ -15,7 +15,7 @@ npm install @onivoro/server-mcp-auth
 ```typescript
 import { Module } from '@nestjs/common';
 import { McpHttpModule } from '@onivoro/server-mcp';
-import { McpAuthModule, McpJwtAuthProvider } from '@onivoro/server-mcp-auth';
+import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';
 
 @Module({
   imports: [
@@ -28,14 +28,14 @@ import { McpAuthModule, McpJwtAuthProvider } from '@onivoro/server-mcp-auth';
     }),
     McpHttpModule.registerAndServeHttp({
       metadata: { name: 'my-server', version: '1.0.0' },
-      authProvider: McpJwtAuthProvider,
+      authStrategy: McpJwtAuthStrategy,
     }),
   ],
 })
 export class AppModule {}
 ```
 
-`McpAuthModule` makes `McpJwtAuthProvider` available in the DI container. `McpHttpModule` resolves it via the `authProvider` class reference. The provider validates every incoming request's JWT before guards run.
+`McpAuthModule` makes `McpJwtAuthStrategy` available in the DI container. `McpHttpModule` resolves it via the `authStrategy` class reference. The strategy validates every incoming request's JWT before guards run.
 
 ## What you get
 
@@ -45,8 +45,8 @@ export class AppModule {}
 | **Auth enrichment** | Extracts `clientId`, `scopes`, `expiresAt`, and custom claims into `McpAuthInfo` |
 | **Scope auto-discovery** | Collects all scopes from `@McpGuard(McpScopeGuard, { scopes })` across tools |
 | **Protected Resource Metadata** | Serves `/.well-known/oauth-protected-resource` (RFC 9728) |
-| **SDK compatibility** | Implements both `McpAuthProvider` and the SDK's `OAuthTokenVerifier` |
-| **Testing utilities** | `McpTestAuthProvider`, `createMockAuthInfo()`, `createMockJwt()` |
+| **SDK compatibility** | Implements both `McpAuthStrategy` and the SDK's `OAuthTokenVerifier` |
+| **Testing utilities** | `McpTestAuthStrategy`, `createMockAuthInfo()`, `createMockJwt()` |
 
 ## Configuration
 
@@ -128,12 +128,12 @@ McpAuthModule.register({
 
 ## Execution pipeline
 
-When a tool is called, the auth provider runs as stage 2 of the pipeline:
+When a tool is called, the auth strategy runs as stage 2 of the pipeline:
 
 | Stage | Component | Role |
 |-------|-----------|------|
 | 1 | Transport | Extracts raw `authInfo` from the HTTP/stdio request |
-| 2 | **McpJwtAuthProvider** | Validates JWT, enriches `McpAuthInfo` with decoded claims |
+| 2 | **McpJwtAuthStrategy** | Validates JWT, enriches `McpAuthInfo` with decoded claims |
 | 3 | Guards | Check scopes, roles, or custom rules against enriched auth |
 | 4 | Validation | Zod schema validation of tool params |
 | 5 | Interceptors | Cross-cutting concerns (logging, metrics) |
@@ -156,19 +156,19 @@ Dynamically registered tools are picked up via `McpToolRegistry.onRegistrationCh
 ## Testing
 
 ```typescript
-import { McpTestAuthProvider, createMockAuthInfo, createMockJwt } from '@onivoro/server-mcp-auth';
+import { McpTestAuthStrategy, createMockAuthInfo, createMockJwt } from '@onivoro/server-mcp-auth';
 
-// Use McpTestAuthProvider in integration tests
+// Use McpTestAuthStrategy in integration tests
 const module = await Test.createTestingModule({
   imports: [
     McpHttpModule.registerAndServeHttp({
       metadata: { name: 'test', version: '1.0.0' },
-      authProvider: McpTestAuthProvider,
+      authStrategy: McpTestAuthStrategy,
     }),
   ],
 }).compile();
 
-const testAuth = module.get(McpTestAuthProvider);
+const testAuth = module.get(McpTestAuthStrategy);
 testAuth.setAuthInfo(createMockAuthInfo({ scopes: ['admin'], extra: { userId: 'u-1' } }));
 
 // createMockJwt for unit tests (decodable but unsigned)
@@ -183,10 +183,10 @@ const token = createMockJwt({ sub: 'test-user', scope: 'read write' });
 | `McpAuthConfig` | Interface | Configuration options |
 | `McpAuthAsyncOptions` | Interface | Async factory options |
 | `MCP_AUTH_CONFIG` | Symbol | Injection token for config |
-| `McpJwtAuthProvider` | Service | JWT auth provider — implements `McpAuthProvider` + `OAuthTokenVerifier` |
+| `McpJwtAuthStrategy` | Service | JWT auth strategy — implements `McpAuthStrategy` + `OAuthTokenVerifier` |
 | `McpJwksService` | Service | JWKS key fetching with caching and rate limiting |
 | `McpScopeRegistry` | Service | Auto-discovers scopes from guard metadata |
 | `McpProtectedResourceController` | Controller | RFC 9728 metadata endpoint |
-| `McpTestAuthProvider` | Service | Test-friendly auth provider |
+| `McpTestAuthStrategy` | Service | Test-friendly auth strategy |
 | `createMockAuthInfo` | Function | Factory for test `McpAuthInfo` objects |
 | `createMockJwt` | Function | Creates decodable unsigned JWTs for testing |

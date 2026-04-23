@@ -119,18 +119,18 @@ The name map is now cached and automatically invalidated when the registry fires
 | Server instructions | `metadata.instructions` merged into `ServerOptions` |
 | Server description | `metadata.description` forwarded to SDK `ServerInfo` |
 | Async module config | `registerAndServeHttpAsync` / `registerAndServeStdioAsync` |
-| Auth provider | `McpAuthProvider` interface — DI-resolved `@Injectable()` service, runs before guards for centralized token validation/enrichment |
-| JWT validation (auth library) | `McpJwtAuthProvider` — JWKS-backed JWT verification, issuer/audience/expiry checks, configurable claims extraction |
+| Auth strategy | `McpAuthStrategy` interface — DI-resolved `@Injectable()` service, runs before guards for centralized token validation/enrichment |
+| JWT validation (auth library) | `McpJwtAuthStrategy` — JWKS-backed JWT verification, issuer/audience/expiry checks, configurable claims extraction |
 | JWKS fetching + caching (auth library) | `McpJwksService` — wraps `jwks-rsa` with configurable cache TTL and rate limiting |
 | Scope auto-discovery (auth library) | `McpScopeRegistry` — scans `@McpGuard(McpScopeGuard, { scopes })` metadata, subscribes to dynamic registration changes |
 | Protected Resource Metadata (auth library) | `McpProtectedResourceController` — serves `/.well-known/oauth-protected-resource` per RFC 9728 |
 | Auth enrichment (auth library) | Extracts `clientId`, `scopes`, `expiresAt`, `extra` claims into `McpAuthInfo` from JWT payload |
 | Provider-agnostic JWT config (auth library) | Configurable `clientIdClaim`, `scopeClaim`, `scopeFormat`, `extraClaims` — supports Cognito, Auth0, Entra ID out of the box |
-| SDK token verifier bridge (auth library) | `McpJwtAuthProvider` implements both `McpAuthProvider` and SDK's `OAuthTokenVerifier` |
-| Auth testing utilities (auth library) | `McpTestAuthProvider`, `createMockAuthInfo()`, `createMockJwt()` for integration and unit tests |
+| SDK token verifier bridge (auth library) | `McpJwtAuthStrategy` implements both `McpAuthStrategy` and SDK's `OAuthTokenVerifier` |
+| Auth testing utilities (auth library) | `McpTestAuthStrategy`, `createMockAuthInfo()`, `createMockJwt()` for integration and unit tests |
 | Embedded OAuth 2.1 server (oauth library) | `McpOAuthModule` — mounts SDK's `mcpAuthRouter` as Express middleware via NestJS `MiddlewareConsumer` |
 | OAuth endpoints (oauth library) | `/.well-known/oauth-authorization-server`, `/authorize`, `/token`, `/register`, `/revoke` |
-| OAuth provider DI (oauth library) | Accepts `OAuthServerProvider` as class reference (DI-resolved) or instance (e.g. `ProxyOAuthServerProvider`) |
+| OAuth strategy DI (oauth library) | Accepts `OAuthServerProvider` as class reference (DI-resolved) or instance (e.g. `ProxyOAuthServerProvider`) |
 | Memory clients store (oauth library) | `McpMemoryClientsStore` — in-memory `OAuthRegisteredClientsStore` with `seedClient()` for dev/testing |
 | Async module config (auth + oauth) | Both libraries support `registerAsync()` with `{ imports, inject, useFactory }` pattern |
 
@@ -151,7 +151,7 @@ The name map is now cached and automatically invalidated when the registry fires
 
 1. **Single McpServer per session in HTTP mode** — Each session creates its own `McpServer` + `wireRegistryToServer`. With 100 concurrent sessions, that's 100 sets of registered tools/resources/prompts and 100 entries in the registry's change listener array. O(sessions x registrations).
 
-2. ~~**No auth extraction middleware**~~ — **RESOLVED** — `McpAuthProvider` interface added to `McpToolRegistry`. Implemented as an `@Injectable()` NestJS service with full DI access (can inject `JwtService`, repositories, etc.). Runs before guards in `executeToolRaw()` to validate tokens, decode JWTs, hydrate user context, or reject unauthenticated requests centrally. Configured via `authProvider` class reference on both `McpModuleConfig` and `McpStdioConfig`. Modules auto-include the class in providers and resolve it through `ModuleRef` — follows the same DI pattern as guards.
+2. ~~**No auth extraction middleware**~~ — **RESOLVED** — `McpAuthStrategy` interface added to `McpToolRegistry`. Implemented as an `@Injectable()` NestJS service with full DI access (can inject `JwtService`, repositories, etc.). Runs before guards in `executeToolRaw()` to validate tokens, decode JWTs, hydrate user context, or reject unauthenticated requests centrally. Configured via `authStrategy` class reference on both `McpModuleConfig` and `McpStdioConfig`. Modules auto-include the class in providers and resolve it through `ModuleRef` — follows the same DI pattern as guards.
 
 3. **CORS config exported but not auto-applied** — `MCP_CORS_CONFIG` is exported as a constant, but consumers must manually apply it. Could be auto-configured by the HTTP module.
 

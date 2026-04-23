@@ -356,7 +356,7 @@ describe('wireRegistryToServer', () => {
     expect(mockRegisterResource.mock.calls[0][1]).toEqual({ uri: 'item://{id}' });
   });
 
-  it('should resolve listProvider and pass list callback to ResourceTemplate', () => {
+  it('should resolve listStrategy and pass list callback to ResourceTemplate', () => {
     const { ResourceTemplate } = require('@modelcontextprotocol/sdk/server/mcp.js');
     const mockList = jest.fn().mockResolvedValue([{ uri: 'item://1', name: 'Item 1' }]);
 
@@ -364,7 +364,7 @@ describe('wireRegistryToServer', () => {
 
     registry.setProviderResolver(() => new TestListProvider());
     registry.registerResource(
-      { name: 'item', uri: 'item://{id}', isTemplate: true, listProvider: TestListProvider as any },
+      { name: 'item', uri: 'item://{id}', isTemplate: true, listStrategy: TestListProvider as any },
       jest.fn(),
     );
 
@@ -378,7 +378,7 @@ describe('wireRegistryToServer', () => {
     expect(mockList).toHaveBeenCalled();
   });
 
-  it('should resolve completeProvider and create Proxy-based complete for ResourceTemplate', () => {
+  it('should resolve completeStrategy and create Proxy-based complete for ResourceTemplate', () => {
     const { ResourceTemplate } = require('@modelcontextprotocol/sdk/server/mcp.js');
     const mockComplete = jest.fn().mockReturnValue(['item-1', 'item-2']);
 
@@ -386,7 +386,7 @@ describe('wireRegistryToServer', () => {
 
     registry.setProviderResolver(() => new TestCompleter());
     registry.registerResource(
-      { name: 'item', uri: 'item://{id}', isTemplate: true, completeProvider: TestCompleter as any },
+      { name: 'item', uri: 'item://{id}', isTemplate: true, completeStrategy: TestCompleter as any },
       jest.fn(),
     );
 
@@ -404,7 +404,7 @@ describe('wireRegistryToServer', () => {
     expect(mockComplete).toHaveBeenCalledWith('id', 'item-', { arguments: {} });
   });
 
-  it('should omit complete from ResourceTemplate when completeProvider not provided', () => {
+  it('should omit complete from ResourceTemplate when completeStrategy not provided', () => {
     const { ResourceTemplate } = require('@modelcontextprotocol/sdk/server/mcp.js');
 
     registry.registerResource(
@@ -624,7 +624,7 @@ describe('wireRegistryToServer', () => {
     expect(config.icons).toEqual(icons);
   });
 
-  it('should resolve prompt completeProvider and create Proxy-based complete config', () => {
+  it('should resolve prompt completeStrategy and create Proxy-based complete config', () => {
     const mockComplete = jest.fn().mockReturnValue(['typescript', 'python']);
 
     class TestCompleter { complete = mockComplete; }
@@ -634,7 +634,7 @@ describe('wireRegistryToServer', () => {
       {
         name: 'code-prompt',
         description: 'Generate code',
-        completeProvider: TestCompleter as any,
+        completeStrategy: TestCompleter as any,
       },
       jest.fn(),
     );
@@ -647,7 +647,7 @@ describe('wireRegistryToServer', () => {
     expect(mockComplete).toHaveBeenCalledWith('language', 'type', undefined);
   });
 
-  it('should omit complete from prompt config when completeProvider not provided', () => {
+  it('should omit complete from prompt config when completeStrategy not provided', () => {
     registry.registerPrompt(
       { name: 'simple-prompt', description: 'No completions' },
       jest.fn(),

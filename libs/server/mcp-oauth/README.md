@@ -165,7 +165,7 @@ For the full auth stack (issue AND validate tokens), combine both libraries:
     }),
     McpHttpModule.registerAndServeHttp({
       metadata: { name: 'my-server', version: '1.0.0' },
-      authProvider: McpJwtAuthProvider,
+      authStrategy: McpJwtAuthStrategy,
     }),
   ],
 })

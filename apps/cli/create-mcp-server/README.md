@@ -81,7 +81,7 @@ Configured based on your selections:
 // Example: HTTP + auth
 import { Module } from '@nestjs/common';
 import { McpHttpModule } from '@onivoro/server-mcp';
-import { McpAuthModule, McpJwtAuthProvider } from '@onivoro/server-mcp-auth';
+import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';
 import { ExampleToolService } from './tools/example.tool';
 import { ExampleResourceService } from './resources/example.resource';
 import { ExamplePromptService } from './prompts/example.prompt';
@@ -95,7 +95,7 @@ import { ExamplePromptService } from './prompts/example.prompt';
     }),
     McpHttpModule.registerAndServeHttp({
       metadata: { name: 'my-server', version: '0.0.1' },
-      authProvider: McpJwtAuthProvider,
+      authStrategy: McpJwtAuthStrategy,
     }),
   ],
   providers: [ExampleToolService, ExampleResourceService, ExamplePromptService],

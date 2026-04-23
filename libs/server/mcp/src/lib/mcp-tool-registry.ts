@@ -6,7 +6,7 @@ import type { McpAuthInfo } from './mcp-auth-info';
 import type { McpToolContext } from './mcp-tool-context';
 import type { McpToolInterceptor } from './mcp-tool-interceptor';
 import type { McpCanActivate } from './mcp-can-activate';
-import type { McpAuthProvider } from './mcp-auth-provider';
+import type { McpAuthStrategy } from './mcp-auth-strategy';
 import type { McpGuardMetadata } from './mcp-guard-metadata';
 import type { McpToolResult } from './mcp-tool-result';
 import type { McpLogLevel } from './mcp-log-level';
@@ -45,7 +45,7 @@ export class McpToolRegistry {
   private toolEnabledDelegate?: (name: string, enabled: boolean) => void;
   private guardResolver?: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate;
   private providerResolver?: (cls: new (...args: any[]) => any) => any;
-  private authProvider?: McpAuthProvider;
+  private authStrategy?: McpAuthStrategy;
 
   // -- Registration --
 
@@ -135,8 +135,8 @@ export class McpToolRegistry {
     this.guardResolver = resolver;
   }
 
-  setAuthProvider(provider: McpAuthProvider): void {
-    this.authProvider = provider;
+  setAuthStrategy(strategy: McpAuthStrategy): void {
+    this.authStrategy = strategy;
   }
 
   setProviderResolver(resolver: (cls: new (...args: any[]) => any) => any): void {
@@ -268,10 +268,10 @@ export class McpToolRegistry {
       throw new Error(`MCP tool "${name}" is not registered.`);
     }
 
-    // -- Auth provider (enrichment/validation) --
+    // -- Auth strategy (enrichment/validation) --
     // Runs before guards so all guards receive a consistently resolved authInfo.
-    const resolvedAuthInfo = this.authProvider
-      ? await this.authProvider.resolveAuth(authInfo)
+    const resolvedAuthInfo = this.authStrategy
+      ? await this.authStrategy.resolveAuth(authInfo)
       : authInfo;
 
     // -- Guards (authorization) --

@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { McpStdioModule } from './mcp-stdio.module';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpAuthInfo } from './mcp-auth-info';
-import type { McpAuthProvider } from './mcp-auth-provider';
+import type { McpAuthStrategy } from './mcp-auth-strategy';
 import { McpTool } from './mcp-tool.decorator';
 import { McpResource } from './mcp-resource.decorator';
 import { McpPrompt } from './mcp-prompt.decorator';
@@ -237,11 +237,11 @@ describe('McpStdioModule', () => {
     expect(mockServerClose).toHaveBeenCalled();
   });
 
-  describe('auth provider wiring', () => {
+  describe('auth strategy wiring', () => {
     const resolveAuthSpy = jest.fn();
 
     @Injectable()
-    class TestAuthProvider implements McpAuthProvider {
+    class TestAuthStrategy implements McpAuthStrategy {
       resolveAuth(authInfo: McpAuthInfo | undefined) {
         resolveAuthSpy(authInfo);
         return authInfo ? { ...authInfo, extra: { enriched: true } } : undefined;
@@ -250,14 +250,14 @@ describe('McpStdioModule', () => {
 
     beforeEach(() => resolveAuthSpy.mockClear());
 
-    it('should resolve authProvider class through DI and wire to registry', async () => {
+    it('should resolve authStrategy class through DI and wire to registry', async () => {
       const module = await Test.createTestingModule({
         imports: [
           McpStdioModule.registerAndServeStdio({
             metadata: { name: 'test-stdio', version: '1.0.0' },
             stdin: new PassThrough(),
             stdout: new PassThrough(),
-            authProvider: TestAuthProvider,
+            authStrategy: TestAuthStrategy,
           }),
         ],
       }).compile();
@@ -279,7 +279,7 @@ describe('McpStdioModule', () => {
       await module.close();
     });
 
-    it('should not set authProvider when not in config', async () => {
+    it('should not set authStrategy when not in config', async () => {
       const module = await Test.createTestingModule({
         imports: [
           McpStdioModule.registerAndServeStdio({

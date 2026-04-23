@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { McpAuthProvider, McpAuthInfo } from '@onivoro/server-mcp';
+import type { McpAuthStrategy, McpAuthInfo } from '@onivoro/server-mcp';
 import { createMockAuthInfo } from './create-mock-auth-info';
 
 /**
@@ -12,17 +12,17 @@ import { createMockAuthInfo } from './create-mock-auth-info';
  *   imports: [
  *     McpHttpModule.registerAndServeHttp({
  *       metadata: { name: 'test', version: '1.0.0' },
- *       authProvider: McpTestAuthProvider,
+ *       authStrategy: McpTestAuthStrategy,
  *     }),
  *   ],
  * }).compile();
  *
- * const testAuth = module.get(McpTestAuthProvider);
+ * const testAuth = module.get(McpTestAuthStrategy);
  * testAuth.setAuthInfo(createMockAuthInfo({ scopes: ['admin'] }));
  * ```
  */
 @Injectable()
-export class McpTestAuthProvider implements McpAuthProvider {
+export class McpTestAuthStrategy implements McpAuthStrategy {
   private authInfo?: McpAuthInfo;
   private shouldThrow?: Error;
   private isConfigured = false;

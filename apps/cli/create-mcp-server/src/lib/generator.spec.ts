@@ -121,8 +121,8 @@ describe('composeAppModule', () => {
       oauth: false,
     });
     expect(result).toContain('McpAuthModule');
-    expect(result).toContain('McpJwtAuthProvider');
-    expect(result).toContain('authProvider: McpJwtAuthProvider');
+    expect(result).toContain('McpJwtAuthStrategy');
+    expect(result).toContain('authStrategy: McpJwtAuthStrategy');
     expect(result).toContain('process.env.JWKS_URI');
   });
 
@@ -134,8 +134,8 @@ describe('composeAppModule', () => {
       oauth: false,
     });
     expect(result).not.toContain('McpAuthModule');
-    expect(result).not.toContain('McpJwtAuthProvider');
-    expect(result).not.toContain('authProvider');
+    expect(result).not.toContain('McpJwtAuthStrategy');
+    expect(result).not.toContain('authStrategy');
   });
 
   it('should include oauth placeholder when oauth=true', () => {
