@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-mcp",
-  "version": "24.35.0",
+  "version": "24.35.1",
   "description": "MCP protocol server for NestJS with decorators, transports, guards, interceptors, and registry",
   "license": "MIT",
   "type": "commonjs",

@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-mcp-oauth",
-  "version": "24.35.0",
+  "version": "24.35.1",
   "description": "Embedded OAuth 2.1 authorization server for MCP — wraps the MCP SDK auth router into NestJS",
   "license": "MIT",
   "type": "commonjs",

@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-mcp-llm-adapter",
-  "version": "24.35.0",
+  "version": "24.35.1",
   "description": "LLM provider tool format adapter for MCP — supports OpenAI, Claude, Bedrock, Gemini, and Mistral",
   "license": "MIT",
   "type": "commonjs",
@@ -31,7 +31,7 @@
     "adapter"
   ],
   "dependencies": {
-    "@onivoro/server-mcp": "^24.35.0",
+    "@onivoro/server-mcp": "^24.35.1",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
