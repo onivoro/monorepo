@@ -28,3 +28,14 @@ module "ecs" {
   ZONE_ID           = module.domain_data.domain_zone.id
   ZONE_NAME         = module.domain_data.domain_zone.name
 }
+
+module "bedrock" {
+  source = "../bedrock"
+
+  PREFIX             = local.PREFIX
+  AWS_REGION         = var.AWS_REGION
+  ECS_TASK_ROLE_NAME = module.ecs.ecs_task_execution_role_name
+  AWS_VPC_ID         = module.domain_data.domain_vpc.id
+  SUBNET_IDS         = module.domain_data.domain_az_subnets
+  VPC_CIDR_BLOCK     = module.domain_data.domain_vpc.cidr_block
+}
