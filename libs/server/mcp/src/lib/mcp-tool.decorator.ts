@@ -10,7 +10,7 @@ import type { McpToolMetadata } from './mcp-tool-metadata';
  *   name: 'insert-emojis',
  *   description: 'Insert emojis into text',
  *   schema: insertEmojisSchema,
- *   aliases: { bedrock: 'insertEmojis' },
+ *   aliases: { 'bedrock-converse': 'insertEmojis' },
  *   annotations: { readOnlyHint: true },
  * })
  * ```

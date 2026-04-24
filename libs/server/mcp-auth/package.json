@@ -1,14 +1,36 @@
 {
   "name": "@onivoro/server-mcp-auth",
   "version": "24.35.0",
+  "description": "JWT authentication for MCP servers — JWKS validation, scope auto-discovery, and RFC 9728 Protected Resource Metadata",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-auth/README.md",
   "repository": {
     "type": "git",
     "url": "https://github.com/onivoro/monorepo.git"
   },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "modelcontextprotocol",
+    "nestjs",
+    "jwt",
+    "jwks",
+    "oauth",
+    "auth",
+    "authentication",
+    "authorization",
+    "cognito",
+    "auth0",
+    "entra",
+    "scopes",
+    "rfc-9728",
+    "protected-resource-metadata",
+    "ai",
+    "llm"
+  ],
   "dependencies": {
     "@onivoro/server-mcp": "^24.35.0",
     "tslib": "^2.3.0"

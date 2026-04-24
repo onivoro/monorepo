@@ -18,9 +18,12 @@
     "strictNullChecks": true,
     "baseUrl": ".",
     "paths": {
+      "@onivoro/browser-jsonrpc": ["libs/browser/jsonrpc/src/index.ts"],
+      "@onivoro/browser-redux": ["libs/browser/redux/src/index.ts"],
       "@onivoro/isomorphic-axios": ["libs/isomorphic/axios/src/index.ts"],
       "@onivoro/isomorphic-common": ["libs/isomorphic/common/src/index.ts"],
       "@onivoro/isomorphic-fhir": ["libs/isomorphic/fhir/src/index.ts"],
+      "@onivoro/isomorphic-jsonrpc": ["libs/isomorphic/jsonrpc/src/index.ts"],
       "@onivoro/server-auth": ["libs/server/auth/src/index.ts"],
       "@onivoro/server-aws-cloudwatch": [
         "libs/server/aws-cloudwatch/src/index.ts"
@@ -42,13 +45,16 @@
       "@onivoro/server-html": ["libs/server/html/src/index.ts"],
       "@onivoro/server-mcp": ["libs/server/mcp/src/index.ts"],
       "@onivoro/server-mcp-auth": ["libs/server/mcp-auth/src/index.ts"],
-      "@onivoro/server-mcp-llm-adapter": ["libs/server/mcp-llm-adapter/src/index.ts"],
+      "@onivoro/server-mcp-llm-adapter": [
+        "libs/server/mcp-llm-adapter/src/index.ts"
+      ],
       "@onivoro/server-mcp-oauth": ["libs/server/mcp-oauth/src/index.ts"],
       "@onivoro/server-open-ai": ["libs/server/open-ai/src/index.ts"],
       "@onivoro/server-pino": ["libs/server/pino/src/index.ts"],
       "@onivoro/server-process": ["libs/server/process/src/index.ts"],
       "@onivoro/server-resilience": ["libs/server/resilience/src/index.ts"],
       "@onivoro/server-sendgrid": ["libs/server/sendgrid/src/index.ts"],
+      "@onivoro/server-stdio": ["libs/server/stdio/src/index.ts"],
       "@onivoro/server-twilio": ["libs/server/twilio/src/index.ts"],
       "@onivoro/server-typeorm-mysql": [
         "libs/server/typeorm-mysql/src/index.ts"
@@ -56,10 +62,6 @@
       "@onivoro/server-typeorm-postgres": [
         "libs/server/typeorm-postgres/src/index.ts"
       ],
-      "@onivoro/isomorphic-jsonrpc": ["libs/isomorphic/jsonrpc/src/index.ts"],
-      "@onivoro/browser-jsonrpc": ["libs/browser/jsonrpc/src/index.ts"],
-      "@onivoro/browser-redux": ["libs/browser/redux/src/index.ts"],
-      "@onivoro/server-stdio": ["libs/server/stdio/src/index.ts"],
       "@onivoro/server-vscode": ["libs/server/vscode/src/index.ts"]
     }
   },

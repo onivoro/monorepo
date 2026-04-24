@@ -1,6 +1,6 @@
 # @onivoro/server-mcp-llm-adapter
 
-Generic adapter for [`@onivoro/server-mcp`](https://www.npmjs.com/package/@onivoro/server-mcp). Converts MCP tool registry entries to any LLM provider's tool definition format and provides a unified execution path. Ships with prebuilt configs for AWS Bedrock Converse, OpenAI, Anthropic, Google Gemini, and Mistral.
+Generic adapter for [`@onivoro/server-mcp`](https://www.npmjs.com/package/@onivoro/server-mcp). Converts MCP tool registry entries to any LLM provider's tool definition format and provides a unified execution path. Ships with prebuilt configs for AWS Bedrock Converse, AWS Bedrock Mantle, AWS Bedrock OpenAI-compatible, OpenAI, Anthropic, Google Gemini, and Mistral.
 
 ## Install
 
@@ -23,6 +23,8 @@ Configs map to **the API you are calling**, not the model or hosting platform. A
 | API you are calling | Config | Module method |
 |---------------------|--------|---------------|
 | AWS Bedrock **Converse / ConverseStream** | `BEDROCK_CONVERSE_CONFIG` | `forBedrockConverse()` |
+| AWS Bedrock **Mantle** (Anthropic Messages format) | `BEDROCK_MANTLE_CONFIG` | `forBedrockMantle()` |
+| AWS Bedrock **OpenAI-compatible** | `BEDROCK_OPENAI_CONFIG` | `forBedrockOpenAi()` |
 | OpenAI **Chat Completions** (also xAI, Groq, Together) | `OPENAI_CONFIG` | `forOpenAi()` |
 | Anthropic **Messages** | `CLAUDE_CONFIG` | `forClaude()` |
 | Google **Gemini** | `GEMINI_CONFIG` | `forGemini()` |
@@ -30,15 +32,17 @@ Configs map to **the API you are calling**, not the model or hosting platform. A
 
 ### Bedrock examples
 
-If you use Bedrock's **Converse API**, all models (Claude, Mistral, Llama, etc.) share the same `toolSpec` envelope — use `BEDROCK_CONVERSE_CONFIG`.
-
-If you use Bedrock's **InvokeModel API** (passing the raw request body), the tool format is model-specific:
+Bedrock exposes multiple API surfaces. Each has its own tool format — pick the config that matches the API you are calling:
 
 | Scenario | Config |
 |----------|--------|
-| Any model via Bedrock **Converse** | `BEDROCK_CONVERSE_CONFIG` |
+| Any model via Bedrock **Converse / ConverseStream** | `BEDROCK_CONVERSE_CONFIG` |
+| Bedrock **Mantle** (Anthropic Messages format) | `BEDROCK_MANTLE_CONFIG` |
+| Bedrock **OpenAI-compatible** endpoint | `BEDROCK_OPENAI_CONFIG` |
 | Claude on Bedrock via **InvokeModel** | `CLAUDE_CONFIG` |
 | Mistral on Bedrock via **InvokeModel** | `MISTRAL_CONFIG` |
+
+Mantle and Converse are mutually exclusive access paths — never mix them. `BEDROCK_MANTLE_CONFIG` uses the Anthropic Messages tool format (`input_schema`) while `BEDROCK_CONVERSE_CONFIG` uses the Converse `toolSpec` envelope. Similarly, `BEDROCK_OPENAI_CONFIG` uses the OpenAI function-calling format independently from `OPENAI_CONFIG` — each has its own alias key for per-provider name overrides.
 
 The same principle applies outside Bedrock — pick the config that matches the API format, not where the model is hosted.
 
@@ -188,7 +192,7 @@ McpLlmAdapterModule.forProvider(MY_CONFIG);
 
 ## Name handling
 
-Each config has an `aliasKey` (e.g., `'bedrock'`, `'openai'`) used to look up per-provider name overrides from the `@McpTool` decorator's `aliases` parameter.
+Each config has an `aliasKey` (e.g., `'bedrock'`, `'bedrock-mantle'`, `'bedrock-openai'`, `'openai'`) used to look up per-provider name overrides from the `@McpTool` decorator's `aliases` parameter.
 
 Resolution order:
 1. **Explicit alias** — `aliases[aliasKey]` if present
@@ -209,7 +213,7 @@ Providers that require name sanitization (Bedrock Converse, Gemini) apply it aut
 
 ```typescript
 // Module
-McpLlmAdapterModule                // NestJS module — forProvider(), forBedrockConverse(), forOpenAi(), forClaude(), forGemini(), forMistral()
+McpLlmAdapterModule                // NestJS module — forProvider(), forBedrockConverse(), forBedrockMantle(), forBedrockOpenAi(), forOpenAi(), forClaude(), forGemini(), forMistral()
 
 // Adapter
 McpLlmToolAdapter                  // Injectable — toProviderTools(), getOutputSchemas(), resolveProviderToolName(), executeToolForProvider(), executeToolCallForProvider(), executeToolsForProvider()
@@ -223,10 +227,16 @@ resolveProviderName             // Utility: resolves provider name from metadata
 
 // Prebuilt configs
 BEDROCK_CONVERSE_CONFIG          // AWS Bedrock Converse API
+BEDROCK_MANTLE_CONFIG            // AWS Bedrock Mantle (Anthropic Messages format)
+BEDROCK_OPENAI_CONFIG            // AWS Bedrock OpenAI-compatible endpoint
 OPENAI_CONFIG                    // OpenAI Chat Completions API
 CLAUDE_CONFIG                    // Anthropic Messages API
 GEMINI_CONFIG                    // Google Gemini API
 MISTRAL_CONFIG                   // Mistral La Plateforme API
+
+// Shared formatters (used internally by prebuilt configs, also available for custom configs)
+formatAnthropicTool              // Anthropic Messages format — { name, description, input_schema }
+formatOpenAiTool                 // OpenAI function format — { type: 'function', function: { name, description, parameters } }
 
 // Types
 BedrockConverseToolDefinition    // { toolSpec: { name, description, inputSchema: { json } } }

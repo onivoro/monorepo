@@ -14,3 +14,7 @@ export { CLAUDE_CONFIG } from './lib/claude-config';
 export { GeminiToolDefinition } from './lib/gemini-tool-definition';
 export { GEMINI_CONFIG } from './lib/gemini-config';
 export { MISTRAL_CONFIG } from './lib/mistral-config';
+export { BEDROCK_MANTLE_CONFIG } from './lib/bedrock-mantle-config';
+export { BEDROCK_OPENAI_CONFIG } from './lib/bedrock-openai-config';
+export { formatAnthropicTool } from './lib/format-anthropic-tool';
+export { formatOpenAiTool } from './lib/format-openai-tool';

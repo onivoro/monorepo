@@ -1,14 +1,32 @@
 {
   "name": "@onivoro/server-mcp-oauth",
   "version": "24.35.0",
+  "description": "Embedded OAuth 2.1 authorization server for MCP — wraps the MCP SDK auth router into NestJS",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-oauth/README.md",
   "repository": {
     "type": "git",
     "url": "https://github.com/onivoro/monorepo.git"
   },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "modelcontextprotocol",
+    "nestjs",
+    "oauth",
+    "oauth2",
+    "authorization-server",
+    "token",
+    "client-registration",
+    "rfc-8414",
+    "rfc-7591",
+    "rfc-7009",
+    "ai",
+    "llm"
+  ],
   "dependencies": {
     "tslib": "^2.3.0"
   },

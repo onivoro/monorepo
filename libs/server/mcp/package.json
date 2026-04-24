@@ -1,14 +1,35 @@
 {
   "name": "@onivoro/server-mcp",
   "version": "24.35.0",
+  "description": "MCP protocol server for NestJS with decorators, transports, guards, interceptors, and registry",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/mcp/README.md",
   "repository": {
     "type": "git",
     "url": "https://github.com/onivoro/monorepo.git"
   },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "modelcontextprotocol",
+    "nestjs",
+    "mcp-server",
+    "mcp-tools",
+    "mcp-resources",
+    "mcp-prompts",
+    "ai",
+    "llm",
+    "claude",
+    "anthropic",
+    "openai",
+    "stdio",
+    "streamable-http",
+    "oauth",
+    "decorators"
+  ],
   "dependencies": {
     "tslib": "^2.3.0"
   },

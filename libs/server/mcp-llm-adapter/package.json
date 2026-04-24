@@ -1,14 +1,35 @@
 {
   "name": "@onivoro/server-mcp-llm-adapter",
   "version": "24.35.0",
+  "description": "LLM provider tool format adapter for MCP — supports OpenAI, Claude, Bedrock, Gemini, and Mistral",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-llm-adapter/README.md",
   "repository": {
     "type": "git",
     "url": "https://github.com/onivoro/monorepo.git"
   },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "modelcontextprotocol",
+    "nestjs",
+    "llm",
+    "ai",
+    "openai",
+    "claude",
+    "anthropic",
+    "bedrock",
+    "bedrock-mantle",
+    "bedrock-converse",
+    "gemini",
+    "mistral",
+    "tool-calling",
+    "function-calling",
+    "adapter"
+  ],
   "dependencies": {
     "@onivoro/server-mcp": "^24.35.0",
     "tslib": "^2.3.0"

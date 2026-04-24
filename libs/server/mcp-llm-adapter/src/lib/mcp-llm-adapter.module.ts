@@ -8,6 +8,8 @@ import { OPENAI_CONFIG } from './openai-config';
 import { CLAUDE_CONFIG } from './claude-config';
 import { GEMINI_CONFIG } from './gemini-config';
 import { MISTRAL_CONFIG } from './mistral-config';
+import { BEDROCK_MANTLE_CONFIG } from './bedrock-mantle-config';
+import { BEDROCK_OPENAI_CONFIG } from './bedrock-openai-config';
 
 @Module({})
 export class McpLlmAdapterModule {
@@ -41,5 +43,13 @@ export class McpLlmAdapterModule {
 
   static forMistral(): DynamicModule {
     return this.forProvider(MISTRAL_CONFIG);
+  }
+
+  static forBedrockMantle(): DynamicModule {
+    return this.forProvider(BEDROCK_MANTLE_CONFIG);
+  }
+
+  static forBedrockOpenAi(): DynamicModule {
+    return this.forProvider(BEDROCK_OPENAI_CONFIG);
   }
 }
