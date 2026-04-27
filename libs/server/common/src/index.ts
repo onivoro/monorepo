@@ -53,6 +53,7 @@ export * from './lib/functions/read-file-as-json.function';
 export * from './lib/functions/read-ssl-certificate.function';
 export * from './lib/functions/save-file-as-json.function';
 export * from './lib/functions/shell.function';
+export * from './lib/functions/sort-openapi-document.function';
 export * from './lib/functions/try-catch.function';
 
 export * from './lib/pipes/parse-date-optional.pipe';

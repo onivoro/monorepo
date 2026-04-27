@@ -3,6 +3,7 @@ import { resolve } from 'path';
 import { writeFile } from 'fs/promises';
 import { INestApplication } from '@nestjs/common';
 import { generateAppMetadata } from './generate-app-metadata.function';
+import { sortOpenApiDocument } from './sort-openapi-document.function';
 
 export async function initOpenapi(app: INestApplication, title: string, projectName: string, appRoot: string, version?: string, documentBuilder?: (document: DocumentBuilder) => DocumentBuilder) {
   const { swaggerJsonPath } = generateAppMetadata(projectName, appRoot);
@@ -18,7 +19,7 @@ export async function initOpenapi(app: INestApplication, title: string, projectN
 
   if (process.env.NODE_ENV !== 'production') {
     console.log(`writing swagger JSON file to ${swaggerJsonPath}`)
-    await writeFile(resolve(swaggerJsonPath), JSON.stringify(document, null, 2));
+    await writeFile(resolve(swaggerJsonPath), JSON.stringify(sortOpenApiDocument(document), null, 2));
   }
 
   SwaggerModule.setup('dox', app, document);
