@@ -23,6 +23,7 @@
       "@onivoro/isomorphic-axios": ["libs/isomorphic/axios/src/index.ts"],
       "@onivoro/isomorphic-common": ["libs/isomorphic/common/src/index.ts"],
       "@onivoro/isomorphic-fhir": ["libs/isomorphic/fhir/src/index.ts"],
+      "@onivoro/isomorphic-jsonata": ["libs/isomorphic/jsonata/src/index.ts"],
       "@onivoro/isomorphic-jsonrpc": ["libs/isomorphic/jsonrpc/src/index.ts"],
       "@onivoro/server-auth": ["libs/server/auth/src/index.ts"],
       "@onivoro/server-aws-cloudwatch": [

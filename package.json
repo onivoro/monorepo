@@ -58,6 +58,7 @@
     "axios": "~1.7.7",
     "body-parser": "~1.20.3",
     "compute-cosine-similarity": "^1.1.0",
+    "jsonata": "^2.1.0",
     "jsonwebtoken": "~9.0.2",
     "jwk-to-pem": "~2.0.6",
     "jwks-rsa": "^3.2.0",

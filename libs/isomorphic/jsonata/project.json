@@ -1,0 +1,27 @@
+{
+  "name": "lib-isomorphic-jsonata",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/isomorphic/jsonata/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/isomorphic/jsonata",
+        "main": "libs/isomorphic/jsonata/src/index.ts",
+        "tsConfig": "libs/isomorphic/jsonata/tsconfig.lib.json",
+        "assets": [
+          "libs/isomorphic/jsonata/README.md",
+          "libs/isomorphic/jsonata/LICENSE",
+          "libs/isomorphic/jsonata/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

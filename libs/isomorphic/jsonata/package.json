@@ -1,0 +1,25 @@
+{
+  "name": "@onivoro/isomorphic-jsonata",
+  "version": "24.35.2",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "dependencies": {
+    "jsonata": "^2.0.5",
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@onivoro/isomorphic-common": "*"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}
