@@ -63,6 +63,17 @@ export interface McpAuthConfig {
   /** Whether to serve the `/.well-known/oauth-protected-resource` endpoint. Default: `true`. */
   serveProtectedResourceMetadata?: boolean;
 
+  /**
+   * Which RFC 9728 Protected Resource Metadata routes to serve.
+   *
+   * - `'root'`: serve only `/.well-known/oauth-protected-resource`
+   * - `'path'`: serve only the path-derived route for the configured resource
+   * - `'both'`: serve both routes for compatibility during migration
+   *
+   * Default: `'both'`.
+   */
+  protectedResourceMetadataMode?: 'root' | 'path' | 'both';
+
   /** Human-readable resource name for the PRM response. */
   resourceName?: string;
 

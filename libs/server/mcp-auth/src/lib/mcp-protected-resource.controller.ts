@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Inject, NotFoundException, Param } from '@nestjs/common';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
 import type { McpAuthConfig } from './mcp-auth-config';
 import { McpScopeRegistry } from './mcp-scope-registry';
@@ -18,7 +18,19 @@ export class McpProtectedResourceController {
   ) {}
 
   @Get('oauth-protected-resource')
-  getProtectedResourceMetadata(): Record<string, unknown> {
+  getRootProtectedResourceMetadata(): Record<string, unknown> {
+    this.assertMetadataRouteEnabled('root');
+    return this.buildProtectedResourceMetadata();
+  }
+
+  @Get('oauth-protected-resource/*resourcePath')
+  getPathProtectedResourceMetadata(@Param('resourcePath') resourcePath: string): Record<string, unknown> {
+    this.assertMetadataRouteEnabled('path');
+    this.assertResourcePathMatch(resourcePath);
+    return this.buildProtectedResourceMetadata();
+  }
+
+  private buildProtectedResourceMetadata(): Record<string, unknown> {
     if (this.config.serveProtectedResourceMetadata === false) {
       throw new NotFoundException();
     }
@@ -51,5 +63,32 @@ export class McpProtectedResourceController {
     }
 
     return metadata;
+  }
+
+  private assertMetadataRouteEnabled(route: 'root' | 'path') {
+    if (this.config.serveProtectedResourceMetadata === false) {
+      throw new NotFoundException();
+    }
+
+    const mode = this.config.protectedResourceMetadataMode ?? 'both';
+    if (mode !== 'both' && mode !== route) {
+      throw new NotFoundException();
+    }
+  }
+
+  private assertResourcePathMatch(resourcePath: string) {
+    const expectedPath = this.getConfiguredResourcePath();
+    if (resourcePath !== expectedPath) {
+      throw new NotFoundException();
+    }
+  }
+
+  private getConfiguredResourcePath(): string {
+    const resourceUrl = this.config.resourceServerUrl;
+    if (!resourceUrl) {
+      throw new NotFoundException();
+    }
+
+    return new URL(resourceUrl).pathname.replace(/^\/+/, '');
   }
 }
