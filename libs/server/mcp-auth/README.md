@@ -2,6 +2,26 @@
 
 Resource server auth for MCP servers built with [`@onivoro/server-mcp`](https://www.npmjs.com/package/@onivoro/server-mcp). Validates incoming JWT tokens, enriches auth context, auto-discovers scopes, and serves RFC 9728 Protected Resource Metadata.
 
+## Start here
+
+Use this package when your MCP server should trust tokens issued by an external provider such as Cognito, Auth0, Entra, or another JWKS-backed OAuth/OIDC server.
+
+If you are choosing between the `@onivoro/server-mcp*` packages, start with:
+[MCP Server Package Guide](../mcp-package-guide.md)
+
+## What this package does
+
+- validates JWT bearer tokens using JWKS
+- enriches MCP auth context before guards and handlers run
+- serves Protected Resource Metadata for MCP auth discovery
+- provides a tested `McpJwtAuthStrategy` that also implements the MCP SDK verifier interface
+
+## What this package does not do
+
+- publish OAuth authorization-server endpoints
+- protect `/mcp` by itself unless the transport also enables bearer challenges
+- replace `@onivoro/server-mcp`
+
 ## Installation
 
 ```bash
@@ -56,6 +76,45 @@ Import `McpAuthModule` in the same Nest application that imports `McpHttpModule.
 | **Testing utilities** | `McpTestAuthStrategy`, `createMockAuthInfo()`, `createMockJwt()` |
 
 ## Configuration
+
+### Minimum required config
+
+### For JWT validation only
+
+```typescript
+McpAuthModule.register({
+  jwksUri: 'https://auth.example.com/.well-known/jwks.json',
+  serveProtectedResourceMetadata: false,
+})
+```
+
+### For Protected Resource Metadata
+
+```typescript
+McpAuthModule.register({
+  jwksUri: 'https://auth.example.com/.well-known/jwks.json',
+  issuer: 'https://auth.example.com',
+  resourceServerUrl: 'https://api.example.com/mcp',
+})
+```
+
+### For automatic MCP OAuth challenge flow
+
+```typescript
+McpAuthModule.register({
+  jwksUri: 'https://auth.example.com/.well-known/jwks.json',
+  issuer: 'https://auth.example.com',
+  resourceServerUrl: 'https://api.example.com/mcp',
+})
+
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  authStrategy: McpJwtAuthStrategy,
+  requireBearerAuth: true,
+})
+```
+
+Without `requireBearerAuth`, the strategy still validates tokens during tool execution, but MCP HTTP clients will not receive the transport-level `401` challenge they use to start OAuth automatically.
 
 ### `McpAuthConfig`
 
@@ -175,6 +234,27 @@ Choose the route mode with `protectedResourceMetadataMode`:
 - `'both'`: serve both routes for compatibility
 
 `@onivoro/server-mcp` defaults its bearer challenge to the path-derived PRM URL for the configured MCP route. If you need to advertise the root route instead, set `requireBearerAuth: { resourceMetadataUrl: '/.well-known/oauth-protected-resource' }` in `McpHttpModule`.
+
+## Tested behavior
+
+The package test suite covers:
+
+- JWT validation and enrichment
+- `resourceIdentifier` enforcement
+- Protected Resource Metadata route modes
+- config validation
+- composition with `McpHttpModule` for real HTTP `401` challenges
+
+## Troubleshooting
+
+- Tool calls still work anonymously
+  You likely configured `McpJwtAuthStrategy` but did not enable `requireBearerAuth` in `McpHttpModule`.
+- PRM is not discoverable
+  Set `resourceServerUrl`, and ensure `serveProtectedResourceMetadata` is not disabled.
+- Startup fails on auth config
+  That is expected for invalid PRM config. When PRM is enabled, `resourceServerUrl` and an authorization-server source are required.
+- JWT validation fails for the wrong issuer or audience
+  Verify `issuer`, `audience`, and `resourceIdentifier` against the provider’s actual token claims.
 
 ## Testing
 

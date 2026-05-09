@@ -2,6 +2,30 @@
 
 A NestJS library for building transport-agnostic MCP tool services. Define tools once with decorators, consume them over HTTP, stdio, or directly via the registry. The documentation and examples generally focus one enterprise monorepos but can be easily adapted to single apps.
 
+## Start here
+
+Use this package if you need:
+
+- a plain MCP HTTP or stdio server
+- a shared NestJS registry for tools, prompts, and resources
+- a protected MCP HTTP route when combined with an auth strategy
+
+If you are choosing between the `@onivoro/server-mcp*` packages, start with the shared guide:
+[MCP Server Package Guide](../mcp-package-guide.md)
+
+## What this package does
+
+- discovers `@McpTool`, `@McpResource`, and `@McpPrompt` methods from the Nest container
+- exposes them over Streamable HTTP, stdio, or direct in-process registry access
+- handles MCP session lifecycle, schema conversion, registry wiring, and capability generation
+- can issue HTTP bearer challenges on `/mcp` when `requireBearerAuth` is enabled
+
+## What this package does not do
+
+- validate JWTs by itself
+- publish OAuth authorization-server endpoints by itself
+- require authentication unless you configure it to do so
+
 ## Why this library exists
 
 MCP tools are business logic with a protocol wrapper. The problem is that the same tools often need to be consumed in multiple contexts: an MCP HTTP server for Claude Desktop, a stdio process for a VS Code extension, a direct function call from a test or CLI. Without a shared registry, you end up duplicating tool definitions, schemas, and dispatch logic for each transport.
@@ -94,6 +118,34 @@ bootstrap();
 ```
 
 The MCP endpoint is available at `POST /mcp`. Tools are discovered and registered automatically.
+
+### Canonical protected HTTP example
+
+For a protected MCP HTTP route, combine this package with `@onivoro/server-mcp-auth`:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { McpHttpModule } from '@onivoro/server-mcp';
+import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';
+import { EmojiService } from './services/emoji.service';
+
+@Module({
+  imports: [
+    McpAuthModule.register({
+      jwksUri: 'https://auth.example.com/.well-known/jwks.json',
+      issuer: 'https://auth.example.com',
+      resourceServerUrl: 'https://api.example.com/mcp',
+    }),
+    McpHttpModule.registerAndServeHttp({
+      metadata: { name: 'my-mcp-server', version: '1.0.0' },
+      authStrategy: McpJwtAuthStrategy,
+      requireBearerAuth: true,
+    }),
+  ],
+  providers: [EmojiService],
+})
+export class AppModule {}
+```
 
 ### Platform requirement
 
@@ -1185,6 +1237,29 @@ For custom authorization logic beyond scope checking, implement a `McpCanActivat
 | Protected MCP server using external JWT/OAuth | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth` | Use `authStrategy: McpJwtAuthStrategy` and `requireBearerAuth: true` |
 | Embedded OAuth authorization server | `@onivoro/server-mcp` + `@onivoro/server-mcp-oauth` | Publishes auth-server endpoints only |
 | Embedded OAuth server plus protected MCP route | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth` + `@onivoro/server-mcp-oauth` | End-to-end issue, discover, challenge, and validate |
+
+See also: [MCP Server Package Guide](../mcp-package-guide.md)
+
+## Tested behavior
+
+The package test suite covers:
+
+- Streamable HTTP session lifecycle and stale-session recovery
+- stdio transport wiring
+- registry discovery and execution
+- HTTP bearer challenge behavior and PRM URL derivation
+- auth strategy resolution through Nest DI
+
+## Troubleshooting
+
+- `Invalid session ID`
+  Restart the client or ensure the first request after reconnect is `initialize`. HTTP sessions are in-memory by default.
+- Anonymous requests still work
+  Set `requireBearerAuth: true`. An `authStrategy` alone does not force an HTTP `401` challenge.
+- Fastify does not work
+  `McpHttpModule` requires Express. Use `McpRegistryModule.registerOnly()` and a custom controller for Fastify.
+- Request body parsing error
+  Ensure the app is using Nest’s Express platform and standard body parsing.
 
 ## DNS rebinding protection
 
