@@ -29,13 +29,18 @@ import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';
     McpHttpModule.registerAndServeHttp({
       metadata: { name: 'my-server', version: '1.0.0' },
       authStrategy: McpJwtAuthStrategy,
+      requireBearerAuth: true,
     }),
   ],
 })
 export class AppModule {}
 ```
 
-`McpAuthModule` makes `McpJwtAuthStrategy` available in the DI container. `McpHttpModule` resolves that existing provider via the `authStrategy` class reference; it does not register the strategy on its own. The strategy validates every incoming request's JWT before guards run.
+`McpAuthModule` makes `McpJwtAuthStrategy` available in the DI container. `McpHttpModule` resolves that existing provider via the `authStrategy` class reference; it does not register the strategy on its own.
+
+With `requireBearerAuth: true`, unauthenticated HTTP requests are rejected at the transport layer with a standards-compliant `401` challenge and `WWW-Authenticate` metadata. That is the configuration MCP HTTP clients need to trigger OAuth automatically.
+
+Without `requireBearerAuth`, `McpJwtAuthStrategy` still validates and enriches auth during tool execution, but anonymous HTTP requests are not challenged automatically.
 
 Import `McpAuthModule` in the same Nest application that imports `McpHttpModule.registerAndServeHttp()` or `McpStdioModule.registerAndServeStdio()`, otherwise Nest will not be able to resolve `McpJwtAuthStrategy` and its `MCP_AUTH_CONFIG` dependency.
 
@@ -68,6 +73,7 @@ Import `McpAuthModule` in the same Nest application that imports `McpHttpModule.
 | `resourceServerUrl` | `string?` | — | Base URL for PRM `resource` field |
 | `authorizationServers` | `string[]?` | — | Auth server URLs for PRM |
 | `serveProtectedResourceMetadata` | `boolean?` | `true` | Serve `/.well-known/oauth-protected-resource` |
+| `protectedResourceMetadataMode` | `'root' \| 'path' \| 'both'` | `'both'` | Which RFC 9728 discovery routes to serve |
 | `resourceName` | `string?` | — | Human-readable name for PRM |
 | `resourceDocumentationUrl` | `string?` | — | Docs URL for PRM |
 | `jwksCache` | `boolean?` | `true` | Cache JWKS responses |
@@ -130,7 +136,7 @@ McpAuthModule.register({
 
 ## Execution pipeline
 
-When a tool is called, the auth strategy runs as stage 2 of the pipeline:
+When `requireBearerAuth` is enabled, HTTP auth happens before MCP request handling. After that, the auth strategy still runs during tool execution:
 
 | Stage | Component | Role |
 |-------|-----------|------|
@@ -154,6 +160,21 @@ async deleteItem(params: DeleteParams) { ... }
 The `McpScopeRegistry` collects `['write', 'admin']` and exposes them via `getScopesArray()`. These are automatically included in the Protected Resource Metadata `scopes_supported` field.
 
 Dynamically registered tools are picked up via `McpToolRegistry.onRegistrationChange()`.
+
+## Protected Resource Metadata routes
+
+When `serveProtectedResourceMetadata` is enabled, this package can serve:
+
+- Root discovery: `/.well-known/oauth-protected-resource`
+- Path-derived discovery: `/.well-known/oauth-protected-resource/<resource-path>`
+
+Choose the route mode with `protectedResourceMetadataMode`:
+
+- `'root'`: serve only the root route
+- `'path'`: serve only the path-derived route for `resourceServerUrl`
+- `'both'`: serve both routes for compatibility
+
+`@onivoro/server-mcp` defaults its bearer challenge to the path-derived PRM URL for the configured MCP route. If you need to advertise the root route instead, set `requireBearerAuth: { resourceMetadataUrl: '/.well-known/oauth-protected-resource' }` in `McpHttpModule`.
 
 ## Testing
 

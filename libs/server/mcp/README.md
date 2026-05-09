@@ -1018,6 +1018,7 @@ McpHttpModule.registerAndServeHttp({
     'https://my-app.example.com',
   ],
   authStrategy: JwtAuthStrategy, // Optional. Existing Nest provider class implementing McpAuthStrategy.
+  requireBearerAuth: true,       // Optional. HTTP 401 bearer challenge using authStrategy as OAuthTokenVerifier.
 });
 ```
 
@@ -1043,20 +1044,32 @@ Authentication works at three layers:
 
 ### Transport-level authentication
 
-Standard NestJS middleware handles transport-level auth (validating tokens, rejecting unauthenticated requests):
+For MCP HTTP servers, the default transport-level auth mechanism is `requireBearerAuth`:
 
 ```typescript
-const routePrefix = 'what/ever/';
-
-@Module({
-  imports: [McpHttpModule.registerAndServeHttp({ routePrefix, ... })],
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  authStrategy: JwtAuthStrategy,
+  requireBearerAuth: true,
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(MyAuthMiddleware).forRoutes(`${routePrefix}/mcp`);
-  }
-}
 ```
+
+When enabled, unauthenticated HTTP requests are rejected before MCP session or tool handling with a `401` challenge and `WWW-Authenticate` metadata. This is the mechanism MCP clients use to trigger OAuth automatically.
+
+You can customize the advertised Protected Resource Metadata URL:
+
+```typescript
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  authStrategy: JwtAuthStrategy,
+  requireBearerAuth: {
+    requiredScopes: ['read'],
+    resourceMetadataUrl: '/.well-known/oauth-protected-resource',
+  },
+})
+```
+
+If `resourceMetadataUrl` is omitted, the module derives the RFC 9728 path-specific URL from the MCP route it serves.
 
 ### Auth strategy (centralized auth enrichment)
 
@@ -1116,7 +1129,7 @@ export class AuthModule {}
 export class AppModule {}
 ```
 
-The same pattern works for `McpStdioModule.registerAndServeStdio()` and other MCP transport modules.
+The same provider-resolution pattern works for `McpStdioModule.registerAndServeStdio()` and other MCP transport modules.
 
 If the strategy is not registered in another imported module, Nest will fail to resolve its constructor dependencies when the transport attempts to look it up.
 
@@ -1144,6 +1157,10 @@ McpHttpModule.registerAndServeHttp({
 
 **Why use an auth strategy instead of a guard?** Guards return `boolean` — they can approve or deny, but cannot modify the auth context. An auth strategy transforms `authInfo` before any guards see it. This means you decode a JWT once centrally, and all guards receive the decoded claims without each needing to parse the token independently.
 
+### Custom transport middleware
+
+If you need non-standard transport behavior, you can still add your own NestJS middleware around the MCP route. This is an advanced option; prefer `requireBearerAuth` for spec-compliant OAuth challenges.
+
 ### Tool-level authorization
 
 When the MCP SDK's OAuth 2.1 flow is in use, `authInfo` (token, clientId, scopes) flows from the transport through the auth strategy (if configured), then to guards and tool handlers. Use `@McpGuard` for declarative per-tool scope checks:
@@ -1159,6 +1176,15 @@ async deleteData(params: z.infer<typeof schema>) { ... }
 ```
 
 For custom authorization logic beyond scope checking, implement a `McpCanActivate` guard — see [Guards](#guards).
+
+## Package combinations
+
+| Goal | Packages | Notes |
+|------|----------|-------|
+| Plain MCP server | `@onivoro/server-mcp` | No auth required |
+| Protected MCP server using external JWT/OAuth | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth` | Use `authStrategy: McpJwtAuthStrategy` and `requireBearerAuth: true` |
+| Embedded OAuth authorization server | `@onivoro/server-mcp` + `@onivoro/server-mcp-oauth` | Publishes auth-server endpoints only |
+| Embedded OAuth server plus protected MCP route | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth` + `@onivoro/server-mcp-oauth` | End-to-end issue, discover, challenge, and validate |
 
 ## DNS rebinding protection
 

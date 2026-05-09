@@ -14,9 +14,10 @@ npm install @onivoro/server-mcp-oauth
 
 ## Quick start
 
+`McpOAuthModule` mounts authorization-server endpoints. It does **not** protect your MCP route by itself.
+
 ```typescript
 import { Module } from '@nestjs/common';
-import { McpHttpModule } from '@onivoro/server-mcp';
 import { McpOAuthModule } from '@onivoro/server-mcp-oauth';
 import { MyOAuthProvider } from './my-oauth-provider';
 
@@ -26,9 +27,6 @@ import { MyOAuthProvider } from './my-oauth-provider';
       provider: MyOAuthProvider,
       issuerUrl: 'https://auth.example.com',
       scopesSupported: ['read', 'write', 'admin'],
-    }),
-    McpHttpModule.registerAndServeHttp({
-      metadata: { name: 'my-server', version: '1.0.0' },
     }),
   ],
 })
@@ -47,6 +45,19 @@ export class AppModule {}
 | `/token` | POST | Token endpoint |
 | `/register` | POST | Dynamic client registration (RFC 7591) |
 | `/revoke` | POST | Token revocation (RFC 7009) |
+
+## What it does not do
+
+`McpOAuthModule` does not:
+
+- challenge unauthenticated MCP requests on `/mcp`
+- validate bearer tokens for your MCP transport
+- wire `authStrategy` into `McpHttpModule`
+
+To protect `/mcp`, combine it with either:
+
+- `@onivoro/server-mcp-auth` and `McpJwtAuthStrategy`
+- or your own `authStrategy` that implements the MCP SDK `OAuthTokenVerifier` interface
 
 ## Provider options
 
@@ -149,7 +160,7 @@ For production, implement `OAuthRegisteredClientsStore` with a persistent backen
 
 ## Using with [@onivoro/server-mcp-auth](https://www.npmjs.com/package/@onivoro/server-mcp-auth)
 
-For the full auth stack (issue AND validate tokens), combine both libraries:
+For a full embedded OAuth + protected MCP server, combine all three libraries:
 
 ```typescript
 @Module({
@@ -162,15 +173,23 @@ For the full auth stack (issue AND validate tokens), combine both libraries:
     McpAuthModule.register({
       jwksUri: 'https://auth.example.com/.well-known/jwks.json',
       issuer: 'https://auth.example.com',
+      resourceServerUrl: 'https://api.example.com/mcp',
     }),
     McpHttpModule.registerAndServeHttp({
       metadata: { name: 'my-server', version: '1.0.0' },
       authStrategy: McpJwtAuthStrategy,
+      requireBearerAuth: true,
     }),
   ],
 })
 export class AppModule {}
 ```
+
+That composition gives you:
+
+- OAuth authorization-server endpoints from `McpOAuthModule`
+- JWT verification and Protected Resource Metadata from `McpAuthModule`
+- HTTP `401` bearer challenges on `/mcp` from `McpHttpModule`
 
 ## Platform requirement
 
