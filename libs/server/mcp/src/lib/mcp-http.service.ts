@@ -69,6 +69,16 @@ export class McpHttpService implements OnModuleDestroy {
     return entry as SessionEntry;
   }
 
+  private isInitializeRequestBody(body: unknown): boolean {
+    const messages = Array.isArray(body) ? body : [body];
+    return messages.some((message) =>
+      !!message &&
+      typeof message === 'object' &&
+      'method' in message &&
+      (message as { method?: unknown }).method === 'initialize',
+    );
+  }
+
   async handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     // -- DNS rebinding protection (MCP spec 2025-03-26+) --
     if (this.config.allowedOrigins) {
@@ -93,6 +103,7 @@ export class McpHttpService implements OnModuleDestroy {
       }
 
       const parsedBody = (req as any).body;
+      const isInitializeRequest = req.method === 'POST' && this.isInitializeRequestBody(parsedBody);
 
       if (req.method === 'POST' && !sessionId) {
         const session = this.createSession();
@@ -112,6 +123,12 @@ export class McpHttpService implements OnModuleDestroy {
 
       const session = this.sessions.get(sessionId);
       if (!session) {
+        if (isInitializeRequest) {
+          const newSession = this.createSession();
+          await newSession.transport.handleRequest(req, res, parsedBody);
+          return;
+        }
+
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           jsonrpc: '2.0',

@@ -114,6 +114,27 @@ describe('McpHttpService', () => {
       expect(mockServerConnect).toHaveBeenCalled();
     });
 
+    it('should create a fresh session for initialize requests with a stale session ID header', async () => {
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
+
+      const req = mockReq({
+        headers: { 'mcp-session-id': 'stale-session' },
+        body: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } },
+        },
+      });
+      const res = mockRes();
+
+      await service.handleRequest(req, res);
+
+      expect(mockTransportHandleRequest).toHaveBeenCalledWith(req, res, req.body);
+      expect(mockServerConnect).toHaveBeenCalled();
+      expect(res.writeHead).not.toHaveBeenCalled();
+    });
+
     it('should set default Accept header for POST if missing', async () => {
       const req = mockReq();
       const res = mockRes();
