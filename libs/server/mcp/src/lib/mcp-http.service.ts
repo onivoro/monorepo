@@ -27,6 +27,7 @@ export class McpHttpService implements OnModuleDestroy {
   private readonly sweepInterval: ReturnType<typeof setInterval>;
   private bearerTokenVerifier?: OAuthTokenVerifier;
   private bearerAuthRequiredScopes: string[] = [];
+  private bearerAuthResourceMetadataUrl?: string;
 
   constructor(
     @Inject(MCP_MODULE_CONFIG) private readonly config: McpModuleConfig,
@@ -36,9 +37,13 @@ export class McpHttpService implements OnModuleDestroy {
     this.sweepInterval = setInterval(() => this.sweepStaleSessions(), 60_000);
   }
 
-  setBearerAuthVerifier(verifier: OAuthTokenVerifier, requiredScopes: string[] = []) {
+  setBearerAuthVerifier(
+    verifier: OAuthTokenVerifier,
+    options: { requiredScopes?: string[]; resourceMetadataUrl?: string } = {},
+  ) {
     this.bearerTokenVerifier = verifier;
-    this.bearerAuthRequiredScopes = requiredScopes;
+    this.bearerAuthRequiredScopes = options.requiredScopes ?? [];
+    this.bearerAuthResourceMetadataUrl = options.resourceMetadataUrl;
   }
 
   private createSession(): SessionEntry {
@@ -106,10 +111,7 @@ export class McpHttpService implements OnModuleDestroy {
   private async authenticateRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
     if (!this.bearerTokenVerifier) return true;
 
-    const origin = this.getRequestOrigin(req);
-    const resourceMetadataUrl = origin
-      ? new URL('/.well-known/oauth-protected-resource', origin).href
-      : undefined;
+    const resourceMetadataUrl = this.getResourceMetadataUrl(req);
 
     let nextCalled = false;
     const middleware = requireBearerAuth({
@@ -123,6 +125,36 @@ export class McpHttpService implements OnModuleDestroy {
     });
 
     return nextCalled;
+  }
+
+  private getResourceMetadataUrl(req: http.IncomingMessage): string | undefined {
+    const configuredUrl = this.bearerAuthResourceMetadataUrl;
+    if (configuredUrl) {
+      if (/^https?:\/\//i.test(configuredUrl)) {
+        return configuredUrl;
+      }
+
+      const origin = this.getRequestOrigin(req);
+      return origin ? new URL(configuredUrl, origin).href : undefined;
+    }
+
+    const origin = this.getRequestOrigin(req);
+    if (!origin) return undefined;
+
+    const routeSegments = [...this.normalizeRoutePrefix(this.config.routePrefix), 'mcp'];
+    return new URL(
+      `/.well-known/oauth-protected-resource/${routeSegments.join('/')}`,
+      origin,
+    ).href;
+  }
+
+  private normalizeRoutePrefix(routePrefix?: string): string[] {
+    if (!routePrefix) return [];
+
+    return routePrefix
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
   }
 
   async handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {

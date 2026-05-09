@@ -124,8 +124,14 @@ export class McpHttpModule implements OnModuleInit {
           typeof this.config.requireBearerAuth === 'object'
             ? (this.config.requireBearerAuth.requiredScopes ?? [])
             : [];
+        const resourceMetadataUrl =
+          typeof this.config.requireBearerAuth === 'object'
+            ? this.config.requireBearerAuth.resourceMetadataUrl
+            : undefined;
 
-        this.httpService.setBearerAuthVerifier(provider, requiredScopes);
+        this.assertValidResourceMetadataUrl(resourceMetadataUrl);
+
+        this.httpService.setBearerAuthVerifier(provider, { requiredScopes, resourceMetadataUrl });
       }
       this.registry.setAuthStrategy(provider);
     }
@@ -133,5 +139,18 @@ export class McpHttpModule implements OnModuleInit {
 
   private isOAuthTokenVerifier(provider: unknown): provider is OAuthTokenVerifier {
     return !!provider && typeof (provider as OAuthTokenVerifier).verifyAccessToken === 'function';
+  }
+
+  private assertValidResourceMetadataUrl(resourceMetadataUrl?: string) {
+    if (!resourceMetadataUrl) return;
+    if (resourceMetadataUrl.startsWith('/')) return;
+
+    try {
+      new URL(resourceMetadataUrl);
+    } catch {
+      throw new Error(
+        `requireBearerAuth.resourceMetadataUrl must be an absolute URL or a root-relative path, got "${resourceMetadataUrl}".`,
+      );
+    }
   }
 }

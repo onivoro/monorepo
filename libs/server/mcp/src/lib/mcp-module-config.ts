@@ -65,5 +65,13 @@ export interface McpModuleConfig {
    */
   requireBearerAuth?: boolean | {
     requiredScopes?: string[];
+    /**
+     * Protected Resource Metadata URL advertised in the HTTP bearer challenge.
+     *
+     * Absolute URLs are used as-is. Root-relative paths are resolved against the incoming
+     * request origin. When omitted, the transport derives the path-specific RFC 9728 URL
+     * from the MCP route being served.
+     */
+    resourceMetadataUrl?: string;
   };
 }

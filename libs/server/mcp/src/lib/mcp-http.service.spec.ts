@@ -255,13 +255,69 @@ describe('McpHttpService', () => {
 
       expect(res.set).toHaveBeenCalledWith(
         'WWW-Authenticate',
-        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource"'),
+        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource/mcp"'),
       );
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         error: 'invalid_token',
       }));
       expect(mockTransportHandleRequest).not.toHaveBeenCalled();
+    });
+
+    it('should derive path-specific resource metadata URLs when routePrefix is configured', async () => {
+      const verifier: OAuthTokenVerifier = {
+        verifyAccessToken: jest.fn(),
+      };
+      service = new McpHttpService({ ...config, routePrefix: 'api/v1' } as any, registry);
+      service.setBearerAuthVerifier(verifier);
+
+      const req = mockReq({ headers: { host: 'api.example.com' } });
+      const res = mockRes();
+
+      await service.handleRequest(req, res);
+
+      expect(res.set).toHaveBeenCalledWith(
+        'WWW-Authenticate',
+        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource/api/v1/mcp"'),
+      );
+    });
+
+    it('should prefer a configured absolute resource metadata URL', async () => {
+      const verifier: OAuthTokenVerifier = {
+        verifyAccessToken: jest.fn(),
+      };
+      service.setBearerAuthVerifier(verifier, {
+        resourceMetadataUrl: 'https://metadata.example.com/prm',
+      });
+
+      const req = mockReq({ headers: { host: 'api.example.com' } });
+      const res = mockRes();
+
+      await service.handleRequest(req, res);
+
+      expect(res.set).toHaveBeenCalledWith(
+        'WWW-Authenticate',
+        expect.stringContaining('resource_metadata="https://metadata.example.com/prm"'),
+      );
+    });
+
+    it('should resolve a configured root-relative resource metadata URL against the request origin', async () => {
+      const verifier: OAuthTokenVerifier = {
+        verifyAccessToken: jest.fn(),
+      };
+      service.setBearerAuthVerifier(verifier, {
+        resourceMetadataUrl: '/.well-known/oauth-protected-resource',
+      });
+
+      const req = mockReq({ headers: { host: 'api.example.com' } });
+      const res = mockRes();
+
+      await service.handleRequest(req, res);
+
+      expect(res.set).toHaveBeenCalledWith(
+        'WWW-Authenticate',
+        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource"'),
+      );
     });
 
     it('should allow requests through when bearer auth succeeds', async () => {

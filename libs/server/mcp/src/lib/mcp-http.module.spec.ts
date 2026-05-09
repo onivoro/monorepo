@@ -338,6 +338,37 @@ describe('McpHttpModule', () => {
       await expect(module.init()).resolves.not.toThrow();
       await module.close();
     });
+
+    it('should reject invalid custom resource metadata URLs when requireBearerAuth is enabled', async () => {
+      class TestVerifierAuthStrategy extends TestAuthStrategy {
+        async verifyAccessToken(token: string) {
+          return {
+            token,
+            clientId: 'client-1',
+            scopes: [],
+          };
+        }
+      }
+
+      @Module({
+        providers: [TestAuthDependency, TestVerifierAuthStrategy],
+        exports: [TestVerifierAuthStrategy],
+      })
+      class TestVerifierAuthModule {}
+
+      const module = await Test.createTestingModule({
+        imports: [
+          TestVerifierAuthModule,
+          McpHttpModule.registerAndServeHttp({
+            metadata: { name: 'test', version: '1.0.0' },
+            authStrategy: TestVerifierAuthStrategy,
+            requireBearerAuth: { resourceMetadataUrl: 'not-a-valid-url' },
+          }),
+        ],
+      }).compile();
+
+      await expect(module.init()).rejects.toThrow(/resourceMetadataUrl/);
+    });
   });
 
   describe('error handling in discovery', () => {
