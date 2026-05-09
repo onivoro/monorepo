@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { Injectable, Module } from '@nestjs/common';
 import { McpOAuthModule } from './mcp-oauth.module';
 import { MCP_OAUTH_CONFIG } from './mcp-oauth-config-token';
 import { MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth-server-provider-token';
@@ -83,6 +84,39 @@ describe('McpOAuthModule', () => {
     expect(module.get(MCP_OAUTH_SERVER_PROVIDER)).toBe(mockProvider);
   });
 
+  it('should resolve class-based providers through DI in registerAsync()', async () => {
+    @Injectable()
+    class AsyncProvider {
+      clientsStore = { getClient: jest.fn() };
+      authorize = jest.fn();
+      challengeForAuthorizationCode = jest.fn();
+      exchangeAuthorizationCode = jest.fn();
+      exchangeRefreshToken = jest.fn();
+      verifyAccessToken = jest.fn();
+    }
+
+    @Module({
+      providers: [AsyncProvider],
+      exports: [AsyncProvider],
+    })
+    class AsyncProviderModule {}
+
+    const module = await Test.createTestingModule({
+      imports: [
+        AsyncProviderModule,
+        McpOAuthModule.registerAsync({
+          imports: [AsyncProviderModule],
+          useFactory: () => ({
+            provider: AsyncProvider,
+            issuerUrl: 'https://auth.example.com',
+          }),
+        }),
+      ],
+    }).compile();
+
+    expect(module.get(MCP_OAUTH_SERVER_PROVIDER)).toBe(module.get(AsyncProvider));
+  });
+
   it('should export McpMemoryClientsStore', async () => {
     const module = await Test.createTestingModule({
       imports: [
@@ -123,5 +157,20 @@ describe('McpOAuthModule', () => {
     );
 
     await app.close();
+  });
+
+  it('should reject invalid issuer URLs', () => {
+    expect(() => McpOAuthModule.register({
+      provider: mockProvider as any,
+      issuerUrl: 'not-a-url',
+    })).toThrow(/issuerUrl/);
+  });
+
+  it('should reject invalid optional URLs', () => {
+    expect(() => McpOAuthModule.register({
+      provider: mockProvider as any,
+      issuerUrl: 'https://auth.example.com',
+      resourceServerUrl: 'not-a-url',
+    })).toThrow(/resourceServerUrl/);
   });
 });
