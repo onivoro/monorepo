@@ -7,7 +7,7 @@ Resource server auth for MCP servers built with [`@onivoro/server-mcp`](https://
 Use this package when your MCP server should trust tokens issued by an external provider such as Cognito, Auth0, Entra, or another JWKS-backed OAuth/OIDC server.
 
 If you are choosing between the `@onivoro/server-mcp*` packages, start with:
-[MCP Server Package Guide](../mcp-package-guide.md)
+[MCP Server Package Guide](https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-package-guide.md)
 
 ## What this package does
 

@@ -9,7 +9,7 @@ Use this package only when your system needs to act as the OAuth authorization s
 If you just need to validate JWTs from Cognito, Auth0, Entra, or another external provider, use `@onivoro/server-mcp-auth` instead.
 
 If you are deciding how the packages fit together, start with:
-[MCP Server Package Guide](../mcp-package-guide.md)
+[MCP Server Package Guide](https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-package-guide.md)
 
 ## Installation
 

@@ -11,7 +11,7 @@ Use this package if you need:
 - a protected MCP HTTP route when combined with an auth strategy
 
 If you are choosing between the `@onivoro/server-mcp*` packages, start with the shared guide:
-[MCP Server Package Guide](../mcp-package-guide.md)
+[MCP Server Package Guide](https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-package-guide.md)
 
 ## What this package does
 
@@ -1238,7 +1238,7 @@ For custom authorization logic beyond scope checking, implement a `McpCanActivat
 | Embedded OAuth authorization server | `@onivoro/server-mcp` + `@onivoro/server-mcp-oauth` | Publishes auth-server endpoints only |
 | Embedded OAuth server plus protected MCP route | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth` + `@onivoro/server-mcp-oauth` | End-to-end issue, discover, challenge, and validate |
 
-See also: [MCP Server Package Guide](../mcp-package-guide.md)
+See also: [MCP Server Package Guide](https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-package-guide.md)
 
 ## Tested behavior
 
