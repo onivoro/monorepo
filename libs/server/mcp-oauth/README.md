@@ -35,7 +35,7 @@ export class AppModule {}
 
 ## What it does
 
-`McpOAuthModule` mounts the MCP SDK's `mcpAuthRouter` as Express middleware, exposing all standard OAuth 2.1 endpoints:
+`McpOAuthModule` wraps the MCP SDK's `mcpAuthRouter` and exposes standard OAuth 2.1 endpoints through NestJS controllers:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -107,6 +107,28 @@ McpOAuthModule.register({
 })
 ```
 
+### Async configuration with DI-resolved classes
+
+`registerAsync()` also supports class-based providers. The class just needs to be available in the Nest container:
+
+```typescript
+@Module({
+  providers: [MyOAuthProvider],
+  exports: [MyOAuthProvider],
+})
+class OAuthProviderModule {}
+
+McpOAuthModule.registerAsync({
+  imports: [ConfigModule, OAuthProviderModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) => ({
+    provider: MyOAuthProvider,
+    issuerUrl: config.getOrThrow('OAUTH_ISSUER_URL'),
+    resourceServerUrl: config.getOrThrow('RESOURCE_SERVER_URL'),
+  }),
+})
+```
+
 ## Configuration
 
 ### `McpOAuthConfig`
@@ -124,6 +146,8 @@ McpOAuthModule.register({
 | `tokenOptions` | `object?` | — | SDK token handler options |
 | `clientRegistrationOptions` | `object?` | — | SDK registration handler options |
 | `revocationOptions` | `object?` | — | SDK revocation handler options |
+
+All URL fields must be absolute URLs. Invalid values fail fast during module initialization.
 
 ### Async configuration
 
@@ -158,6 +182,8 @@ store.clear();
 
 For production, implement `OAuthRegisteredClientsStore` with a persistent backend (database, Redis, etc.).
 
+If `McpMemoryClientsStore` is actually used to register clients outside tests, the package logs a warning because registered clients will be lost on process restart.
+
 ## Using with [@onivoro/server-mcp-auth](https://www.npmjs.com/package/@onivoro/server-mcp-auth)
 
 For a full embedded OAuth + protected MCP server, combine all three libraries:
@@ -190,6 +216,15 @@ That composition gives you:
 - OAuth authorization-server endpoints from `McpOAuthModule`
 - JWT verification and Protected Resource Metadata from `McpAuthModule`
 - HTTP `401` bearer challenges on `/mcp` from `McpHttpModule`
+
+## Tested wrapper behavior
+
+The wrapper itself is covered for these scenarios:
+
+- auth-server discovery endpoints are mounted in a Nest app
+- `McpOAuthModule` alone does not protect `/mcp`
+- composition with `McpAuthModule` and `McpHttpModule` does protect `/mcp`
+- `registerAsync()` supports DI-resolved class providers
 
 ## Platform requirement
 

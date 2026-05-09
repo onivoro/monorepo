@@ -1,4 +1,5 @@
 import { McpMemoryClientsStore } from './mcp-memory-clients-store';
+import { Logger } from '@nestjs/common';
 
 describe('McpMemoryClientsStore', () => {
   let store: McpMemoryClientsStore;
@@ -63,5 +64,21 @@ describe('McpMemoryClientsStore', () => {
     store.clear();
 
     expect(store.size).toBe(0);
+  });
+
+  it('should warn once when used outside tests', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+
+    try {
+      await store.registerClient({ client_name: 'A' });
+      await store.registerClient({ client_name: 'B' });
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+      warnSpy.mockRestore();
+    }
   });
 });

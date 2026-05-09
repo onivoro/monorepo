@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import * as crypto from 'crypto';
 
@@ -11,13 +11,16 @@ import * as crypto from 'crypto';
  */
 @Injectable()
 export class McpMemoryClientsStore implements OAuthRegisteredClientsStore {
+  private readonly logger = new Logger(McpMemoryClientsStore.name);
   private readonly clients = new Map<string, any>();
+  private warnedAboutProductionUsage = false;
 
   async getClient(clientId: string): Promise<any | undefined> {
     return this.clients.get(clientId);
   }
 
   async registerClient(clientMetadata: any): Promise<any> {
+    this.warnIfPotentiallyUnsafe();
     const clientId = crypto.randomUUID();
     const client = {
       ...clientMetadata,
@@ -41,5 +44,13 @@ export class McpMemoryClientsStore implements OAuthRegisteredClientsStore {
   /** Test helper: get the number of registered clients. */
   get size(): number {
     return this.clients.size;
+  }
+
+  private warnIfPotentiallyUnsafe(): void {
+    if (this.warnedAboutProductionUsage || process.env.NODE_ENV === 'test') return;
+    this.warnedAboutProductionUsage = true;
+    this.logger.warn(
+      'Using McpMemoryClientsStore. Registered OAuth clients are stored in memory and will be lost on process restart.',
+    );
   }
 }
