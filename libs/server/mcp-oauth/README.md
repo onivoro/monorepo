@@ -2,7 +2,14 @@
 
 Embedded OAuth 2.1 authorization server for MCP. Wraps the MCP SDK's `OAuthServerProvider` infrastructure into NestJS modules.
 
-Use this when your MCP server needs to BE the OAuth provider (no external Cognito/Auth0/Entra). For the more common case of validating tokens from an external provider, use [`@onivoro/server-mcp-auth`](https://www.npmjs.com/package/@onivoro/server-mcp-auth) instead.
+## Start here
+
+Use this package only when your system needs to act as the OAuth authorization server.
+
+If you just need to validate JWTs from Cognito, Auth0, Entra, or another external provider, use `@onivoro/server-mcp-auth` instead.
+
+If you are deciding how the packages fit together, start with:
+[MCP Server Package Guide](../mcp-package-guide.md)
 
 ## Installation
 
@@ -58,6 +65,18 @@ To protect `/mcp`, combine it with either:
 
 - `@onivoro/server-mcp-auth` and `McpJwtAuthStrategy`
 - or your own `authStrategy` that implements the MCP SDK `OAuthTokenVerifier` interface
+
+## When to use it
+
+- You need embedded authorization-server endpoints for MCP clients.
+- You want to own client registration and token issuance.
+- You do not want to depend on an external OAuth provider for the auth-server role.
+
+## When not to use it
+
+- You only need to validate incoming JWTs.
+- You expect this package alone to protect `/mcp`.
+- You are not prepared to manage client and token lifecycle concerns.
 
 ## Provider options
 
@@ -216,6 +235,56 @@ That composition gives you:
 - OAuth authorization-server endpoints from `McpOAuthModule`
 - JWT verification and Protected Resource Metadata from `McpAuthModule`
 - HTTP `401` bearer challenges on `/mcp` from `McpHttpModule`
+
+### Full-stack example
+
+```typescript
+import { Module } from '@nestjs/common';
+import { McpHttpModule } from '@onivoro/server-mcp';
+import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';
+import { McpOAuthModule } from '@onivoro/server-mcp-oauth';
+import { MyOAuthProvider } from './my-oauth-provider';
+
+@Module({
+  imports: [
+    McpOAuthModule.register({
+      provider: MyOAuthProvider,
+      issuerUrl: 'https://auth.example.com',
+      resourceServerUrl: 'https://api.example.com/mcp',
+      scopesSupported: ['read', 'write'],
+    }),
+    McpAuthModule.register({
+      jwksUri: 'https://auth.example.com/.well-known/jwks.json',
+      issuer: 'https://auth.example.com',
+      resourceServerUrl: 'https://api.example.com/mcp',
+    }),
+    McpHttpModule.registerAndServeHttp({
+      metadata: { name: 'my-server', version: '1.0.0' },
+      authStrategy: McpJwtAuthStrategy,
+      requireBearerAuth: true,
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+## Tested behavior
+
+The package test suite covers:
+
+- route mounting for OAuth discovery endpoints
+- `registerAsync()` with DI-resolved class providers
+- composition with unprotected and protected `/mcp` routes
+- config URL validation
+
+## Troubleshooting
+
+- `/mcp` is still unprotected
+  Expected. Add `@onivoro/server-mcp-auth` plus `requireBearerAuth: true`, or provide your own verifier-backed auth strategy.
+- Registered clients disappear after restart
+  `McpMemoryClientsStore` is for development and testing. Replace it with a persistent store.
+- Async provider class is not resolving
+  Ensure the provider class is actually available in the Nest container through `imports`/`providers`.
 
 ## Tested wrapper behavior
 
