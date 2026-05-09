@@ -75,15 +75,14 @@ describe('McpProtectedResourceController', () => {
     expect(result['authorization_servers']).toEqual(['https://auth.example.com']);
   });
 
-  it('should return empty object when serveProtectedResourceMetadata is false', () => {
+  it('should throw NotFoundException when serveProtectedResourceMetadata is false', () => {
     const { controller } = createController({
       jwksUri: 'https://example.com/jwks',
       resourceServerUrl: 'https://api.example.com',
       serveProtectedResourceMetadata: false,
     });
 
-    const result = controller.getProtectedResourceMetadata();
-    expect(result).toEqual({});
+    expect(() => controller.getProtectedResourceMetadata()).toThrow('Not Found');
   });
 
   it('should resolve via NestJS DI', async () => {

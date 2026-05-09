@@ -36,8 +36,9 @@ import { McpProtectedResourceController } from './mcp-protected-resource.control
 @Module({})
 export class McpAuthModule {
   static register(config: McpAuthConfig): DynamicModule {
+    const validatedConfig = validateAuthConfig(config);
     const controllers =
-      (config.serveProtectedResourceMetadata ?? true)
+      (validatedConfig.serveProtectedResourceMetadata ?? true)
         ? [McpProtectedResourceController]
         : [];
 
@@ -45,7 +46,7 @@ export class McpAuthModule {
       module: McpAuthModule,
       controllers,
       providers: [
-        { provide: MCP_AUTH_CONFIG, useValue: config },
+        { provide: MCP_AUTH_CONFIG, useValue: validatedConfig },
         McpJwksService,
         McpJwtAuthStrategy,
         McpScopeRegistry,
@@ -62,7 +63,7 @@ export class McpAuthModule {
       providers: [
         {
           provide: MCP_AUTH_CONFIG,
-          useFactory: options.useFactory,
+          useFactory: async (...args: unknown[]) => validateAuthConfig(await options.useFactory(...args)),
           inject: options.inject || [],
         },
         McpJwksService,
@@ -72,4 +73,26 @@ export class McpAuthModule {
       exports: [McpJwtAuthStrategy, McpJwksService, McpScopeRegistry, MCP_AUTH_CONFIG],
     };
   }
+}
+
+function validateAuthConfig(config: McpAuthConfig): McpAuthConfig {
+  const serveProtectedResourceMetadata = config.serveProtectedResourceMetadata ?? true;
+  if (!serveProtectedResourceMetadata) {
+    return config;
+  }
+
+  if (!config.resourceServerUrl) {
+    throw new Error(
+      'McpAuthModule requires resourceServerUrl when serveProtectedResourceMetadata is enabled.',
+    );
+  }
+
+  const hasAuthorizationServers = !!config.authorizationServers?.length;
+  if (!hasAuthorizationServers && !config.issuer) {
+    throw new Error(
+      'McpAuthModule requires authorizationServers or issuer when serveProtectedResourceMetadata is enabled.',
+    );
+  }
+
+  return config;
 }

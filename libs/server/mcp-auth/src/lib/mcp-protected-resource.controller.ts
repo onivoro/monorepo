@@ -1,4 +1,4 @@
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, Inject, NotFoundException } from '@nestjs/common';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
 import type { McpAuthConfig } from './mcp-auth-config';
 import { McpScopeRegistry } from './mcp-scope-registry';
@@ -20,7 +20,7 @@ export class McpProtectedResourceController {
   @Get('oauth-protected-resource')
   getProtectedResourceMetadata(): Record<string, unknown> {
     if (this.config.serveProtectedResourceMetadata === false) {
-      return {};
+      throw new NotFoundException();
     }
 
     const metadata: Record<string, unknown> = {

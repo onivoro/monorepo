@@ -18,6 +18,7 @@ describe('McpAuthModule', () => {
         McpAuthModule.register({
           jwksUri: 'https://example.com/.well-known/jwks.json',
           issuer: 'https://example.com',
+          resourceServerUrl: 'https://api.example.com/mcp',
         }),
       ],
     }).compile();
@@ -34,6 +35,7 @@ describe('McpAuthModule', () => {
         McpAuthModule.register({
           jwksUri: 'https://example.com/.well-known/jwks.json',
           resourceServerUrl: 'https://api.example.com/mcp',
+          issuer: 'https://auth.example.com',
         }),
       ],
     }).compile();
@@ -68,6 +70,7 @@ describe('McpAuthModule', () => {
           useFactory: () => ({
             jwksUri: 'https://example.com/.well-known/jwks.json',
             issuer: 'https://example.com',
+            resourceServerUrl: 'https://api.example.com/mcp',
           }),
         }),
       ],
@@ -77,6 +80,7 @@ describe('McpAuthModule', () => {
     expect(module.get(MCP_AUTH_CONFIG)).toEqual({
       jwksUri: 'https://example.com/.well-known/jwks.json',
       issuer: 'https://example.com',
+      resourceServerUrl: 'https://api.example.com/mcp',
     });
   });
 
@@ -85,6 +89,7 @@ describe('McpAuthModule', () => {
       imports: [
         McpAuthModule.register({
           jwksUri: 'https://example.com/.well-known/jwks.json',
+          serveProtectedResourceMetadata: false,
         }),
       ],
     }).compile();
@@ -99,6 +104,7 @@ describe('McpAuthModule', () => {
       imports: [
         McpAuthModule.register({
           jwksUri: 'https://example.com/.well-known/jwks.json',
+          serveProtectedResourceMetadata: false,
         }),
       ],
     }).compile();
@@ -107,5 +113,19 @@ describe('McpAuthModule', () => {
 
     const scopeRegistry = module.get(McpScopeRegistry);
     expect(scopeRegistry.getScopesArray()).toEqual([]);
+  });
+
+  it('should reject missing resourceServerUrl when protected resource metadata is enabled', async () => {
+    expect(() => McpAuthModule.register({
+      jwksUri: 'https://example.com/.well-known/jwks.json',
+      issuer: 'https://example.com',
+    })).toThrow(/resourceServerUrl/);
+  });
+
+  it('should reject missing authorization server sources when protected resource metadata is enabled', async () => {
+    expect(() => McpAuthModule.register({
+      jwksUri: 'https://example.com/.well-known/jwks.json',
+      resourceServerUrl: 'https://api.example.com/mcp',
+    })).toThrow(/authorizationServers or issuer/);
   });
 });

@@ -73,6 +73,7 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
     };
 
     const payload = jwt.verify(token, pem, verifyOptions) as jwt.JwtPayload;
+    this.assertResourceIdentifier(payload);
 
     // 4. Extract clientId
     const clientIdClaim = this.config.clientIdClaim ?? 'client_id';
@@ -105,6 +106,24 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
       resource,
       ...(Object.keys(extra).length > 0 && { extra }),
     };
+  }
+
+  private assertResourceIdentifier(payload: jwt.JwtPayload): void {
+    if (!this.config.resourceIdentifier) return;
+
+    const audience = payload.aud;
+    const audiences =
+      typeof audience === 'string'
+        ? [audience]
+        : Array.isArray(audience)
+          ? audience.map(String)
+          : [];
+
+    if (!audiences.includes(this.config.resourceIdentifier)) {
+      throw new Error(
+        `Invalid JWT: token audience does not include required resource "${this.config.resourceIdentifier}"`,
+      );
+    }
   }
 
   private extractScopes(payload: jwt.JwtPayload): string[] {

@@ -248,7 +248,19 @@ describe('McpJwtAuthStrategy', () => {
   });
 
   describe('resourceIdentifier', () => {
-    it('should set resource when configured', async () => {
+    it('should set resource when configured and the token audience includes it', async () => {
+      provider = createProvider({ resourceIdentifier: 'https://api.example.com/mcp' });
+      const token = signToken({
+        client_id: 'c',
+        iss: 'https://example.com',
+        aud: ['test-audience', 'https://api.example.com/mcp'],
+      });
+
+      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      expect(result!.resource).toBe('https://api.example.com/mcp');
+    });
+
+    it('should reject tokens whose audience does not include the required resource', async () => {
       provider = createProvider({ resourceIdentifier: 'https://api.example.com/mcp' });
       const token = signToken({
         client_id: 'c',
@@ -256,8 +268,9 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
-      expect(result!.resource).toBe('https://api.example.com/mcp');
+      await expect(
+        provider.resolveAuth({ token, clientId: '', scopes: [] }),
+      ).rejects.toThrow(/does not include required resource/);
     });
   });
 
@@ -268,7 +281,7 @@ describe('McpJwtAuthStrategy', () => {
         client_id: 'my-client',
         scope: 'read',
         iss: 'https://example.com',
-        aud: 'test-audience',
+        aud: ['test-audience', 'https://api.example.com/mcp'],
       });
 
       const result = await provider.verifyAccessToken(token);
