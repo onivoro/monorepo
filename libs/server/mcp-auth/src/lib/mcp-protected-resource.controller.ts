@@ -23,7 +23,7 @@ export class McpProtectedResourceController {
     return this.buildProtectedResourceMetadata();
   }
 
-  @Get('oauth-protected-resource/*resourcePath')
+  @Get('oauth-protected-resource/:resourcePath(*)')
   getPathProtectedResourceMetadata(@Param('resourcePath') resourcePath: string): Record<string, unknown> {
     this.assertMetadataRouteEnabled('path');
     this.assertResourcePathMatch(resourcePath);
