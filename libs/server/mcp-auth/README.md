@@ -35,7 +35,9 @@ import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';
 export class AppModule {}
 ```
 
-`McpAuthModule` makes `McpJwtAuthStrategy` available in the DI container. `McpHttpModule` resolves it via the `authStrategy` class reference. The strategy validates every incoming request's JWT before guards run.
+`McpAuthModule` makes `McpJwtAuthStrategy` available in the DI container. `McpHttpModule` resolves that existing provider via the `authStrategy` class reference; it does not register the strategy on its own. The strategy validates every incoming request's JWT before guards run.
+
+Import `McpAuthModule` in the same Nest application that imports `McpHttpModule.registerAndServeHttp()` or `McpStdioModule.registerAndServeStdio()`, otherwise Nest will not be able to resolve `McpJwtAuthStrategy` and its `MCP_AUTH_CONFIG` dependency.
 
 ## What you get
 

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { McpStdioModule } from './mcp-stdio.module';
 import { McpToolRegistry } from './mcp-tool-registry';
@@ -239,20 +239,35 @@ describe('McpStdioModule', () => {
 
   describe('auth strategy wiring', () => {
     const resolveAuthSpy = jest.fn();
+    const authDependency = { mark: 'from-auth-module' };
+
+    @Injectable()
+    class TestAuthDependency {
+      readonly mark = authDependency.mark;
+    }
 
     @Injectable()
     class TestAuthStrategy implements McpAuthStrategy {
+      constructor(private readonly dependency: TestAuthDependency) {}
+
       resolveAuth(authInfo: McpAuthInfo | undefined) {
         resolveAuthSpy(authInfo);
-        return authInfo ? { ...authInfo, extra: { enriched: true } } : undefined;
+        return authInfo ? { ...authInfo, extra: { enriched: true, dependency: this.dependency.mark } } : undefined;
       }
     }
+
+    @Module({
+      providers: [TestAuthDependency, TestAuthStrategy],
+      exports: [TestAuthStrategy],
+    })
+    class TestAuthModule {}
 
     beforeEach(() => resolveAuthSpy.mockClear());
 
     it('should resolve authStrategy class through DI and wire to registry', async () => {
       const module = await Test.createTestingModule({
         imports: [
+          TestAuthModule,
           McpStdioModule.registerAndServeStdio({
             metadata: { name: 'test-stdio', version: '1.0.0' },
             stdin: new PassThrough(),
@@ -274,7 +289,7 @@ describe('McpStdioModule', () => {
       const mockAuth = { token: 'test', clientId: 'c', scopes: [] };
       await registry.executeToolRaw('auth-test', {}, mockAuth);
       expect(resolveAuthSpy).toHaveBeenCalledWith(mockAuth);
-      expect(handlerAuth.extra).toEqual({ enriched: true });
+      expect(handlerAuth.extra).toEqual({ enriched: true, dependency: authDependency.mark });
 
       await module.close();
     });

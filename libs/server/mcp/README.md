@@ -1017,7 +1017,7 @@ McpHttpModule.registerAndServeHttp({
     'http://localhost:3000',
     'https://my-app.example.com',
   ],
-  authStrategy: JwtAuthStrategy, // Optional. @Injectable() class implementing McpAuthStrategy.
+  authStrategy: JwtAuthStrategy, // Optional. Existing Nest provider class implementing McpAuthStrategy.
 });
 ```
 
@@ -1033,7 +1033,7 @@ McpStdioModule.registerAndServeStdio({
   serverOptions: {},           // Optional. Passed to McpServer from @modelcontextprotocol/sdk.
   stdin: process.stdin,        // Optional. Defaults to process.stdin.
   stdout: process.stdout,      // Optional. Defaults to process.stdout.
-  authStrategy: JwtAuthStrategy, // Optional. @Injectable() class implementing McpAuthStrategy.
+  authStrategy: JwtAuthStrategy, // Optional. Existing Nest provider class implementing McpAuthStrategy.
 });
 ```
 
@@ -1060,7 +1060,7 @@ export class AppModule implements NestModule {
 
 ### Auth strategy (centralized auth enrichment)
 
-The `authStrategy` config option registers a centralized auth strategy that runs before guards on every tool execution. It receives the raw `authInfo` from the transport and can validate tokens, decode JWTs, hydrate user context, or reject unauthenticated requests — all in one place, with full access to NestJS DI.
+The `authStrategy` config option uses a centralized auth strategy that runs before guards on every tool execution. It receives the raw `authInfo` from the transport and can validate tokens, decode JWTs, hydrate user context, or reject unauthenticated requests in one place, with full access to NestJS DI.
 
 Implement `McpAuthStrategy` as an `@Injectable()` service:
 
@@ -1095,7 +1095,34 @@ export class JwtAuthStrategy implements McpAuthStrategy {
 }
 ```
 
-Then pass the class to the module config:
+Register the strategy in a NestJS module, then pass the class to the transport config:
+
+```typescript
+@Module({
+  providers: [JwtService, UsersService, JwtAuthStrategy],
+  exports: [JwtAuthStrategy],
+})
+export class AuthModule {}
+
+@Module({
+  imports: [
+    AuthModule,
+    McpHttpModule.registerAndServeHttp({
+      metadata: { name: 'my-server', version: '1.0.0' },
+      authStrategy: JwtAuthStrategy,
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+The same pattern works for `McpStdioModule.registerAndServeStdio()` and other MCP transport modules.
+
+If the strategy is not registered in another imported module, Nest will fail to resolve its constructor dependencies when the transport attempts to look it up.
+
+If you prefer, you can also register the strategy in the same application module's `providers` array, as long as that provider is part of the Nest container before the transport module initializes.
+
+Passing the class to `authStrategy` looks like this:
 
 ```typescript
 McpHttpModule.registerAndServeHttp({
@@ -1104,7 +1131,7 @@ McpHttpModule.registerAndServeHttp({
 })
 ```
 
-The module automatically includes the class in its providers and resolves it through `ModuleRef`, so it can inject any NestJS service. This follows the same DI pattern as guards.
+`McpHttpModule` resolves the existing provider through `ModuleRef`; it does not create a new provider for the strategy class. This follows the same DI pattern as guards.
 
 **What the auth strategy can do:**
 

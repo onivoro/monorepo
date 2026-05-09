@@ -35,7 +35,6 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
         McpToolRegistry,
         McpScopeGuard,
         { provide: MCP_STDIO_CONFIG, useValue: config },
-        ...(config.authStrategy ? [config.authStrategy] : []),
       ],
       exports: [McpToolRegistry],
     };

@@ -71,7 +71,6 @@ export class McpHttpModule implements OnModuleInit {
       providers: [
         McpToolRegistry, McpHttpService, McpScopeGuard,
         { provide: MCP_MODULE_CONFIG, useValue: config },
-        ...(config.authStrategy ? [config.authStrategy] : []),
       ],
       exports: [McpHttpService, McpToolRegistry],
     };
