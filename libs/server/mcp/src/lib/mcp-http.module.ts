@@ -9,6 +9,7 @@ import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
+import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 
 function createMcpController(routePrefix?: string) {
   const route = routePrefix ? `${routePrefix}/mcp` : 'mcp';
@@ -61,6 +62,7 @@ export class McpHttpModule implements OnModuleInit {
     private readonly metadataScanner: MetadataScanner,
     private readonly registry: McpToolRegistry,
     private readonly moduleRef: ModuleRef,
+    private readonly httpService: McpHttpService,
   ) {}
 
   static registerAndServeHttp(config: McpModuleConfig): DynamicModule {
@@ -110,7 +112,26 @@ export class McpHttpModule implements OnModuleInit {
     );
     if (this.config.authStrategy) {
       const provider = this.moduleRef.get(this.config.authStrategy, { strict: false });
+      if (this.config.requireBearerAuth) {
+        if (!this.isOAuthTokenVerifier(provider)) {
+          throw new Error(
+            `authStrategy ${this.config.authStrategy.name} does not implement OAuthTokenVerifier, ` +
+            'so it cannot be used with requireBearerAuth.',
+          );
+        }
+
+        const requiredScopes =
+          typeof this.config.requireBearerAuth === 'object'
+            ? (this.config.requireBearerAuth.requiredScopes ?? [])
+            : [];
+
+        this.httpService.setBearerAuthVerifier(provider, requiredScopes);
+      }
       this.registry.setAuthStrategy(provider);
     }
+  }
+
+  private isOAuthTokenVerifier(provider: unknown): provider is OAuthTokenVerifier {
+    return !!provider && typeof (provider as OAuthTokenVerifier).verifyAccessToken === 'function';
   }
 }

@@ -1,4 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
+import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import * as crypto from 'crypto';
@@ -23,6 +25,8 @@ export class McpHttpService implements OnModuleDestroy {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly sessionTtlMs: number;
   private readonly sweepInterval: ReturnType<typeof setInterval>;
+  private bearerTokenVerifier?: OAuthTokenVerifier;
+  private bearerAuthRequiredScopes: string[] = [];
 
   constructor(
     @Inject(MCP_MODULE_CONFIG) private readonly config: McpModuleConfig,
@@ -30,6 +34,11 @@ export class McpHttpService implements OnModuleDestroy {
   ) {
     this.sessionTtlMs = (config.sessionTtlMinutes ?? 30) * 60 * 1000;
     this.sweepInterval = setInterval(() => this.sweepStaleSessions(), 60_000);
+  }
+
+  setBearerAuthVerifier(verifier: OAuthTokenVerifier, requiredScopes: string[] = []) {
+    this.bearerTokenVerifier = verifier;
+    this.bearerAuthRequiredScopes = requiredScopes;
   }
 
   private createSession(): SessionEntry {
@@ -79,6 +88,43 @@ export class McpHttpService implements OnModuleDestroy {
     );
   }
 
+  private getRequestOrigin(req: http.IncomingMessage): string | undefined {
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const proto = Array.isArray(forwardedProto)
+      ? forwardedProto[0]
+      : forwardedProto ?? ((req.socket as any)?.encrypted ? 'https' : 'http');
+
+    const forwardedHost = req.headers['x-forwarded-host'];
+    const host = Array.isArray(forwardedHost)
+      ? forwardedHost[0]
+      : forwardedHost ?? req.headers.host;
+
+    if (!host) return undefined;
+    return `${proto}://${host}`;
+  }
+
+  private async authenticateRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
+    if (!this.bearerTokenVerifier) return true;
+
+    const origin = this.getRequestOrigin(req);
+    const resourceMetadataUrl = origin
+      ? new URL('/.well-known/oauth-protected-resource', origin).href
+      : undefined;
+
+    let nextCalled = false;
+    const middleware = requireBearerAuth({
+      verifier: this.bearerTokenVerifier,
+      requiredScopes: this.bearerAuthRequiredScopes,
+      resourceMetadataUrl,
+    });
+
+    await middleware(req as any, res as any, () => {
+      nextCalled = true;
+    });
+
+    return nextCalled;
+  }
+
   async handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     // -- DNS rebinding protection (MCP spec 2025-03-26+) --
     if (this.config.allowedOrigins) {
@@ -97,6 +143,11 @@ export class McpHttpService implements OnModuleDestroy {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
     try {
+      if (req.method !== 'OPTIONS') {
+        const authenticated = await this.authenticateRequest(req, res);
+        if (!authenticated) return;
+      }
+
       if (!req.headers.accept) {
         req.headers.accept =
           req.method === 'GET' ? 'text/event-stream' : 'application/json, text/event-stream';

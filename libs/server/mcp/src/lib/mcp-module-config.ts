@@ -49,4 +49,21 @@ export interface McpModuleConfig {
    * (e.g., `JwtService`, `ConfigService`, repositories).
    */
   authStrategy?: new (...args: any[]) => McpAuthStrategy;
+
+  /**
+   * Enforce HTTP Bearer authentication at the transport layer before MCP request handling.
+   *
+   * When enabled and the configured `authStrategy` implements the MCP SDK's
+   * `OAuthTokenVerifier` interface, unauthenticated requests receive an HTTP 401
+   * challenge with `WWW-Authenticate` metadata so MCP clients can initiate OAuth.
+   *
+   * This is stronger than relying on `authStrategy.resolveAuth()` alone, which runs
+   * during tool execution and cannot trigger the client's HTTP auth flow.
+   *
+   * `true` uses default behavior with no required scopes. Pass an object to require
+   * specific scopes in the HTTP auth challenge.
+   */
+  requireBearerAuth?: boolean | {
+    requiredScopes?: string[];
+  };
 }

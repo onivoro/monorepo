@@ -64,6 +64,17 @@ describe('McpProtectedResourceController', () => {
     expect(result['scopes_supported']).toEqual(['admin', 'execute']);
   });
 
+  it('should default authorization_servers to issuer when not explicitly configured', () => {
+    const { controller } = createController({
+      jwksUri: 'https://example.com/jwks',
+      issuer: 'https://auth.example.com',
+      resourceServerUrl: 'https://api.example.com/mcp',
+    });
+
+    const result = controller.getProtectedResourceMetadata();
+    expect(result['authorization_servers']).toEqual(['https://auth.example.com']);
+  });
+
   it('should return empty object when serveProtectedResourceMetadata is false', () => {
     const { controller } = createController({
       jwksUri: 'https://example.com/jwks',

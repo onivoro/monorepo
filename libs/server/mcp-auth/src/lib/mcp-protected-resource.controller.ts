@@ -28,8 +28,13 @@ export class McpProtectedResourceController {
       bearer_methods_supported: ['header'],
     };
 
-    if (this.config.authorizationServers?.length) {
-      metadata['authorization_servers'] = this.config.authorizationServers;
+    const authorizationServers =
+      this.config.authorizationServers?.length
+        ? this.config.authorizationServers
+        : (this.config.issuer ? [this.config.issuer] : undefined);
+
+    if (authorizationServers?.length) {
+      metadata['authorization_servers'] = authorizationServers;
     }
 
     const scopes = this.scopeRegistry.getScopesArray();

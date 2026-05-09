@@ -1,6 +1,7 @@
 import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpModuleConfig } from './mcp-module-config';
+import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 
 const mockTransportHandleRequest = jest.fn().mockResolvedValue(undefined);
 const mockTransportClose = jest.fn().mockResolvedValue(undefined);
@@ -78,6 +79,9 @@ describe('McpHttpService', () => {
       return {
         writeHead: jest.fn(),
         end: jest.fn(),
+        set: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
         headersSent: false,
       } as any;
     }
@@ -236,6 +240,56 @@ describe('McpHttpService', () => {
       expect(res.writeHead).toHaveBeenCalledWith(500, { 'Content-Type': 'application/json' });
       const body = JSON.parse(res.end.mock.calls[0][0]);
       expect(body.error.code).toBe(-32603);
+    });
+
+    it('should return 401 with WWW-Authenticate when bearer auth is required and Authorization is missing', async () => {
+      const verifier: OAuthTokenVerifier = {
+        verifyAccessToken: jest.fn(),
+      };
+      service.setBearerAuthVerifier(verifier);
+
+      const req = mockReq({ headers: { host: 'api.example.com' } });
+      const res = mockRes();
+
+      await service.handleRequest(req, res);
+
+      expect(res.set).toHaveBeenCalledWith(
+        'WWW-Authenticate',
+        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource"'),
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        error: 'invalid_token',
+      }));
+      expect(mockTransportHandleRequest).not.toHaveBeenCalled();
+    });
+
+    it('should allow requests through when bearer auth succeeds', async () => {
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
+
+      const verifier: OAuthTokenVerifier = {
+        verifyAccessToken: jest.fn().mockResolvedValue({
+          token: 'valid-token',
+          clientId: 'client-1',
+          scopes: [],
+          expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        }),
+      };
+      service.setBearerAuthVerifier(verifier);
+
+      const req = mockReq({
+        headers: { authorization: 'Bearer valid-token' },
+      });
+      const res = mockRes();
+
+      await service.handleRequest(req, res);
+
+      expect(verifier.verifyAccessToken).toHaveBeenCalledWith('valid-token');
+      expect(mockTransportHandleRequest).toHaveBeenCalledWith(req, res, {});
+      expect((req as any).auth).toEqual(expect.objectContaining({
+        token: 'valid-token',
+        clientId: 'client-1',
+      }));
     });
   });
 

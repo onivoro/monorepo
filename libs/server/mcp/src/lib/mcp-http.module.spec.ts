@@ -305,6 +305,39 @@ describe('McpHttpModule', () => {
 
       await module.close();
     });
+
+    it('should allow authStrategy to be used as an HTTP bearer verifier when requireBearerAuth is enabled', async () => {
+      class TestVerifierAuthStrategy extends TestAuthStrategy {
+        async verifyAccessToken(token: string) {
+          return {
+            token,
+            clientId: 'client-1',
+            scopes: [],
+            expiresAt: Math.floor(Date.now() / 1000) + 3600,
+          };
+        }
+      }
+
+      @Module({
+        providers: [TestAuthDependency, TestVerifierAuthStrategy],
+        exports: [TestVerifierAuthStrategy],
+      })
+      class TestVerifierAuthModule {}
+
+      const module = await Test.createTestingModule({
+        imports: [
+          TestVerifierAuthModule,
+          McpHttpModule.registerAndServeHttp({
+            metadata: { name: 'test', version: '1.0.0' },
+            authStrategy: TestVerifierAuthStrategy,
+            requireBearerAuth: true,
+          }),
+        ],
+      }).compile();
+
+      await expect(module.init()).resolves.not.toThrow();
+      await module.close();
+    });
   });
 
   describe('error handling in discovery', () => {
