@@ -10,6 +10,7 @@ import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { buildCapabilities } from './build-capabilities';
 import { wireRegistryToServer } from './wire-registry-to-server';
+import { normalizeMcpHttpRoute, normalizePath } from './mcp-http-route';
 
 interface SessionEntry {
   server: McpServer;
@@ -141,20 +142,44 @@ export class McpHttpService implements OnModuleDestroy {
     const origin = this.getRequestOrigin(req);
     if (!origin) return undefined;
 
-    const routeSegments = [...this.normalizeRoutePrefix(this.config.routePrefix), 'mcp'];
+    const requestPath = this.getRequestPath(req);
+    const route = normalizeMcpHttpRoute(this.config.route);
+    const mountPrefix = this.getMountPrefix(requestPath, route);
+    const metadataSegments = [
+      ...this.splitPath(mountPrefix),
+      '.well-known',
+      'oauth-protected-resource',
+      ...this.splitPath(requestPath || route),
+    ];
+
     return new URL(
-      `/.well-known/oauth-protected-resource/${routeSegments.join('/')}`,
+      `/${metadataSegments.join('/')}`,
       origin,
     ).href;
   }
 
-  private normalizeRoutePrefix(routePrefix?: string): string[] {
-    if (!routePrefix) return [];
+  private getRequestPath(req: http.IncomingMessage): string {
+    const rawUrl =
+      typeof (req as any).originalUrl === 'string'
+        ? (req as any).originalUrl
+        : req.url ?? '';
 
-    return routePrefix
-      .split('/')
-      .map((segment) => segment.trim())
-      .filter(Boolean);
+    return normalizePath(rawUrl);
+  }
+
+  private getMountPrefix(requestPath: string, route: string): string {
+    if (requestPath === route) return '';
+
+    const routeSuffix = `/${route}`;
+    if (requestPath.endsWith(routeSuffix)) {
+      return requestPath.slice(0, -routeSuffix.length);
+    }
+
+    return '';
+  }
+
+  private splitPath(path: string): string[] {
+    return path ? path.split('/') : [];
   }
 
   async handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {

@@ -67,11 +67,21 @@ describe('McpHttpService', () => {
   });
 
   describe('handleRequest', () => {
-    function mockReq(overrides: Partial<{ method: string; headers: Record<string, string>; body: any }> = {}) {
+    function mockReq(
+      overrides: Partial<{
+        method: string;
+        headers: Record<string, string>;
+        body: any;
+        url: string;
+        originalUrl: string;
+      }> = {},
+    ) {
       return {
         method: overrides.method ?? 'POST',
         headers: overrides.headers ?? {},
         body: overrides.body ?? {},
+        url: overrides.url,
+        originalUrl: overrides.originalUrl,
       } as any;
     }
 
@@ -264,21 +274,45 @@ describe('McpHttpService', () => {
       expect(mockTransportHandleRequest).not.toHaveBeenCalled();
     });
 
-    it('should derive path-specific resource metadata URLs when routePrefix is configured', async () => {
+    it('should derive path-specific resource metadata URLs from custom route requests', async () => {
       const verifier: OAuthTokenVerifier = {
         verifyAccessToken: jest.fn(),
       };
-      service = new McpHttpService({ ...config, routePrefix: 'api/v1' } as any, registry);
+      service = new McpHttpService({ ...config, route: 'internal/mcp' } as any, registry);
       service.setBearerAuthVerifier(verifier);
 
-      const req = mockReq({ headers: { host: 'api.example.com' } });
+      const req = mockReq({
+        headers: { host: 'api.example.com' },
+        originalUrl: '/internal/mcp?transport=streamable-http',
+      });
       const res = mockRes();
 
       await service.handleRequest(req, res);
 
       expect(res.set).toHaveBeenCalledWith(
         'WWW-Authenticate',
-        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource/api/v1/mcp"'),
+        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource/internal/mcp"'),
+      );
+    });
+
+    it('should include Nest global prefix in path-specific resource metadata URLs', async () => {
+      const verifier: OAuthTokenVerifier = {
+        verifyAccessToken: jest.fn(),
+      };
+      service = new McpHttpService({ ...config, route: 'internal/mcp' } as any, registry);
+      service.setBearerAuthVerifier(verifier);
+
+      const req = mockReq({
+        headers: { host: 'api.example.com' },
+        originalUrl: '/api/internal/mcp',
+      });
+      const res = mockRes();
+
+      await service.handleRequest(req, res);
+
+      expect(res.set).toHaveBeenCalledWith(
+        'WWW-Authenticate',
+        expect.stringContaining('resource_metadata="http://api.example.com/api/.well-known/oauth-protected-resource/api/internal/mcp"'),
       );
     });
 

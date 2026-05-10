@@ -30,7 +30,7 @@ export { MCP_CORS_CONFIG } from './lib/mcp-cors-config';
 
 // Config interfaces
 export { McpModuleConfig } from './lib/mcp-module-config';
-export { McpModuleAsyncOptions } from './lib/mcp-module-async-options';
+export { McpModuleAsyncOptions, McpAsyncModuleConfig } from './lib/mcp-module-async-options';
 export { McpServerMetadata } from './lib/mcp-server-metadata';
 export { McpStdioConfig } from './lib/mcp-stdio-config';
 export { McpStdioAsyncOptions } from './lib/mcp-stdio-async-options';

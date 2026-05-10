@@ -1,6 +1,6 @@
 # @onivoro/server-mcp
 
-A NestJS library for building transport-agnostic MCP tool services. Define tools once with decorators, consume them over HTTP, stdio, or directly via the registry. The documentation and examples generally focus one enterprise monorepos but can be easily adapted to single apps.
+A NestJS library for building transport-agnostic MCP tool services. Define tools once with decorators, consume them over HTTP, stdio, or directly via the registry. The documentation and examples generally focus on enterprise monorepos but can be easily adapted to single apps.
 
 ## Start here
 
@@ -18,7 +18,7 @@ If you are choosing between the `@onivoro/server-mcp*` packages, start with the 
 - discovers `@McpTool`, `@McpResource`, and `@McpPrompt` methods from the Nest container
 - exposes them over Streamable HTTP, stdio, or direct in-process registry access
 - handles MCP session lifecycle, schema conversion, registry wiring, and capability generation
-- can issue HTTP bearer challenges on `/mcp` when `requireBearerAuth` is enabled
+- can issue HTTP bearer challenges on the configured MCP HTTP route when `requireBearerAuth` is enabled
 
 ## What this package does not do
 
@@ -117,7 +117,20 @@ async function bootstrap() {
 bootstrap();
 ```
 
-The MCP endpoint is available at `POST /mcp`. Tools are discovered and registered automatically.
+The MCP endpoint is available at `POST /mcp` by default. If the host app uses a Nest global prefix such as `app.setGlobalPrefix('api')`, the same module route is served at `/api/mcp`. Tools are discovered and registered automatically.
+
+### Standalone vs bolted-on HTTP servers
+
+Use the same module API for a dedicated MCP service and for adding MCP to an existing NestJS HTTP app. The `route` option is relative to the Nest app route space, not an absolute public URL.
+
+| App shape | Config | Public endpoint |
+|-----------|--------|-----------------|
+| Dedicated MCP app | route omitted | `/mcp` |
+| Dedicated MCP app | `route: 'internal/mcp'` | `/internal/mcp` |
+| Existing app with `app.setGlobalPrefix('api')` | route omitted | `/api/mcp` |
+| Existing app with `app.setGlobalPrefix('api')` | `route: 'internal/mcp'` | `/api/internal/mcp` |
+
+For protected HTTP servers, `resourceServerUrl` in `@onivoro/server-mcp-auth` must match the public endpoint clients call, including any global prefix, reverse-proxy base path, or custom route.
 
 ### Canonical protected HTTP example
 
@@ -652,6 +665,7 @@ import { ConfigService } from '@nestjs/config';
 @Module({
   imports: [
     McpHttpModule.registerAndServeHttpAsync({
+      route: 'mcp',
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -667,6 +681,8 @@ import { ConfigService } from '@nestjs/config';
 })
 export class AppModule {}
 ```
+
+For HTTP async configuration, `route` is intentionally outside `useFactory` because Nest controller decorators are created before async factories resolve. Runtime values such as metadata, CORS, auth strategy, and session settings belong in `useFactory`; the HTTP route must be known synchronously when the module is created.
 
 The stdio equivalent is `McpStdioModule.registerAndServeStdioAsync()` with the same `{ imports, inject, useFactory }` shape.
 
@@ -1062,7 +1078,7 @@ McpHttpModule.registerAndServeHttp({
     version: '1.0.0',         // Required. Server version.
     description: 'Optional',  // Optional. Human-readable description.
   },
-  routePrefix: 'api/v1',      // Optional. Prefixes the /mcp route (becomes /api/v1/mcp).
+  route: 'mcp',               // Optional. Route relative to any Nest global prefix. Default: 'mcp'.
   sessionTtlMinutes: 30,      // Optional. Idle session timeout. Default: 30.
   serverOptions: {},           // Optional. Passed to McpServer from @modelcontextprotocol/sdk.
   allowedOrigins: [            // Optional. DNS rebinding protection (see below).
@@ -1122,6 +1138,15 @@ McpHttpModule.registerAndServeHttp({
 ```
 
 If `resourceMetadataUrl` is omitted, the module derives the RFC 9728 path-specific URL from the MCP route it serves.
+
+Route examples:
+
+| Host app | `route` | MCP endpoint | Default path-derived PRM URL |
+|----------|---------|--------------|------------------------------|
+| Standalone | omitted or `'mcp'` | `/mcp` | `/.well-known/oauth-protected-resource/mcp` |
+| Standalone | `'internal/mcp'` | `/internal/mcp` | `/.well-known/oauth-protected-resource/internal/mcp` |
+| `app.setGlobalPrefix('api')` | omitted or `'mcp'` | `/api/mcp` | `/api/.well-known/oauth-protected-resource/api/mcp` |
+| `app.setGlobalPrefix('api')` | `'internal/mcp'` | `/api/internal/mcp` | `/api/.well-known/oauth-protected-resource/api/internal/mcp` |
 
 ### Auth strategy (centralized auth enrichment)
 
@@ -1235,7 +1260,7 @@ For custom authorization logic beyond scope checking, implement a `McpCanActivat
 |------|----------|-------|
 | Plain MCP server | `@onivoro/server-mcp` | No auth required |
 | Protected MCP server using external JWT/OAuth | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth` | Use `authStrategy: McpJwtAuthStrategy` and `requireBearerAuth: true` |
-| Embedded OAuth authorization server | `@onivoro/server-mcp` + `@onivoro/server-mcp-oauth` | Publishes auth-server endpoints only |
+| Embedded OAuth authorization server only | `@onivoro/server-mcp-oauth` | Publishes auth-server endpoints; does not serve or protect tools by itself |
 | Embedded OAuth server plus protected MCP route | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth` + `@onivoro/server-mcp-oauth` | End-to-end issue, discover, challenge, and validate |
 
 See also: [MCP Server Package Guide](https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-package-guide.md)

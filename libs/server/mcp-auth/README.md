@@ -19,7 +19,7 @@ If you are choosing between the `@onivoro/server-mcp*` packages, start with:
 ## What this package does not do
 
 - publish OAuth authorization-server endpoints
-- protect `/mcp` by itself unless the transport also enables bearer challenges
+- protect the MCP HTTP route by itself unless the transport also enables bearer challenges
 - replace `@onivoro/server-mcp`
 
 ## Installation
@@ -62,6 +62,19 @@ With `requireBearerAuth: true`, unauthenticated HTTP requests are rejected at th
 Without `requireBearerAuth`, `McpJwtAuthStrategy` still validates and enriches auth during tool execution, but anonymous HTTP requests are not challenged automatically.
 
 Import `McpAuthModule` in the same Nest application that imports `McpHttpModule.registerAndServeHttp()` or `McpStdioModule.registerAndServeStdio()`, otherwise Nest will not be able to resolve the selected auth strategy and its config dependencies.
+
+## Standalone vs bolted-on servers
+
+`resourceServerUrl` must be the public MCP endpoint URL. This package cannot infer that URL reliably because deployments may use Nest global prefixes, reverse proxies, custom domains, or custom MCP routes.
+
+| App shape | `McpHttpModule` route | Nest global prefix | Public MCP URL / `resourceServerUrl` |
+|-----------|-----------------------|--------------------|--------------------------------------|
+| Standalone default | omitted or `'mcp'` | none | `https://api.example.com/mcp` |
+| Standalone custom | `'internal/mcp'` | none | `https://api.example.com/internal/mcp` |
+| Existing app default | omitted or `'mcp'` | `api` | `https://api.example.com/api/mcp` |
+| Existing app custom | `'internal/mcp'` | `api` | `https://api.example.com/api/internal/mcp` |
+
+For MCP clients to start OAuth automatically, the same app should also import `McpHttpModule.registerAndServeHttp({ authStrategy: McpJwtAuthStrategy, requireBearerAuth: true })`. The auth module provides validation and metadata; the HTTP module sends the `401` challenge on the MCP route.
 
 ## What you get
 
@@ -128,7 +141,7 @@ Without `requireBearerAuth`, the strategy still validates tokens during tool exe
 | `scopeFormat` | `'string' \| 'array' \| 'auto'` | `'auto'` | Whether scope claim is space-delimited or array |
 | `extraClaims` | `Record<string, string>?` | — | Map JWT claim names to `McpAuthInfo.extra` keys |
 | `resourceIdentifier` | `string?` | — | RFC 8707 resource indicator |
-| `resourceServerUrl` | `string?` | — | Base URL for PRM `resource` field |
+| `resourceServerUrl` | `string?` | — | Public MCP endpoint URL for PRM `resource` field |
 | `authorizationServers` | `string[]?` | — | Auth server URLs for PRM |
 | `serveProtectedResourceMetadata` | `boolean?` | `true` | Serve `/.well-known/oauth-protected-resource` |
 | `protectedResourceMetadataMode` | `'root' \| 'path' \| 'both'` | `'both'` | Which RFC 9728 discovery routes to serve |
@@ -231,7 +244,9 @@ Choose the route mode with `protectedResourceMetadataMode`:
 - `'path'`: serve only the path-derived route for `resourceServerUrl`
 - `'both'`: serve both routes for compatibility
 
-`@onivoro/server-mcp` defaults its bearer challenge to the path-derived PRM URL for the configured MCP route. If you need to advertise the root route instead, set `requireBearerAuth: { resourceMetadataUrl: '/.well-known/oauth-protected-resource' }` in `McpHttpModule`.
+`@onivoro/server-mcp` defaults its bearer challenge to the path-derived PRM URL for the actual request path. This supports both standalone MCP servers and existing Nest apps that use `app.setGlobalPrefix()`. For example, `route: 'mcp'` serves `/mcp` standalone and `/api/mcp` behind a global `api` prefix; the default challenge URLs are `/.well-known/oauth-protected-resource/mcp` and `/api/.well-known/oauth-protected-resource/api/mcp` respectively.
+
+If you need to advertise the root route instead, set `requireBearerAuth: { resourceMetadataUrl: '/.well-known/oauth-protected-resource' }` in `McpHttpModule`.
 
 ## Tested behavior
 

@@ -10,9 +10,10 @@ import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
 import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
+import { normalizeMcpHttpRoute } from './mcp-http-route';
 
-function createMcpController(routePrefix?: string) {
-  const route = routePrefix ? `${routePrefix}/mcp` : 'mcp';
+function createMcpController(configuredRoute?: string) {
+  const route = normalizeMcpHttpRoute(configuredRoute);
 
   @Controller()
   class DynamicMcpController {
@@ -66,30 +67,37 @@ export class McpHttpModule implements OnModuleInit {
   ) {}
 
   static registerAndServeHttp(config: McpModuleConfig): DynamicModule {
+    const route = normalizeMcpHttpRoute(config.route);
+
     return {
       module: McpHttpModule,
       imports: [DiscoveryModule],
-      controllers: [createMcpController(config.routePrefix)],
+      controllers: [createMcpController(route)],
       providers: [
         McpToolRegistry, McpHttpService, McpScopeGuard,
-        { provide: MCP_MODULE_CONFIG, useValue: config },
+        { provide: MCP_MODULE_CONFIG, useValue: { ...config, route } },
       ],
       exports: [McpHttpService, McpToolRegistry],
     };
   }
 
   static registerAndServeHttpAsync(options: McpModuleAsyncOptions): DynamicModule {
+    const route = normalizeMcpHttpRoute(options.route);
+
     return {
       module: McpHttpModule,
       imports: [DiscoveryModule, ...(options.imports || [])],
-      controllers: [createMcpController()],
+      controllers: [createMcpController(route)],
       providers: [
         McpToolRegistry,
         McpHttpService,
         McpScopeGuard,
         {
           provide: MCP_MODULE_CONFIG,
-          useFactory: options.useFactory,
+          useFactory: async (...args: any[]) => ({
+            ...(await options.useFactory(...args)),
+            route,
+          }),
           inject: options.inject || [],
         },
       ],

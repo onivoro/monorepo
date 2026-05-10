@@ -187,8 +187,8 @@ describe('McpHttpModule', () => {
     });
   });
 
-  describe('routePrefix', () => {
-    it('should create a controller with default /mcp route when no prefix', async () => {
+  describe('route', () => {
+    it('should create a controller with default /mcp route when route is omitted', async () => {
       const module = await Test.createTestingModule({
         imports: [
           McpHttpModule.registerAndServeHttp({
@@ -206,12 +206,12 @@ describe('McpHttpModule', () => {
       await app.close();
     });
 
-    it('should create a controller with prefixed route when routePrefix is set', async () => {
+    it('should create a controller with a custom route when route is set', async () => {
       const module = await Test.createTestingModule({
         imports: [
           McpHttpModule.registerAndServeHttp({
             metadata: { name: 'test', version: '1.0.0' },
-            routePrefix: 'api/v1',
+            route: 'internal/mcp',
           }),
         ],
       }).compile();
@@ -223,6 +223,24 @@ describe('McpHttpModule', () => {
       expect(httpServer).toBeDefined();
 
       await app.close();
+    });
+
+    it('should reject an empty route', () => {
+      expect(() =>
+        McpHttpModule.registerAndServeHttp({
+          metadata: { name: 'test', version: '1.0.0' },
+          route: ' / ',
+        }),
+      ).toThrow('McpHttpModule route must not be empty.');
+    });
+
+    it('should reject route values with query strings', () => {
+      expect(() =>
+        McpHttpModule.registerAndServeHttp({
+          metadata: { name: 'test', version: '1.0.0' },
+          route: 'mcp?debug=true',
+        }),
+      ).toThrow('McpHttpModule route must be a path without query or fragment');
     });
   });
 

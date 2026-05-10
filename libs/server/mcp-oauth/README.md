@@ -59,11 +59,11 @@ export class AppModule {}
 
 `McpOAuthModule` does not:
 
-- challenge unauthenticated MCP requests on `/mcp`
+- challenge unauthenticated requests on your MCP HTTP route
 - validate bearer tokens for your MCP transport
 - wire `authStrategy` into `McpHttpModule`
 
-To protect `/mcp`, combine it with either:
+To protect an MCP HTTP route, combine it with either:
 
 - `@onivoro/server-mcp-auth` and `McpJwtAuthStrategy`
 - or your own `authStrategy` that implements the MCP SDK `OAuthTokenVerifier` interface
@@ -77,8 +77,22 @@ To protect `/mcp`, combine it with either:
 ## When not to use it
 
 - You only need to validate incoming JWTs.
-- You expect this package alone to protect `/mcp`.
+- You expect this package alone to protect the MCP route.
 - You are not prepared to manage client and token lifecycle concerns.
+
+## Standalone vs bolted-on apps
+
+This package mounts OAuth authorization-server endpoints in the Nest route space. In a standalone auth server they are exposed at paths such as `/authorize`, `/token`, `/register`, `/revoke`, and `/.well-known/oauth-authorization-server`. In an existing app with `app.setGlobalPrefix('api')`, those endpoints are exposed under `/api` unless you exclude them when setting the global prefix.
+
+Set URL fields to the public URLs clients actually use:
+
+| Field | Standalone example | Existing app with `app.setGlobalPrefix('api')` |
+|-------|--------------------|-----------------------------------------------|
+| `issuerUrl` | `https://auth.example.com` | `https://auth.example.com` |
+| `baseUrl` | `https://auth.example.com` | `https://auth.example.com/api` |
+| `resourceServerUrl` | `https://api.example.com/mcp` | `https://api.example.com/api/mcp` |
+
+`resourceServerUrl` is the protected MCP resource URL, not the OAuth server URL. If your MCP app uses `route: 'internal/mcp'` behind a global `api` prefix, use `https://api.example.com/api/internal/mcp`.
 
 ## Provider options
 
@@ -161,7 +175,7 @@ McpOAuthModule.configureAsync({
 | `baseUrl` | `string?` | `issuerUrl` | Base URL for auth endpoints |
 | `scopesSupported` | `string[]?` | — | Scopes this server supports |
 | `resourceName` | `string?` | — | Human-readable resource name |
-| `resourceServerUrl` | `string?` | `baseUrl` | Protected resource URL |
+| `resourceServerUrl` | `string?` | `baseUrl` | Public MCP endpoint URL protected by this authorization server |
 | `serviceDocumentationUrl` | `string?` | — | Service docs URL |
 | `authorizationOptions` | `object?` | — | SDK authorization handler options |
 | `tokenOptions` | `object?` | — | SDK token handler options |
@@ -236,7 +250,7 @@ That composition gives you:
 
 - OAuth authorization-server endpoints from `McpOAuthModule`
 - JWT verification and Protected Resource Metadata from `McpAuthModule`
-- HTTP `401` bearer challenges on `/mcp` from `McpHttpModule`
+- HTTP `401` bearer challenges on the configured MCP route from `McpHttpModule`
 
 ### Full-stack example
 
@@ -270,18 +284,20 @@ import { MyOAuthProvider } from './my-oauth-provider';
 export class AppModule {}
 ```
 
+If this same app is bolted onto an existing Nest server with `app.setGlobalPrefix('api')`, set `baseUrl: 'https://auth.example.com/api'`, set `resourceServerUrl: 'https://api.example.com/api/mcp'`, and keep `McpHttpModule.registerAndServeHttp({ route: 'mcp', ... })`.
+
 ## Tested behavior
 
 The package test suite covers:
 
 - route mounting for OAuth discovery endpoints
 - `configureAsync()` with DI-resolved class providers
-- composition with unprotected and protected `/mcp` routes
+- composition with unprotected and protected MCP routes
 - config URL validation
 
 ## Troubleshooting
 
-- `/mcp` is still unprotected
+- The MCP route is still unprotected
   Expected. Add `@onivoro/server-mcp-auth` plus `requireBearerAuth: true`, or provide your own verifier-backed auth strategy.
 - Registered clients disappear after restart
   `McpMemoryClientsStore` is for development and testing. Replace it with a persistent store.
@@ -293,8 +309,8 @@ The package test suite covers:
 The wrapper itself is covered for these scenarios:
 
 - auth-server discovery endpoints are mounted in a Nest app
-- `McpOAuthModule` alone does not protect `/mcp`
-- composition with `McpAuthModule` and `McpHttpModule` does protect `/mcp`
+- `McpOAuthModule` alone does not protect the MCP route
+- composition with `McpAuthModule` and `McpHttpModule` does protect the MCP route
 - `configureAsync()` supports DI-resolved class providers
 
 ## Platform requirement

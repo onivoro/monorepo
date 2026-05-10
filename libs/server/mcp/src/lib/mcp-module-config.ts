@@ -6,7 +6,12 @@ import type { McpAuthStrategy } from './mcp-auth-strategy';
 export interface McpModuleConfig {
   metadata: McpServerMetadata;
   serverOptions?: ServerOptions;
-  routePrefix?: string;
+  /**
+   * HTTP route served by McpHttpModule, relative to any Nest global prefix.
+   * Defaults to `mcp`, which serves `/mcp` in a standalone app and `/api/mcp`
+   * when the host application uses `app.setGlobalPrefix('api')`.
+   */
+  route?: string;
   sessionTtlMinutes?: number;
   /**
    * Allowed Origin header values for DNS rebinding protection (MCP spec 2025-03-26+).
