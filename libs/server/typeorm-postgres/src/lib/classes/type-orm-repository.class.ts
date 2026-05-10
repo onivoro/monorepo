@@ -1,5 +1,4 @@
 import {
-  DataSource,
   DeepPartial,
   EntityManager,
   EntityTarget,
@@ -12,9 +11,19 @@ import {
 } from 'typeorm';
 
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
-import { IEntityProvider } from '../types/entity-provider.interface';
+import { IEntityProvider } from '@onivoro/server-typeorm-common';
 import { TKeysOf } from '@onivoro/isomorphic-common';
 import { TTableMeta } from '../types/table-meta.type';
+import { buildWhereExpression as buildWhereExpressionFn } from '../functions/build-where-expression.function';
+
+type TMetaSnapshot = { table: string; schema: string; columns: Record<string, TTableMeta> };
+
+type TGroupByOptions<TEntity extends ObjectLiteral, TReturn extends ObjectLiteral> = {
+  select: Record<keyof TReturn, string>;
+  where?: FindOptionsWhere<TEntity>;
+  order?: Record<keyof TReturn, 'ASC' | 'DESC'>;
+  groupBy: (keyof TEntity)[];
+}
 
 export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntityProvider<
   TEntity,
@@ -23,21 +32,46 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
   FindOptionsWhere<TEntity>,
   QueryDeepPartialEntity<TEntity>
 > {
-  columns: TKeysOf<TEntity, TTableMeta> = {} as any;
-  table: string;
-  schema: string;
   debug = false;
 
-  constructor(public entityType: EntityTarget<TEntity>, public entityManager: EntityManager) {
-    const { tableName, schema } = this.repo.metadata;
+  private static readonly _metaCache = new WeakMap<Function, TMetaSnapshot>();
+  private _meta?: TMetaSnapshot;
 
-    this.table = tableName;
-    this.schema = schema!;
+  constructor(public entityType: EntityTarget<TEntity>, public entityManager: EntityManager) { }
 
-    this.repo.metadata.columns.forEach((_) => {
-      const { databasePath, propertyPath, type, isPrimary } = _;
-      this.columns[propertyPath as keyof TEntity] = { databasePath, type, propertyPath, isPrimary, default: _.default };
-    })
+  get columns(): TKeysOf<TEntity, TTableMeta> {
+    return this._ensureMeta().columns as TKeysOf<TEntity, TTableMeta>;
+  }
+
+  get table(): string {
+    return this._ensureMeta().table;
+  }
+
+  get schema(): string {
+    return this._ensureMeta().schema;
+  }
+
+  private _ensureMeta(): TMetaSnapshot {
+    if (this._meta) return this._meta;
+    const entityCtor = this.repo.metadata.target as Function;
+    let cached = TypeOrmRepository._metaCache.get(entityCtor);
+    if (!cached) {
+      const meta = this.repo.metadata;
+      const columns: Record<string, TTableMeta> = {};
+      meta.columns.forEach((c) => {
+        columns[c.propertyPath] = {
+          databasePath: c.databasePath,
+          type: c.type,
+          propertyPath: c.propertyPath,
+          isPrimary: c.isPrimary,
+          default: c.default,
+        };
+      });
+      cached = { table: meta.tableName, schema: meta.schema ?? '', columns };
+      TypeOrmRepository._metaCache.set(entityCtor, cached);
+    }
+    this._meta = cached;
+    return cached;
   }
 
   forTransaction(entityManager: EntityManager): TypeOrmRepository<TEntity> {
@@ -94,6 +128,31 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     return await this.repo.exists({ where: options, withDeleted });
   }
 
+  async getManyGroupedBy<TReturn extends ObjectLiteral>(options: TGroupByOptions<TEntity, TReturn>): Promise<TReturn[]> {
+    const queryBuilder = await this.repo.createQueryBuilder();
+    const selectEntries = Object.entries(options.select);
+    for (let index = 0; index < selectEntries.length; index++) {
+      const [selectKey, selectValue] = selectEntries[index];
+      if (index === 0) {
+        queryBuilder.select(selectValue as any, selectKey);
+      } else {
+        queryBuilder.addSelect(selectValue as any, selectKey);
+      }
+    }
+    if (options.where) {
+      queryBuilder.where(options.where);
+    }
+    if (options.order) {
+      for (const [orderKey, orderValue] of Object.entries(options.order)) {
+        queryBuilder.addOrderBy(orderKey, orderValue);
+      }
+    }
+    options.groupBy.forEach(group => {
+      queryBuilder.addGroupBy(group as string);
+    });
+    return await queryBuilder.getRawMany() as TReturn[];
+  }
+
   get repo() {
     return this.entityManager.getRepository(this.entityType);
   }
@@ -138,25 +197,7 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
   }
 
   protected buildWhereExpression(where?: FindOptionsWhere<TEntity>) {
-    const queryParams: any[] = [];
-    let whereClause = '';
-
-    Object.entries(where || {}).forEach(([propertyPath, value], index) => {
-      const key = this.columns[propertyPath as keyof TEntity].databasePath;
-
-      const where = Array.isArray((value as any).value)
-        ? `${key} = ANY($${index + 1})`
-        : `${key} = $${index + 1}`;
-
-      if (index === 0) {
-        whereClause += ` WHERE ${where}`;
-      } else {
-        whereClause += ` AND ${where}`;
-      }
-      queryParams.push(value);
-    });
-
-    return { queryParams, whereClause };
+    return buildWhereExpressionFn(where as any, this.columns as any);
   }
 
   protected buildInsertQuery(entity: Partial<TEntity>): { insertQuery: string, values: any[] } {
@@ -269,26 +310,6 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
 
     return result?.map((_: any) => this.map(_)) as TEntity[];
   }
-
-  static buildFromMetadata<TGenericEntity extends ObjectLiteral>(dataSource: DataSource, _: {schema: string, table: string, columns: TKeysOf<TGenericEntity, TTableMeta>}) {
-    class GenericRepository extends TypeOrmRepository<TGenericEntity> {
-      constructor() {
-        const entityManager = dataSource.createEntityManager();
-        super(Object, {
-          ...entityManager,
-          getRepository: () => entityManager as any
-        } as any);
-      }
-    }
-
-    const genericRepository = new GenericRepository();
-    (genericRepository as any).schema = _.schema;
-    (genericRepository as any).table = _.table;
-    (genericRepository as any).columns = _.columns;
-
-    return genericRepository as TypeOrmRepository<TGenericEntity>;
-  }
-
 
   buildWhereILike(filters?: Record<string, any>): FindOptionsWhere<TEntity> {
 

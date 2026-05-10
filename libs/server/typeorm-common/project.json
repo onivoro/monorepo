@@ -1,0 +1,27 @@
+{
+  "name": "lib-server-typeorm-common",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/typeorm-common/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/typeorm-common",
+        "main": "libs/server/typeorm-common/src/index.ts",
+        "tsConfig": "libs/server/typeorm-common/tsconfig.lib.json",
+        "assets": [
+          "libs/server/typeorm-common/README.md",
+          "libs/server/typeorm-common/LICENSE",
+          "libs/server/typeorm-common/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

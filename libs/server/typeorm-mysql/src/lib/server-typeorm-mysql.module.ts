@@ -1,5 +1,6 @@
 import { DynamicModule, Module, OnApplicationShutdown } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { destroyDataSources } from '@onivoro/server-typeorm-common';
 import { dataSourceFactory } from './functions/data-source-factory.function';
 import { IDataSourceOptions } from './types/data-source-options.interface';
 
@@ -9,17 +10,7 @@ const dataSourceMap = new Map<string, DataSource>();
 export class ServerTypeormMysqlModule implements OnApplicationShutdown {
 
   async onApplicationShutdown(): Promise<void> {
-    for (let dataSourceKey in dataSourceMap.keys()) {
-      try {
-        const dataSource = dataSourceMap.get(dataSourceKey);
-        if (dataSource && dataSource.isInitialized) {
-          console.log(`destroying connection ${dataSourceKey}`);
-          await dataSource.destroy();
-        }
-      } catch (e: any) {
-        console.error(e?.message || e);
-      }
-    }
+    await destroyDataSources(dataSourceMap);
   }
 
   static configure(

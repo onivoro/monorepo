@@ -1,12 +1,18 @@
-import { DynamicModule, Module } from '@nestjs/common';
+import { DynamicModule, Module, OnApplicationShutdown } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { destroyDataSources } from '@onivoro/server-typeorm-common';
 import { dataSourceFactory } from './functions/data-source-factory.function';
 import { IDataSourceOptions } from './types/data-source-options.interface';
 
-const dataSourceMap = new Map();
+const dataSourceMap = new Map<string, DataSource>();
 
 @Module({})
-export class ServerTypeormPostgresModule {
+export class ServerTypeormPostgresModule implements OnApplicationShutdown {
+
+  async onApplicationShutdown(): Promise<void> {
+    await destroyDataSources(dataSourceMap);
+  }
+
   static configure(
     injectables: any[],
     entities: any[],

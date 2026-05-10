@@ -1,6 +1,5 @@
 import { Injectable, NotImplementedException } from '@nestjs/common';
 import {
-  DataSource,
   DeepPartial,
   EntityManager,
   EntityTarget,
@@ -13,7 +12,6 @@ import {
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { TypeOrmRepository } from './type-orm-repository.class';
 import { TTableMeta } from '../types/table-meta.type';
-import { TKeysOf } from '@onivoro/isomorphic-common';
 
 @Injectable()
 export class RedshiftRepository<TEntity extends ObjectLiteral> extends TypeOrmRepository<TEntity> {
@@ -101,7 +99,7 @@ export class RedshiftRepository<TEntity extends ObjectLiteral> extends TypeOrmRe
     return entityOrEntities as any;
   }
 
-  async head(options: FindOptionsWhere<TEntity>, withDeleted = true): Promise<boolean> {
+  override async head(_options: FindOptionsWhere<TEntity>, _withDeleted = true): Promise<boolean> {
     this.throwNotImplemented('head');
     return undefined as any;
   }
@@ -142,24 +140,4 @@ export class RedshiftRepository<TEntity extends ObjectLiteral> extends TypeOrmRe
     const meta: TTableMeta = this.columns[column as keyof TEntity];
     return meta.type === 'jsonb' ? `JSON_PARSE(${exp})` : exp;
   }
-
-  static buildFromMetadata<TGenericEntity extends ObjectLiteral>(dataSource: DataSource, _: {schema: string, table: string, columns: TKeysOf<TGenericEntity, TTableMeta>}) {
-
-      class GenericRepository extends RedshiftRepository<TGenericEntity> {
-        constructor() {
-          const entityManager = dataSource.createEntityManager();
-          super(Object, {
-            ...entityManager,
-            getRepository: () => entityManager as any
-          } as any);
-        }
-      }
-
-      const genericRepository = new GenericRepository();
-      (genericRepository as any).schema = _.schema;
-      (genericRepository as any).table = _.table;
-      (genericRepository as any).columns = _.columns;
-
-      return genericRepository as RedshiftRepository<TGenericEntity>;
-    }
 }

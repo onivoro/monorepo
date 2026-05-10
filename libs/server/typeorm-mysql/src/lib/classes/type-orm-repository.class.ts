@@ -12,7 +12,7 @@ import {
 } from 'typeorm';
 
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
-import { IEntityProvider } from '../types/entity-provider.interface';
+import { IEntityProvider } from '@onivoro/server-typeorm-common';
 import { BadRequestException } from '@nestjs/common';
 import { ReadStream } from 'fs';
 
@@ -30,10 +30,10 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
   FindOptionsWhere<TEntity>,
   QueryDeepPartialEntity<TEntity>
 > {
-  constructor(private entityType: EntityTarget<TEntity>, public entityManager: EntityManager) { }
+  constructor(public entityType: EntityTarget<TEntity>, public entityManager: EntityManager) { }
 
   forTransaction(entityManager: EntityManager): TypeOrmRepository<TEntity> {
-    return {...this, entityManager};
+    return new (this.constructor as typeof TypeOrmRepository<TEntity>)(this.entityType, entityManager);
   }
 
   async getMany(options: FindManyOptions<TEntity>): Promise<TEntity[]> {
@@ -58,7 +58,7 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     return await this.repo.save(body) as TEntity;
   }
 
-  async postMany(body: Partial<TEntity | undefined>[]): Promise<TEntity[]> {
+  async postMany(body: Partial<TEntity>[]): Promise<TEntity[]> {
     return await this.repo.save(body) as TEntity[];
   }
 

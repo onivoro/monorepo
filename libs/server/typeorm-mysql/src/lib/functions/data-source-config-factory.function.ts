@@ -21,7 +21,7 @@ export function dataSourceConfigFactory(
     password,
     ssl: ca ? { ca } : undefined,
     database,
-    synchronize,
+    synchronize: synchronize && (process.env.NODE_ENV !== 'production'),
     logging,
     entities,
     subscribers: [],

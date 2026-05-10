@@ -12,7 +12,7 @@ export function dataSourceConfigFactory(
     ca, database, host, password, port, username, synchronize = false, logging = false, schema,
   } = options;
 
-  console.info({ detail: `${ca ? '' : 'NOT '}using SSL certificate for database connection ${username}@${host}:${port}/${database}`, ca });
+  console.info({ detail: `${ca ? '' : 'NOT '}using SSL certificate for database connection ${username}@${host}:${port}/${database}`, caBytes: ca?.length });
 
   const config: PostgresConnectionOptions = {
     name,

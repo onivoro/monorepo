@@ -57,6 +57,9 @@
       "@onivoro/server-sendgrid": ["libs/server/sendgrid/src/index.ts"],
       "@onivoro/server-stdio": ["libs/server/stdio/src/index.ts"],
       "@onivoro/server-twilio": ["libs/server/twilio/src/index.ts"],
+      "@onivoro/server-typeorm-common": [
+        "libs/server/typeorm-common/src/index.ts"
+      ],
       "@onivoro/server-typeorm-mysql": [
         "libs/server/typeorm-mysql/src/index.ts"
       ],

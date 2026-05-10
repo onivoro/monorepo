@@ -1,0 +1,17 @@
+{
+  "extends": "../../../tsconfig.server.json",
+  "compilerOptions": {
+    "outDir": "../../../dist/out-tsc",
+    "strict": false
+  },
+  "files": [],
+  "include": [],
+  "references": [
+    {
+      "path": "./tsconfig.lib.json"
+    },
+    {
+      "path": "./tsconfig.spec.json"
+    }
+  ]
+}
