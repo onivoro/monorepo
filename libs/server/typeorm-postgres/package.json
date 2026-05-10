@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-typeorm-postgres",
-  "version": "24.37.0",
+  "version": "24.38.0",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
