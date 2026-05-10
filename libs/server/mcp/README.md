@@ -131,7 +131,7 @@ import { EmojiService } from './services/emoji.service';
 
 @Module({
   imports: [
-    McpAuthModule.register({
+    McpAuthModule.configureJwt({
       jwksUri: 'https://auth.example.com/.well-known/jwks.json',
       issuer: 'https://auth.example.com',
       resourceServerUrl: 'https://api.example.com/mcp',

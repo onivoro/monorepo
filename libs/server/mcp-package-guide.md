@@ -24,7 +24,7 @@ McpHttpModule.registerAndServeHttp({
 ### Protected MCP server with external JWT/OAuth
 
 ```typescript
-McpAuthModule.register({
+McpAuthModule.configureJwt({
   jwksUri: 'https://auth.example.com/.well-known/jwks.json',
   issuer: 'https://auth.example.com',
   resourceServerUrl: 'https://api.example.com/mcp',
@@ -37,10 +37,27 @@ McpHttpModule.registerAndServeHttp({
 })
 ```
 
+### Protected MCP server with AWS Cognito
+
+```typescript
+McpAuthModule.configureCognito({
+  region: 'us-east-2',
+  userPoolId: 'us-east-2_example',
+  clientId: 'cognito-app-client-id',
+  resourceServerUrl: 'https://api.example.com/mcp',
+})
+
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  authStrategy: McpCognitoAuthStrategy,
+  requireBearerAuth: true,
+})
+```
+
 ### Embedded OAuth server only
 
 ```typescript
-McpOAuthModule.register({
+McpOAuthModule.configure({
   provider: MyOAuthProvider,
   issuerUrl: 'https://auth.example.com',
   resourceServerUrl: 'https://api.example.com/mcp',
@@ -50,13 +67,13 @@ McpOAuthModule.register({
 ### Embedded OAuth server plus protected MCP route
 
 ```typescript
-McpOAuthModule.register({
+McpOAuthModule.configure({
   provider: MyOAuthProvider,
   issuerUrl: 'https://auth.example.com',
   resourceServerUrl: 'https://api.example.com/mcp',
 })
 
-McpAuthModule.register({
+McpAuthModule.configureJwt({
   jwksUri: 'https://auth.example.com/.well-known/jwks.json',
   issuer: 'https://auth.example.com',
   resourceServerUrl: 'https://api.example.com/mcp',
@@ -77,7 +94,7 @@ McpHttpModule.registerAndServeHttp({
 
 ## Common mistakes
 
-- Using `McpJwtAuthStrategy` without `requireBearerAuth` and expecting automatic OAuth challenges.
+- Using `McpJwtAuthStrategy` or `McpCognitoAuthStrategy` without `requireBearerAuth` and expecting automatic OAuth challenges.
 - Installing `@onivoro/server-mcp-oauth` and expecting `/mcp` to become protected automatically.
 - Serving Protected Resource Metadata without setting `resourceServerUrl`.
 - Using `McpMemoryClientsStore` in a long-lived environment and expecting registered clients to survive restart.

@@ -72,7 +72,7 @@ function createProtectedResourceController() {
  * ```typescript
  * @Module({
  *   imports: [
- *     McpOAuthModule.register({
+ *     McpOAuthModule.configure({
  *       provider: MyOAuthProvider,
  *       issuerUrl: 'https://auth.example.com',
  *       scopesSupported: ['read', 'write', 'admin'],
@@ -85,7 +85,7 @@ function createProtectedResourceController() {
  *
  * **Usage with instance (e.g. ProxyOAuthServerProvider):**
  * ```typescript
- * McpOAuthModule.register({
+ * McpOAuthModule.configure({
  *   provider: new ProxyOAuthServerProvider({ ... }),
  *   issuerUrl: 'https://auth.example.com',
  * })
@@ -104,7 +104,7 @@ export class McpOAuthModule {
     private readonly memoryClientsStore: McpMemoryClientsStore,
   ) {}
 
-  static register(config: McpOAuthConfig): DynamicModule {
+  static configure(config: McpOAuthConfig): DynamicModule {
     const validatedConfig = validateOAuthConfig(config);
     const providerIsClass = typeof config.provider === 'function';
 
@@ -137,7 +137,7 @@ export class McpOAuthModule {
     };
   }
 
-  static registerAsync(options: McpOAuthAsyncOptions): DynamicModule {
+  static configureAsync(options: McpOAuthAsyncOptions): DynamicModule {
     return {
       module: McpOAuthModule,
       imports: [...(options.imports || [])],
@@ -185,6 +185,16 @@ export class McpOAuthModule {
     this.logger.warn(
       'McpMemoryClientsStore is active. Registered OAuth clients are stored in memory and will be lost on process restart. Use a persistent OAuthRegisteredClientsStore in production.',
     );
+  }
+
+  /** @deprecated Use `configure()` instead. */
+  static register(config: McpOAuthConfig): DynamicModule {
+    return this.configure(config);
+  }
+
+  /** @deprecated Use `configureAsync()` instead. */
+  static registerAsync(options: McpOAuthAsyncOptions): DynamicModule {
+    return this.configureAsync(options);
   }
 }
 

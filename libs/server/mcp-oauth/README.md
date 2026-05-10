@@ -30,7 +30,7 @@ import { MyOAuthProvider } from './my-oauth-provider';
 
 @Module({
   imports: [
-    McpOAuthModule.register({
+    McpOAuthModule.configure({
       provider: MyOAuthProvider,
       issuerUrl: 'https://auth.example.com',
       scopesSupported: ['read', 'write', 'admin'],
@@ -39,6 +39,8 @@ import { MyOAuthProvider } from './my-oauth-provider';
 })
 export class AppModule {}
 ```
+
+`configure()` is the primary API. `register()` and `registerAsync()` remain available as backwards-compatible aliases.
 
 ## What it does
 
@@ -100,7 +102,7 @@ class MyOAuthProvider implements OAuthServerProvider {
   async verifyAccessToken(token) { ... }
 }
 
-McpOAuthModule.register({
+McpOAuthModule.configure({
   provider: MyOAuthProvider,
   issuerUrl: 'https://auth.example.com',
 })
@@ -113,7 +115,7 @@ For proxying to an upstream OAuth server, pass an instance directly:
 ```typescript
 import { ProxyOAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js';
 
-McpOAuthModule.register({
+McpOAuthModule.configure({
   provider: new ProxyOAuthServerProvider({
     endpoints: {
       authorizationUrl: 'https://upstream.example.com/authorize',
@@ -128,7 +130,7 @@ McpOAuthModule.register({
 
 ### Async configuration with DI-resolved classes
 
-`registerAsync()` also supports class-based providers. The class just needs to be available in the Nest container:
+`configureAsync()` also supports class-based providers. The class just needs to be available in the Nest container:
 
 ```typescript
 @Module({
@@ -137,7 +139,7 @@ McpOAuthModule.register({
 })
 class OAuthProviderModule {}
 
-McpOAuthModule.registerAsync({
+McpOAuthModule.configureAsync({
   imports: [ConfigModule, OAuthProviderModule],
   inject: [ConfigService],
   useFactory: (config: ConfigService) => ({
@@ -171,7 +173,7 @@ All URL fields must be absolute URLs. Invalid values fail fast during module ini
 ### Async configuration
 
 ```typescript
-McpOAuthModule.registerAsync({
+McpOAuthModule.configureAsync({
   imports: [ConfigModule],
   inject: [ConfigService],
   useFactory: (config: ConfigService) => ({
@@ -210,12 +212,12 @@ For a full embedded OAuth + protected MCP server, combine all three libraries:
 ```typescript
 @Module({
   imports: [
-    McpOAuthModule.register({
+    McpOAuthModule.configure({
       provider: MyOAuthProvider,
       issuerUrl: 'https://auth.example.com',
       scopesSupported: ['read', 'write'],
     }),
-    McpAuthModule.register({
+    McpAuthModule.configureJwt({
       jwksUri: 'https://auth.example.com/.well-known/jwks.json',
       issuer: 'https://auth.example.com',
       resourceServerUrl: 'https://api.example.com/mcp',
@@ -247,13 +249,13 @@ import { MyOAuthProvider } from './my-oauth-provider';
 
 @Module({
   imports: [
-    McpOAuthModule.register({
+    McpOAuthModule.configure({
       provider: MyOAuthProvider,
       issuerUrl: 'https://auth.example.com',
       resourceServerUrl: 'https://api.example.com/mcp',
       scopesSupported: ['read', 'write'],
     }),
-    McpAuthModule.register({
+    McpAuthModule.configureJwt({
       jwksUri: 'https://auth.example.com/.well-known/jwks.json',
       issuer: 'https://auth.example.com',
       resourceServerUrl: 'https://api.example.com/mcp',
@@ -273,7 +275,7 @@ export class AppModule {}
 The package test suite covers:
 
 - route mounting for OAuth discovery endpoints
-- `registerAsync()` with DI-resolved class providers
+- `configureAsync()` with DI-resolved class providers
 - composition with unprotected and protected `/mcp` routes
 - config URL validation
 
@@ -293,7 +295,7 @@ The wrapper itself is covered for these scenarios:
 - auth-server discovery endpoints are mounted in a Nest app
 - `McpOAuthModule` alone does not protect `/mcp`
 - composition with `McpAuthModule` and `McpHttpModule` does protect `/mcp`
-- `registerAsync()` supports DI-resolved class providers
+- `configureAsync()` supports DI-resolved class providers
 
 ## Platform requirement
 
@@ -303,7 +305,7 @@ Requires NestJS Express platform (`@nestjs/platform-express`). The SDK's auth ro
 
 | Export | Type | Description |
 |--------|------|-------------|
-| `McpOAuthModule` | Module | Dynamic module with `register()` / `registerAsync()` |
+| `McpOAuthModule` | Module | Dynamic module with `configure()` / `configureAsync()` |
 | `McpOAuthConfig` | Interface | Configuration options |
 | `McpOAuthAsyncOptions` | Interface | Async factory options |
 | `MCP_OAUTH_CONFIG` | Symbol | Injection token for config |

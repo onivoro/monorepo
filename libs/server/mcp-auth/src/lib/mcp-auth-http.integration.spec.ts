@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import { AddressInfo } from 'net';
 import { McpHttpModule } from '@onivoro/server-mcp';
 import { McpAuthModule } from './mcp-auth.module';
@@ -20,7 +20,7 @@ describe('McpAuthModule + McpHttpModule integration', () => {
   ) {
     @Module({
       imports: [
-        McpAuthModule.register({
+        McpAuthModule.configureJwt({
           jwksUri: 'https://auth.example.com/.well-known/jwks.json',
           issuer: 'https://auth.example.com',
           resourceServerUrl: routePrefix

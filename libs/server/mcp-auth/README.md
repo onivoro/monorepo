@@ -35,20 +35,19 @@ npm install @onivoro/server-mcp-auth
 ```typescript
 import { Module } from '@nestjs/common';
 import { McpHttpModule } from '@onivoro/server-mcp';
-import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';
+import { McpAuthModule, McpCognitoAuthStrategy } from '@onivoro/server-mcp-auth';
 
 @Module({
   imports: [
-    McpAuthModule.register({
-      jwksUri: 'https://cognito-idp.us-east-1.amazonaws.com/<pool>/.well-known/jwks.json',
-      issuer: 'https://cognito-idp.us-east-1.amazonaws.com/<pool>',
-      audience: '<client-id>',
+    McpAuthModule.configureCognito({
+      region: 'us-east-1',
+      userPoolId: '<pool>',
+      clientId: '<client-id>',
       resourceServerUrl: 'https://api.example.com/mcp',
-      authorizationServers: ['https://cognito-idp.us-east-1.amazonaws.com/<pool>'],
     }),
     McpHttpModule.registerAndServeHttp({
       metadata: { name: 'my-server', version: '1.0.0' },
-      authStrategy: McpJwtAuthStrategy,
+      authStrategy: McpCognitoAuthStrategy,
       requireBearerAuth: true,
     }),
   ],
@@ -56,13 +55,13 @@ import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';
 export class AppModule {}
 ```
 
-`McpAuthModule` makes `McpJwtAuthStrategy` available in the DI container. `McpHttpModule` resolves that existing provider via the `authStrategy` class reference; it does not register the strategy on its own.
+`McpAuthModule` makes the selected strategy available in the DI container. `McpHttpModule` resolves that existing provider via the `authStrategy` class reference; it does not register the strategy on its own.
 
 With `requireBearerAuth: true`, unauthenticated HTTP requests are rejected at the transport layer with a standards-compliant `401` challenge and `WWW-Authenticate` metadata. That is the configuration MCP HTTP clients need to trigger OAuth automatically.
 
 Without `requireBearerAuth`, `McpJwtAuthStrategy` still validates and enriches auth during tool execution, but anonymous HTTP requests are not challenged automatically.
 
-Import `McpAuthModule` in the same Nest application that imports `McpHttpModule.registerAndServeHttp()` or `McpStdioModule.registerAndServeStdio()`, otherwise Nest will not be able to resolve `McpJwtAuthStrategy` and its `MCP_AUTH_CONFIG` dependency.
+Import `McpAuthModule` in the same Nest application that imports `McpHttpModule.registerAndServeHttp()` or `McpStdioModule.registerAndServeStdio()`, otherwise Nest will not be able to resolve the selected auth strategy and its config dependencies.
 
 ## What you get
 
@@ -82,7 +81,7 @@ Import `McpAuthModule` in the same Nest application that imports `McpHttpModule.
 ### For JWT validation only
 
 ```typescript
-McpAuthModule.register({
+McpAuthModule.configureJwt({
   jwksUri: 'https://auth.example.com/.well-known/jwks.json',
   serveProtectedResourceMetadata: false,
 })
@@ -91,7 +90,7 @@ McpAuthModule.register({
 ### For Protected Resource Metadata
 
 ```typescript
-McpAuthModule.register({
+McpAuthModule.configureJwt({
   jwksUri: 'https://auth.example.com/.well-known/jwks.json',
   issuer: 'https://auth.example.com',
   resourceServerUrl: 'https://api.example.com/mcp',
@@ -101,7 +100,7 @@ McpAuthModule.register({
 ### For automatic MCP OAuth challenge flow
 
 ```typescript
-McpAuthModule.register({
+McpAuthModule.configureJwt({
   jwksUri: 'https://auth.example.com/.well-known/jwks.json',
   issuer: 'https://auth.example.com',
   resourceServerUrl: 'https://api.example.com/mcp',
@@ -143,7 +142,7 @@ Without `requireBearerAuth`, the strategy still validates tokens during tool exe
 ### Async configuration
 
 ```typescript
-McpAuthModule.registerAsync({
+McpAuthModule.configureJwtAsync({
   imports: [ConfigModule],
   inject: [ConfigService],
   useFactory: (config: ConfigService) => ({
@@ -159,19 +158,18 @@ McpAuthModule.registerAsync({
 ### AWS Cognito
 
 ```typescript
-McpAuthModule.register({
-  jwksUri: `https://cognito-idp.${region}.amazonaws.com/${poolId}/.well-known/jwks.json`,
-  issuer: `https://cognito-idp.${region}.amazonaws.com/${poolId}`,
-  audience: clientId,
-  clientIdClaim: 'client_id',
-  scopeClaim: 'scope',
+McpAuthModule.configureCognito({
+  region,
+  userPoolId: poolId,
+  clientId,
+  resourceServerUrl: 'https://api.example.com/mcp',
 })
 ```
 
 ### Auth0
 
 ```typescript
-McpAuthModule.register({
+McpAuthModule.configureJwt({
   jwksUri: `https://${domain}/.well-known/jwks.json`,
   issuer: `https://${domain}/`,
   audience: apiIdentifier,
@@ -184,7 +182,7 @@ McpAuthModule.register({
 ### Microsoft Entra ID
 
 ```typescript
-McpAuthModule.register({
+McpAuthModule.configureJwt({
   jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
   issuer: `https://login.microsoftonline.com/${tenantId}/v2.0`,
   audience: clientId,
@@ -282,7 +280,8 @@ const token = createMockJwt({ sub: 'test-user', scope: 'read write' });
 
 | Export | Type | Description |
 |--------|------|-------------|
-| `McpAuthModule` | Module | Dynamic module with `register()` / `registerAsync()` |
+| `McpAuthModule` | Module | Dynamic module with `configureJwt()`, `configureJwtAsync()`, `configureCognito()`, and `configureCognitoAsync()` |
+| `McpCognitoAuthStrategy` | Class | Cognito-aware access-token verifier for `authStrategy` |
 | `McpAuthConfig` | Interface | Configuration options |
 | `McpAuthAsyncOptions` | Interface | Async factory options |
 | `MCP_AUTH_CONFIG` | Symbol | Injection token for config |

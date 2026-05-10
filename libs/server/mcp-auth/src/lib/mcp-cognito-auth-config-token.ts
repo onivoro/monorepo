@@ -1,0 +1,1 @@
+export const MCP_COGNITO_AUTH_CONFIG = Symbol('MCP_COGNITO_AUTH_CONFIG');

@@ -1,7 +1,7 @@
 import { McpOAuthConfig } from './mcp-oauth-config';
 
 /**
- * Async factory options for `McpOAuthModule.registerAsync()`.
+ * Async factory options for `McpOAuthModule.configureAsync()`.
  */
 export interface McpOAuthAsyncOptions {
   imports?: any[];

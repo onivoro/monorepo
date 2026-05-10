@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import type { McpAuthStrategy, McpAuthInfo } from '@onivoro/server-mcp';
+import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
@@ -30,13 +31,20 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
 
   async resolveAuth(authInfo: McpAuthInfo | undefined): Promise<McpAuthInfo | undefined> {
     if (!authInfo?.token) return undefined;
-    return this.validateAndEnrich(authInfo.token);
+    try {
+      return await this.validateAndEnrich(authInfo.token);
+    } catch (error) {
+      throw this.toInvalidTokenError(error);
+    }
   }
 
   // -- OAuthTokenVerifier interface --
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    const mcpAuth = await this.validateAndEnrich(token);
+    const mcpAuth = await this.resolveAuth({ token, clientId: '', scopes: [] });
+    if (!mcpAuth) {
+      throw new InvalidTokenError('Invalid access token');
+    }
     return {
       token: mcpAuth.token,
       clientId: mcpAuth.clientId,
@@ -53,12 +61,12 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
     // 1. Decode header to get kid
     const decoded = jwt.decode(token, { complete: true });
     if (!decoded || typeof decoded === 'string') {
-      throw new Error('Invalid JWT: unable to decode token');
+      throw new InvalidTokenError('Invalid JWT: unable to decode token');
     }
 
     const kid = decoded.header.kid;
     if (!kid) {
-      throw new Error('Invalid JWT: missing kid in token header');
+      throw new InvalidTokenError('Invalid JWT: missing kid in token header');
     }
 
     // 2. Fetch signing key
@@ -72,7 +80,7 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
       ...(this.config.audience && { audience: this.config.audience }),
     };
 
-    const payload = jwt.verify(token, pem, verifyOptions) as jwt.JwtPayload;
+    const payload = this.verifyJwt(token, pem, verifyOptions);
     this.assertResourceIdentifier(payload);
 
     // 4. Extract clientId
@@ -120,10 +128,28 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
           : [];
 
     if (!audiences.includes(this.config.resourceIdentifier)) {
-      throw new Error(
+      throw new InvalidTokenError(
         `Invalid JWT: token audience does not include required resource "${this.config.resourceIdentifier}"`,
       );
     }
+  }
+
+  private verifyJwt(token: string, pem: string, verifyOptions: jwt.VerifyOptions): jwt.JwtPayload {
+    try {
+      return jwt.verify(token, pem, verifyOptions) as jwt.JwtPayload;
+    } catch (error) {
+      throw this.toInvalidTokenError(error);
+    }
+  }
+
+  protected toInvalidTokenError(error: unknown): InvalidTokenError {
+    if (error instanceof InvalidTokenError) {
+      return error;
+    }
+
+    const message = error instanceof Error ? error.message : 'Invalid access token';
+    this.logger.warn(`JWT validation failed: ${message}`);
+    return new InvalidTokenError(message);
   }
 
   private extractScopes(payload: jwt.JwtPayload): string[] {

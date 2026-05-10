@@ -25,10 +25,10 @@ describe('McpOAuthModule', () => {
     jest.clearAllMocks();
   });
 
-  it('should compile with register() using an instance provider', async () => {
+  it('should compile with configure() using an instance provider', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpOAuthModule.register({
+        McpOAuthModule.configure({
           provider: mockProvider as any,
           issuerUrl: 'https://auth.example.com',
         }),
@@ -67,10 +67,23 @@ describe('McpOAuthModule', () => {
     await app.close();
   });
 
-  it('should compile with registerAsync() using an instance provider', async () => {
+  it('should keep register() as a backwards-compatible alias', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpOAuthModule.registerAsync({
+        McpOAuthModule.register({
+          provider: mockProvider as any,
+          issuerUrl: 'https://auth.example.com',
+        }),
+      ],
+    }).compile();
+
+    expect(module.get(MCP_OAUTH_SERVER_PROVIDER)).toBe(mockProvider);
+  });
+
+  it('should compile with configureAsync() using an instance provider', async () => {
+    const module = await Test.createTestingModule({
+      imports: [
+        McpOAuthModule.configureAsync({
           useFactory: () => ({
             provider: mockProvider as any,
             issuerUrl: 'https://auth.example.com',
@@ -84,7 +97,7 @@ describe('McpOAuthModule', () => {
     expect(module.get(MCP_OAUTH_SERVER_PROVIDER)).toBe(mockProvider);
   });
 
-  it('should resolve class-based providers through DI in registerAsync()', async () => {
+  it('should resolve class-based providers through DI in configureAsync()', async () => {
     @Injectable()
     class AsyncProvider {
       clientsStore = { getClient: jest.fn() };
@@ -104,7 +117,7 @@ describe('McpOAuthModule', () => {
     const module = await Test.createTestingModule({
       imports: [
         AsyncProviderModule,
-        McpOAuthModule.registerAsync({
+        McpOAuthModule.configureAsync({
           imports: [AsyncProviderModule],
           useFactory: () => ({
             provider: AsyncProvider,
@@ -120,7 +133,7 @@ describe('McpOAuthModule', () => {
   it('should export McpMemoryClientsStore', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpOAuthModule.register({
+        McpOAuthModule.configure({
           provider: mockProvider as any,
           issuerUrl: 'https://auth.example.com',
         }),
@@ -135,7 +148,7 @@ describe('McpOAuthModule', () => {
   it('should forward optional URL config fields', async () => {
     const module = await Test.createTestingModule({
       imports: [
-        McpOAuthModule.register({
+        McpOAuthModule.configure({
           provider: mockProvider as any,
           issuerUrl: 'https://auth.example.com',
           baseUrl: 'https://base.example.com',
@@ -160,14 +173,14 @@ describe('McpOAuthModule', () => {
   });
 
   it('should reject invalid issuer URLs', () => {
-    expect(() => McpOAuthModule.register({
+    expect(() => McpOAuthModule.configure({
       provider: mockProvider as any,
       issuerUrl: 'not-a-url',
     })).toThrow(/issuerUrl/);
   });
 
   it('should reject invalid optional URLs', () => {
-    expect(() => McpOAuthModule.register({
+    expect(() => McpOAuthModule.configure({
       provider: mockProvider as any,
       issuerUrl: 'https://auth.example.com',
       resourceServerUrl: 'not-a-url',

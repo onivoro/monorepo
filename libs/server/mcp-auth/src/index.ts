@@ -1,9 +1,13 @@
 export { McpAuthConfig } from './lib/mcp-auth-config';
 export { McpAuthAsyncOptions } from './lib/mcp-auth-async-options';
+export { McpCognitoAuthConfig } from './lib/mcp-cognito-auth-config';
+export { McpCognitoAuthAsyncOptions } from './lib/mcp-cognito-auth-async-options';
 export { MCP_AUTH_CONFIG } from './lib/mcp-auth-config-token';
+export { MCP_COGNITO_AUTH_CONFIG } from './lib/mcp-cognito-auth-config-token';
 export { McpAuthModule } from './lib/mcp-auth.module';
 export { McpJwksService } from './lib/mcp-jwks.service';
 export { McpJwtAuthStrategy } from './lib/mcp-jwt-auth-strategy';
+export { McpCognitoAuthStrategy } from './lib/mcp-cognito-auth-strategy';
 export { McpScopeRegistry } from './lib/mcp-scope-registry';
 export { McpProtectedResourceController } from './lib/mcp-protected-resource.controller';
 export { McpTestAuthStrategy } from './lib/mcp-test-auth-strategy';
