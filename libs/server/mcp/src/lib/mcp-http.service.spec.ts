@@ -444,13 +444,13 @@ describe('McpHttpService', () => {
   });
 
   describe('transport options', () => {
-    it('should forward eventStore to transport when provided', async () => {
+    it('should forward session eventStore to transport when provided', async () => {
       const mockEventStore = {
         storeEvent: jest.fn(),
         replayEventsAfter: jest.fn(),
       };
       const customService = new McpHttpService(
-        { ...config, eventStore: mockEventStore } as any,
+        { ...config, session: { eventStore: mockEventStore } } as any,
         registry,
       );
 
@@ -484,20 +484,29 @@ describe('McpHttpService', () => {
       await customService.onModuleDestroy();
     });
 
-    it('should use default sessionIdGenerator when not configured', async () => {
+    it('should default to stateless mode when session is not configured', async () => {
       await service.handleRequest(mockReq(), mockRes());
 
-      expect(capturedTransportOptions.sessionIdGenerator).toBeInstanceOf(Function);
-      // Should generate UUID-like strings
-      const id = capturedTransportOptions.sessionIdGenerator();
-      expect(typeof id).toBe('string');
-      expect(id.length).toBeGreaterThan(0);
+      expect(capturedTransportOptions.sessionIdGenerator).toBeUndefined();
     });
 
-    it('should forward custom sessionIdGenerator when provided', async () => {
+    it('should use default session id generator when session is configured without idGenerator', async () => {
+      const customService = new McpHttpService(
+        { ...config, session: {} } as any,
+        registry,
+      );
+
+      await customService.handleRequest(mockReq(), mockRes());
+
+      expect(capturedTransportOptions.sessionIdGenerator).toBeInstanceOf(Function);
+      expect(typeof capturedTransportOptions.sessionIdGenerator()).toBe('string');
+      await customService.onModuleDestroy();
+    });
+
+    it('should forward custom session idGenerator when session is configured', async () => {
       const customGenerator = () => 'custom-session-id';
       const customService = new McpHttpService(
-        { ...config, sessionIdGenerator: customGenerator } as any,
+        { ...config, session: { idGenerator: customGenerator } } as any,
         registry,
       );
 
@@ -506,24 +515,12 @@ describe('McpHttpService', () => {
       expect(capturedTransportOptions.sessionIdGenerator).toBe(customGenerator);
       await customService.onModuleDestroy();
     });
-
-    it('should pass undefined sessionIdGenerator for stateless mode', async () => {
-      const customService = new McpHttpService(
-        { ...config, sessionIdGenerator: undefined } as any,
-        registry,
-      );
-
-      await customService.handleRequest(mockReq(), mockRes());
-
-      expect(capturedTransportOptions.sessionIdGenerator).toBeUndefined();
-      await customService.onModuleDestroy();
-    });
   });
 
   describe('session TTL', () => {
-    it('should use custom TTL from config', () => {
+    it('should use custom TTL from session config', () => {
       const customService = new McpHttpService(
-        { ...config, sessionTtlMinutes: 5 } as any,
+        { ...config, session: { ttlMinutes: 5 } } as any,
         new McpToolRegistry(),
       );
 

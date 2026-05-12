@@ -26,6 +26,33 @@ The MCP HTTP route is configured with `route`, not with an absolute path. It is 
 
 When auth is enabled, `resourceServerUrl` must be the public URL of the MCP endpoint that clients call. Include any reverse-proxy base path, Nest global prefix, and custom `route`.
 
+## HTTP Session Model
+
+`McpHttpModule.registerAndServeHttp()` is stateless by default. If you omit the `session` option, the server does not emit `Mcp-Session-Id`, and any request can be handled by any horizontally scaled instance. This is the recommended shape for load-balanced request/response tool servers where every request carries its own auth context.
+
+Configure `session` only when you need stateful MCP behavior such as resource subscriptions, server-initiated messages, resumable SSE streams, or deliberate per-session server state:
+
+```typescript
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  session: {
+    ttlMinutes: 30,
+  },
+})
+```
+
+For resumable SSE streams, put the event store under `session`:
+
+```typescript
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  session: {
+    eventStore,
+  },
+  enableJsonResponse: false,
+})
+```
+
 ## Standalone Plain MCP Server
 
 Use this shape for a dedicated MCP HTTP service with no auth.

@@ -34,7 +34,7 @@ export class McpHttpService implements OnModuleDestroy {
     @Inject(MCP_MODULE_CONFIG) private readonly config: McpModuleConfig,
     private readonly registry: McpToolRegistry,
   ) {
-    this.sessionTtlMs = (config.sessionTtlMinutes ?? 30) * 60 * 1000;
+    this.sessionTtlMs = (config.session?.ttlMinutes ?? 30) * 60 * 1000;
     this.sweepInterval = setInterval(() => this.sweepStaleSessions(), 60_000);
   }
 
@@ -47,19 +47,23 @@ export class McpHttpService implements OnModuleDestroy {
     this.bearerAuthResourceMetadataUrl = options.resourceMetadataUrl;
   }
 
+  private getSessionIdGenerator(): (() => string) | undefined {
+    return this.config.session
+      ? (this.config.session.idGenerator ?? (() => crypto.randomUUID()))
+      : undefined;
+  }
+
   private createSession(): SessionEntry {
     const entry: Partial<SessionEntry> = { lastActivity: Date.now() };
 
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: 'sessionIdGenerator' in this.config
-        ? this.config.sessionIdGenerator
-        : () => crypto.randomUUID(),
+      sessionIdGenerator: this.getSessionIdGenerator(),
       enableJsonResponse: this.config.enableJsonResponse ?? true,
       onsessioninitialized: (sessionId: string) => {
         this.sessions.set(sessionId, entry as SessionEntry);
         this.logger.log(`Session initialized: ${sessionId}`);
       },
-      ...(this.config.eventStore && { eventStore: this.config.eventStore }),
+      ...(this.config.session?.eventStore && { eventStore: this.config.session.eventStore }),
     });
 
     const server = new McpServer(

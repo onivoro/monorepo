@@ -3,6 +3,25 @@ import type { EventStore } from '@modelcontextprotocol/sdk/server/streamableHttp
 import type { McpServerMetadata } from './mcp-server-metadata';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
 
+export interface McpHttpSessionConfig {
+  /**
+   * Idle session timeout in minutes. Default: 30.
+   */
+  ttlMinutes?: number;
+  /**
+   * Custom stateful session ID generator function. Default: `crypto.randomUUID()`.
+   */
+  idGenerator?: () => string;
+  /**
+   * EventStore implementation for SSE stream resumability.
+   *
+   * When provided, the transport stores outgoing events and supports client reconnection
+   * via `Last-Event-ID`. Clients that disconnect and reconnect receive replayed events
+   * from the point they left off.
+   */
+  eventStore?: EventStore;
+}
+
 export interface McpModuleConfig {
   metadata: McpServerMetadata;
   serverOptions?: ServerOptions;
@@ -12,7 +31,18 @@ export interface McpModuleConfig {
    * when the host application uses `app.setGlobalPrefix('api')`.
    */
   route?: string;
-  sessionTtlMinutes?: number;
+  /**
+   * Optional stateful Streamable HTTP session configuration.
+   *
+   * When omitted, the HTTP transport is stateless: it does not emit `Mcp-Session-Id`,
+   * and any request can be handled by any horizontally scaled instance. This is the
+   * default and recommended mode for load-balanced request/response tool servers.
+   *
+   * Configure this object only when you need stateful MCP sessions for resource
+   * subscriptions, server-initiated messages, resumable SSE streams, or per-session
+   * server state.
+   */
+  session?: McpHttpSessionConfig;
   /**
    * Allowed Origin header values for DNS rebinding protection (MCP spec 2025-03-26+).
    *
@@ -26,27 +56,10 @@ export interface McpModuleConfig {
    */
   allowedOrigins?: string[];
   /**
-   * EventStore implementation for SSE stream resumability.
-   *
-   * When provided, the transport stores outgoing events and supports client reconnection
-   * via `Last-Event-ID`. Clients that disconnect and reconnect receive replayed events
-   * from the point they left off.
-   *
-   * When not set, resumability is disabled (default).
-   */
-  eventStore?: EventStore;
-  /**
    * When `true`, the transport returns JSON responses instead of SSE streams.
    * Default: `true` (current behavior). Set to `false` for SSE-only mode.
    */
   enableJsonResponse?: boolean;
-  /**
-   * Custom session ID generator function. Default: `crypto.randomUUID()`.
-   *
-   * Set to `undefined` explicitly to enable stateless mode (no session tracking).
-   * When absent from config, the default UUID generator is used.
-   */
-  sessionIdGenerator?: (() => string) | undefined;
   /**
    * Optional auth strategy class that runs before guards on every tool execution.
    * Must implement `McpAuthStrategy` and be an `@Injectable()` NestJS service.

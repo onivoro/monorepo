@@ -1079,7 +1079,9 @@ McpHttpModule.registerAndServeHttp({
     description: 'Optional',  // Optional. Human-readable description.
   },
   route: 'mcp',               // Optional. Route relative to any Nest global prefix. Default: 'mcp'.
-  sessionTtlMinutes: 30,      // Optional. Idle session timeout. Default: 30.
+  session: {                  // Optional. Omit for stateless load-balanced tool servers.
+    ttlMinutes: 30,           // Optional. Idle session timeout. Default: 30.
+  },
   serverOptions: {},           // Optional. Passed to McpServer from @modelcontextprotocol/sdk.
   allowedOrigins: [            // Optional. DNS rebinding protection (see below).
     'http://localhost:3000',
@@ -1324,12 +1326,38 @@ This library implements the **Streamable HTTP** transport, not the legacy SSE tr
 - **SSE transport (legacy)**: Two endpoints — `GET /sse` opens a persistent SSE stream for server-to-client messages, `POST /messages` sends client-to-server requests. This was the original MCP HTTP transport.
 - **Streamable HTTP (current)**: Single `POST /mcp` endpoint. Responses can be either JSON or SSE streams depending on the `Accept` header. When a client sends `text/event-stream` in its accept header, the server can stream responses over the same POST connection.
 
-Each MCP client connection creates a session, identified by the `Mcp-Session-Id` header.
+By default, HTTP MCP is stateless. When `session` is omitted, the server does
+not emit `Mcp-Session-Id`, and each request can be handled by any instance.
+This is the recommended mode for load-balanced request/response tool servers
+where auth is carried by each HTTP request, such as OAuth bearer-token protected
+tool APIs.
 
-- Sessions are created on the first `POST /mcp` (the `initialize` handshake).
-- Sessions are destroyed on `DELETE /mcp` or when the idle TTL expires.
-- The default idle TTL is 30 minutes, configurable via `sessionTtlMinutes`.
-- All sessions are cleaned up on application shutdown.
+Stateless mode is MCP spec-compliant: Streamable HTTP servers may assign session
+IDs, but are not required to. If a server does assign one, clients must send it
+back; if it does not, clients should continue without session headers.
+
+#### Stateful Sessions
+
+Configure `session` only when the server needs stateful MCP sessions:
+
+```typescript
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  session: {
+    ttlMinutes: 30,
+  },
+});
+```
+
+When `session` is present, the server creates an `Mcp-Session-Id` during
+initialization and requires clients to send that ID on subsequent requests.
+Use this for single-instance servers, sticky-routed deployments, resource
+subscriptions, server-initiated messages, resumable SSE streams, or deliberate
+per-session server state.
+
+Stateful sessions are created on the first `POST /mcp` initialize handshake,
+destroyed on `DELETE /mcp` or idle TTL expiry, and cleaned up on application
+shutdown.
 
 #### Resumability
 
@@ -1359,7 +1387,9 @@ const eventStore: EventStore = {
 
 McpHttpModule.registerAndServeHttp({
   metadata: { name: 'my-server', version: '1.0.0' },
-  eventStore,                   // Enable resumability
+  session: {
+    eventStore,                 // Enable resumability
+  },
   enableJsonResponse: false,    // Use SSE streams (required for resumability)
 });
 ```
@@ -1370,9 +1400,11 @@ Additional transport options:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `eventStore` | `undefined` | Event store for SSE resumability |
+| `session` | `undefined` | Omit for stateless mode. Configure to enable stateful MCP sessions |
+| `session.ttlMinutes` | `30` | Idle timeout for stateful sessions |
+| `session.idGenerator` | `crypto.randomUUID()` | Custom stateful session ID generator |
+| `session.eventStore` | `undefined` | Event store for SSE resumability |
 | `enableJsonResponse` | `true` | Return JSON instead of SSE streams |
-| `sessionIdGenerator` | `crypto.randomUUID()` | Custom session ID generator. Set to `undefined` for stateless mode |
 
 ### Stdio (`McpStdioModule`)
 
