@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { Injectable, Module } from '@nestjs/common';
+import { Injectable, Module, RequestMethod } from '@nestjs/common';
+import { METHOD_METADATA } from '@nestjs/common/constants';
 import { McpOAuthModule } from './mcp-oauth.module';
 import { MCP_OAUTH_CONFIG } from './mcp-oauth-config-token';
 import { MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth-server-provider-token';
@@ -172,6 +173,24 @@ describe('McpOAuthModule', () => {
     await app.close();
   });
 
+  it('should expose explicit HTTP verbs without OpenAPI-invalid @All metadata', () => {
+    const dynamicModule = McpOAuthModule.configure({
+      provider: mockProvider as any,
+      issuerUrl: 'https://auth.example.com',
+    });
+    const requestMethods = (dynamicModule.controllers || []).flatMap((controller) =>
+      getControllerRequestMethods(controller as any),
+    );
+
+    expect(requestMethods).toEqual(expect.arrayContaining([
+      RequestMethod.GET,
+      RequestMethod.OPTIONS,
+      RequestMethod.POST,
+    ]));
+    expect(requestMethods).not.toContain(RequestMethod.ALL);
+    expect(requestMethods).not.toContain(RequestMethod.SEARCH);
+  });
+
   it('should reject invalid issuer URLs', () => {
     expect(() => McpOAuthModule.configure({
       provider: mockProvider as any,
@@ -187,3 +206,10 @@ describe('McpOAuthModule', () => {
     })).toThrow(/resourceServerUrl/);
   });
 });
+
+function getControllerRequestMethods(controller: any): RequestMethod[] {
+  return Object.getOwnPropertyNames(controller.prototype)
+    .filter((name) => name !== 'constructor')
+    .map((name) => Reflect.getMetadata(METHOD_METADATA, controller.prototype[name]))
+    .filter((method) => typeof method === 'number');
+}

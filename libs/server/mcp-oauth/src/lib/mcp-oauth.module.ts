@@ -1,4 +1,4 @@
-import { All, Controller, DynamicModule, Inject, Logger, Module, Req, Res } from '@nestjs/common';
+import { Controller, DynamicModule, Get, Inject, Logger, Module, Options, Post, Req, Res } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import type { OAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/provider.js';
@@ -16,11 +16,32 @@ function createOAuthController() {
   class DynamicOAuthController {
     constructor(@Inject(MCP_OAUTH_ROUTER) private readonly router: any) {}
 
-    @All('authorize')
-    @All('token')
-    @All('register')
-    @All('revoke')
-    async handleOAuth(@Req() req: Request, @Res() res: Response) {
+    @Get('authorize')
+    async handleAuthorizeGet(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    @Post('authorize')
+    async handleAuthorizePost(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    @Post('token')
+    async handleToken(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    @Post('register')
+    async handleRegister(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    @Post('revoke')
+    async handleRevoke(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    private async dispatch(req: Request, res: Response) {
       await dispatchOAuthRouter(this.router, req, res);
     }
   }
@@ -33,8 +54,17 @@ function createWellKnownOAuthController() {
   class DynamicWellKnownOAuthController {
     constructor(@Inject(MCP_OAUTH_ROUTER) private readonly router: any) {}
 
-    @All('oauth-authorization-server')
-    async handleWellKnownOAuth(@Req() req: Request, @Res() res: Response) {
+    @Get('oauth-authorization-server')
+    async handleWellKnownOAuthGet(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    @Options('oauth-authorization-server')
+    async handleWellKnownOAuthOptions(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    private async dispatch(req: Request, res: Response) {
       await dispatchOAuthRouter(this.router, req, res);
     }
   }
@@ -47,13 +77,27 @@ function createProtectedResourceController() {
   class DynamicProtectedResourceController {
     constructor(@Inject(MCP_OAUTH_ROUTER) private readonly router: any) {}
 
-    @All()
-    async handleProtectedResource(@Req() req: Request, @Res() res: Response) {
-      await dispatchOAuthRouter(this.router, req, res);
+    @Get()
+    async handleProtectedResourceGet(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
     }
 
-    @All(':resourcePath(*)')
-    async handlePathProtectedResource(@Req() req: Request, @Res() res: Response) {
+    @Options()
+    async handleProtectedResourceOptions(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    @Get(':resourcePath(*)')
+    async handlePathProtectedResourceGet(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    @Options(':resourcePath(*)')
+    async handlePathProtectedResourceOptions(@Req() req: Request, @Res() res: Response) {
+      await this.dispatch(req, res);
+    }
+
+    private async dispatch(req: Request, res: Response) {
       await dispatchOAuthRouter(this.router, req, res);
     }
   }

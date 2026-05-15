@@ -1,4 +1,4 @@
-import { All, Controller, DynamicModule, Inject, Logger, Module, OnModuleInit, Req, Res } from '@nestjs/common';
+import { Controller, Delete, DynamicModule, Get, Inject, Logger, Module, OnModuleInit, Options, Post, Req, Res } from '@nestjs/common';
 import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { Request, Response } from 'express';
@@ -19,8 +19,27 @@ function createMcpController(configuredRoute?: string) {
   class DynamicMcpController {
     constructor(private readonly mcpService: McpHttpService) {}
 
-    @All(route)
-    async handleMcp(@Req() req: Request, @Res() res: Response) {
+    @Delete(route)
+    async handleMcpDelete(@Req() req: Request, @Res() res: Response) {
+      await this.dispatchMcp(req, res);
+    }
+
+    @Get(route)
+    async handleMcpGet(@Req() req: Request, @Res() res: Response) {
+      await this.dispatchMcp(req, res);
+    }
+
+    @Options(route)
+    async handleMcpOptions(@Req() req: Request, @Res() res: Response) {
+      await this.dispatchMcp(req, res);
+    }
+
+    @Post(route)
+    async handleMcpPost(@Req() req: Request, @Res() res: Response) {
+      await this.dispatchMcp(req, res);
+    }
+
+    private async dispatchMcp(req: Request, res: Response) {
       if (req.method === 'POST' && typeof (req as any).body === 'undefined') {
         res.status(500).json({
           jsonrpc: '2.0',

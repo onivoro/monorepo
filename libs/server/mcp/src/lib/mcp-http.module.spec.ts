@@ -1,4 +1,5 @@
-import { Injectable, Module } from '@nestjs/common';
+import { Injectable, Module, RequestMethod } from '@nestjs/common';
+import { METHOD_METADATA } from '@nestjs/common/constants';
 import { Test } from '@nestjs/testing';
 import { McpHttpModule } from './mcp-http.module';
 import { McpToolRegistry } from './mcp-tool-registry';
@@ -188,6 +189,23 @@ describe('McpHttpModule', () => {
   });
 
   describe('route', () => {
+    it('should expose explicit HTTP verbs without OpenAPI-invalid @All metadata', () => {
+      const dynamicModule = McpHttpModule.registerAndServeHttp({
+        metadata: { name: 'test', version: '1.0.0' },
+      });
+      const controller = dynamicModule.controllers?.[0] as any;
+      const requestMethods = getControllerRequestMethods(controller);
+
+      expect(requestMethods).toEqual(expect.arrayContaining([
+        RequestMethod.DELETE,
+        RequestMethod.GET,
+        RequestMethod.OPTIONS,
+        RequestMethod.POST,
+      ]));
+      expect(requestMethods).not.toContain(RequestMethod.ALL);
+      expect(requestMethods).not.toContain(RequestMethod.SEARCH);
+    });
+
     it('should create a controller with default /mcp route when route is omitted', async () => {
       const module = await Test.createTestingModule({
         imports: [
@@ -420,3 +438,10 @@ describe('McpHttpModule', () => {
     });
   });
 });
+
+function getControllerRequestMethods(controller: any): RequestMethod[] {
+  return Object.getOwnPropertyNames(controller.prototype)
+    .filter((name) => name !== 'constructor')
+    .map((name) => Reflect.getMetadata(METHOD_METADATA, controller.prototype[name]))
+    .filter((method) => typeof method === 'number');
+}
