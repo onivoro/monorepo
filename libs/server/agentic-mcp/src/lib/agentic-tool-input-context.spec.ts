@@ -138,4 +138,60 @@ describe('normalizeAgenticToolInputFromContext', () => {
       }),
     ).toEqual({});
   });
+
+  it('reads a custom nested identifiers property', () => {
+    expect(
+      normalizeAgenticToolInputFromContext(
+        {},
+        { resource: { invoiceId: 4471 } },
+        schema('invoiceId'),
+        { contextKeys: ['invoiceId'], identifiersKey: 'resource' },
+      ),
+    ).toEqual({ invoiceId: 4471 });
+  });
+
+  it('searches only the root when identifiersKey is empty', () => {
+    expect(
+      normalizeAgenticToolInputFromContext(
+        {},
+        { identifiers: { invoiceId: 4471 } },
+        schema('invoiceId'),
+        { contextKeys: ['invoiceId'], identifiersKey: '' },
+      ),
+    ).toEqual({});
+  });
+
+  // a present-but-empty key is not the same as an absent one to a schema
+  it('leaves the filters property absent when there is nothing to put in it', () => {
+    const result = normalizeAgenticToolInputFromContext(
+      {},
+      {},
+      schema('filters'),
+      { contextKeys: ['customerId'], filtersKey: 'filters' },
+    );
+
+    expect(result).toEqual({});
+    expect('filters' in result).toBe(false);
+  });
+
+  // aliases double as a rename: the metadata key and the schema property do
+  // not have to agree
+  it('maps a metadata key onto a differently named schema property', () => {
+    expect(
+      normalizeAgenticToolInputFromContext(
+        {},
+        { workOrderId: 'wo-1' },
+        schema('id'),
+        { contextKeys: ['workOrderId'], aliases: { id: ['workOrderId'] } },
+      ),
+    ).toEqual({ id: 'wo-1' });
+  });
+
+  it('tolerates metadata being absent entirely', () => {
+    expect(
+      normalizeAgenticToolInputFromContext({ a: 1 }, undefined, schema('a'), {
+        contextKeys: ['a'],
+      }),
+    ).toEqual({ a: 1 });
+  });
 });

@@ -3,7 +3,7 @@
 Connects MCP to an agentic run loop, in both directions: exposes this server's
 own MCP tools to
 [`@onivoro/server-agentic`](https://www.npmjs.com/package/@onivoro/server-agentic),
-and consumes *remote* MCP servers as tools the loop can call.
+and consumes _remote_ MCP servers as tools the loop can call.
 
 ## Installation
 
@@ -48,6 +48,7 @@ AgenticMcpModule.configure({
     aliases: { customerId: ['accountId'] },
     filtersKey: 'filters',
     filtersExclude: ['resourceId'],
+    identifiersKey: 'identifiers',
   },
 });
 ```
@@ -57,12 +58,16 @@ Rules, in order:
 - A value the model supplied always wins; context only fills gaps.
 - Only properties the tool's schema declares are filled — nothing is invented.
 - `aliases` resolve a canonical key from an alternate name, in the input or the
-  metadata.
+  metadata — which doubles as a rename, since the metadata key and the schema
+  property need not agree (`aliases: { id: ['workOrderId'] }`).
 - When a tool declares the canonical key but not the alias, the alias is dropped
   from the call. Sending both invites the model to disagree with itself about
   which record it meant.
 - `filtersKey` names a property that takes a nested bag of context instead of a
-  single value — a search tool's `filters` object.
+  single value — a search tool's `filters` object. It is left absent rather than
+  set to an empty object when there is nothing to put in it.
+- `identifiersKey` names the nested metadata object also searched for values,
+  defaulting to `identifiers`. Set it to `''` to search only the metadata root.
 
 ## Consuming remote MCP servers
 

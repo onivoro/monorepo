@@ -13,8 +13,8 @@ import type { JsonObject, JsonValue } from '@onivoro/isomorphic-agentic';
  */
 export interface AgenticToolInputContextConfig {
   /**
-   * Metadata keys eligible to be lifted, read from conversation metadata and
-   * from a nested `identifiers` object.
+   * Metadata keys eligible to be lifted, read from the root of the conversation
+   * metadata and from the nested object named by `identifiersKey`.
    */
   contextKeys?: string[];
 
@@ -33,6 +33,15 @@ export interface AgenticToolInputContextConfig {
 
   /** Context keys never copied into the filters bag. */
   filtersExclude?: string[];
+
+  /**
+   * Nested metadata property also searched for context values.
+   *
+   * Conversation metadata often keeps record identifiers in a sub-object rather
+   * than at the root. Defaults to `identifiers`; set it to `''` to search only
+   * the root.
+   */
+  identifiersKey?: string;
 }
 
 export const DEFAULT_AGENTIC_TOOL_INPUT_CONTEXT_CONFIG: Required<AgenticToolInputContextConfig> =
@@ -41,6 +50,7 @@ export const DEFAULT_AGENTIC_TOOL_INPUT_CONTEXT_CONFIG: Required<AgenticToolInpu
     aliases: {},
     filtersKey: '',
     filtersExclude: [],
+    identifiersKey: 'identifiers',
   };
 
 export function normalizeAgenticToolInputFromContext(
@@ -55,7 +65,13 @@ export function normalizeAgenticToolInputFromContext(
 
   if (!contextKeys.length) return result;
 
-  const context = flattenContext(metadata, contextKeys, aliases);
+  const context = flattenContext(
+    metadata,
+    contextKeys,
+    aliases,
+    config.identifiersKey ??
+      DEFAULT_AGENTIC_TOOL_INPUT_CONTEXT_CONFIG.identifiersKey,
+  );
   const schemaKeys = schemaPropertyKeys(inputSchema);
 
   for (const key of schemaKeys) {
@@ -65,12 +81,16 @@ export function normalizeAgenticToolInputFromContext(
   }
 
   if (config.filtersKey && schemaKeys.includes(config.filtersKey)) {
-    result[config.filtersKey] = normalizeFilters(
+    const filters = normalizeFilters(
       result[config.filtersKey],
       context,
       contextKeys,
       config.filtersExclude ?? [],
     );
+    // Assign only when there is something to say. Writing an explicit
+    // `undefined` makes the key present-but-empty, which a schema can treat
+    // differently from absent.
+    if (filters) result[config.filtersKey] = filters;
   }
 
   removeSchemaExcludedAliases(result, schemaKeys, aliases);
@@ -88,9 +108,12 @@ function flattenContext(
   metadata: JsonObject | undefined,
   contextKeys: string[],
   aliases: Record<string, string[]>,
+  identifiersKey: string,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  const identifiers = asJsonObject(metadata?.identifiers);
+  const identifiers = identifiersKey
+    ? asJsonObject(metadata?.[identifiersKey])
+    : undefined;
 
   for (const key of contextKeys) {
     const value = metadata?.[key] ?? identifiers?.[key];
