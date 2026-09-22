@@ -25,6 +25,31 @@ Names are fixed. The entities carry them in `@Entity()` and the repositories
 reference those entities directly, so a rename would silently disagree with the
 code that reads the rows. Everything _else_ about the schema is yours.
 
+## Adding columns
+
+`additionalColumns` gets a column into the database; an abstract base gets it
+into the entity. Both halves are needed, because a column the ORM cannot see is
+one it will not write on insert or read back on select.
+
+Every entity ships as an abstract `…Columns` base plus a concrete `…Record`
+that extends it and carries the `@Entity()`. Use the record as-is when the
+schema needs nothing added; subclass the base when it does:
+
+```ts
+import { AgenticConversationColumns } from '@onivoro/server-agentic-typeorm';
+
+@Entity('agentic_conversations')
+export class AgenticConversation extends AgenticConversationColumns {
+  @Column({ name: 'tenant_id', type: 'uuid' })
+  tenantId: string;
+}
+```
+
+TypeORM treats an abstract base's columns as the subclass's own, so the result
+is one entity with the full column set — not an inheritance hierarchy the
+database has to know about. Register your subclass instead of the shipped
+record, and pass the matching `additionalColumns` to the migration factory.
+
 ## The simple case
 
 Re-export the shipped migrations and register the entities:

@@ -1,9 +1,18 @@
 import { AgenticUsage, JsonObject } from '@onivoro/isomorphic-agentic';
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
-@Entity('agentic_runs')
-@Index('idx_agentic_runs_conversation_started', ['conversationId', 'startedAt'])
-export class AgenticRunRecord {
+/**
+ * The columns this table carries, without the mapping.
+ *
+ * Split out so a consumer whose schema needs more -- a tenant column, a soft
+ * delete, an owning organisation -- can subclass and add them. TypeORM treats
+ * an abstract base's columns as the subclass's own, so the extra column is a
+ * first-class part of the entity rather than something the ORM cannot see.
+ *
+ * Extend this and declare your own `@Entity()`; use AgenticRunRecord as-is when the
+ * schema needs nothing added.
+ */
+export abstract class AgenticRunColumns {
   @PrimaryColumn('text')
   id: string;
 
@@ -43,3 +52,7 @@ export class AgenticRunRecord {
   @Column({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }
+
+@Entity('agentic_runs')
+@Index('idx_agentic_runs_conversation_started', ['conversationId', 'startedAt'])
+export class AgenticRunRecord extends AgenticRunColumns {}
