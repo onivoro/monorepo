@@ -1,0 +1,38 @@
+{
+  "name": "@onivoro/server-pg-notify",
+  "version": "24.38.2",
+  "description": "Postgres LISTEN/NOTIFY for NestJS: a subscription that survives losing its connection, a publisher that respects the payload limit, and trigger migration helpers",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/pg-notify/README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "postgres",
+    "postgresql",
+    "listen",
+    "notify",
+    "pg-listen",
+    "pubsub",
+    "nestjs",
+    "typeorm"
+  ],
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "pg-listen": "^1.7.0",
+    "typeorm": "^0.3.0"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}

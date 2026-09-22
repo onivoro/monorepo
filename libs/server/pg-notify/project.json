@@ -1,0 +1,27 @@
+{
+  "name": "lib-server-pg-notify",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/pg-notify/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/pg-notify",
+        "main": "libs/server/pg-notify/src/index.ts",
+        "tsConfig": "libs/server/pg-notify/tsconfig.lib.json",
+        "assets": [
+          "libs/server/pg-notify/README.md",
+          "libs/server/pg-notify/LICENSE",
+          "libs/server/pg-notify/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}
