@@ -27,6 +27,9 @@
       "@onivoro/isomorphic-jsonata": ["libs/isomorphic/jsonata/src/index.ts"],
       "@onivoro/isomorphic-jsonrpc": ["libs/isomorphic/jsonrpc/src/index.ts"],
       "@onivoro/server-agentic": ["libs/server/agentic/src/index.ts"],
+      "@onivoro/server-agentic-bedrock": [
+        "libs/server/agentic-bedrock/src/index.ts"
+      ],
       "@onivoro/server-auth": ["libs/server/auth/src/index.ts"],
       "@onivoro/server-aws-cloudwatch": [
         "libs/server/aws-cloudwatch/src/index.ts"

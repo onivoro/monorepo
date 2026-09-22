@@ -1,0 +1,43 @@
+{
+  "name": "@onivoro/server-agentic-bedrock",
+  "version": "24.38.2",
+  "description": "AWS Bedrock streaming model provider for @onivoro/server-agentic, with pluggable per-model wire protocols",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/agentic-bedrock/README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "bedrock",
+    "aws",
+    "agentic",
+    "agent",
+    "ai",
+    "llm",
+    "streaming",
+    "tool-use",
+    "nestjs",
+    "claude",
+    "anthropic"
+  ],
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.0.0",
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "@onivoro/isomorphic-agentic": "^24.38.2",
+    "@onivoro/server-agentic": "^24.38.2"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}
