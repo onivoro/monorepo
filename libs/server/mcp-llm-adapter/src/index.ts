@@ -1,4 +1,7 @@
-export { McpLlmToolAdapter } from './lib/mcp-llm-tool-adapter';
+export {
+  McpLlmToolAdapter,
+  McpToolExecutionExtra,
+} from './lib/mcp-llm-tool-adapter';
 export { ProviderToolCall } from './lib/provider-tool-call';
 export { ProviderToolCallResult } from './lib/provider-tool-call-result';
 export { McpLlmAdapterModule } from './lib/mcp-llm-adapter.module';

@@ -1,10 +1,32 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
-import { McpToolRegistry, McpAuthInfo, mcpSchemaToJsonSchema } from '@onivoro/server-mcp';
+import {
+  McpToolRegistry,
+  McpAuthInfo,
+  mcpSchemaToJsonSchema,
+} from '@onivoro/server-mcp';
 import { LLM_ADAPTER_CONFIG } from './llm-adapter-config-token';
 import type { LlmAdapterConfig } from './llm-adapter-config';
 import { resolveProviderName } from './resolve-provider-name';
 import type { ProviderToolCall } from './provider-tool-call';
 import type { ProviderToolCallResult } from './provider-tool-call-result';
+
+/**
+ * Per-execution context the tool registry accepts and forwards to the tool.
+ *
+ * Optional, but a caller driving an agent loop will have all of it: the loop's
+ * abort signal so a tool cannot outlive its turn, and the progress and log
+ * channels so a long-running tool can report while it works.
+ */
+export type McpToolExecutionExtra = {
+  sessionId?: string;
+  signal?: AbortSignal;
+  sendProgress?: (
+    progress: number,
+    total?: number,
+    message?: string,
+  ) => Promise<void>;
+  sendLog?: (level: any, data: unknown, logger?: string) => Promise<void>;
+};
 
 @Injectable()
 export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
@@ -41,7 +63,12 @@ export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
 
       if (this.config.formatToolWithOutput && metadata.outputSchema) {
         const outputSchema = mcpSchemaToJsonSchema(metadata.outputSchema);
-        return this.config.formatToolWithOutput(name, metadata.description, inputSchema, outputSchema);
+        return this.config.formatToolWithOutput(
+          name,
+          metadata.description,
+          inputSchema,
+          outputSchema,
+        );
       }
 
       return this.config.formatTool(name, metadata.description, inputSchema);
@@ -72,14 +99,18 @@ export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
     providerName: string,
     params: Record<string, unknown>,
     authInfo?: McpAuthInfo,
+    extra?: McpToolExecutionExtra,
   ): Promise<string> {
     const mcpName = this.getNameMap().get(providerName);
     if (!mcpName) {
-      throw new Error(
-        `No MCP tool found for provider name "${providerName}".`,
-      );
+      throw new Error(`No MCP tool found for provider name "${providerName}".`);
     }
-    const result = await this.registry.executeToolRaw(mcpName, params, authInfo);
+    const result = await this.registry.executeToolRaw(
+      mcpName,
+      params,
+      authInfo,
+      extra,
+    );
     return typeof result === 'string' ? result : JSON.stringify(result);
   }
 
@@ -87,14 +118,20 @@ export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
   async executeToolCallForProvider(
     toolCall: ProviderToolCall,
     authInfo?: McpAuthInfo,
+    extra?: McpToolExecutionExtra,
   ): Promise<ProviderToolCallResult> {
-    const [result] = await this.executeToolsForProvider([toolCall], authInfo);
+    const [result] = await this.executeToolsForProvider(
+      [toolCall],
+      authInfo,
+      extra,
+    );
     return result;
   }
 
   async executeToolsForProvider(
     toolCalls: ProviderToolCall[],
     authInfo?: McpAuthInfo,
+    extra?: McpToolExecutionExtra,
   ): Promise<ProviderToolCallResult[]> {
     const nameMap = this.getNameMap();
 
@@ -102,11 +139,24 @@ export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
       toolCalls.map(async ({ providerName, params, id }) => {
         const mcpName = nameMap.get(providerName);
         if (!mcpName) {
-          throw new Error(`No MCP tool found for provider name "${providerName}".`);
+          throw new Error(
+            `No MCP tool found for provider name "${providerName}".`,
+          );
         }
-        const rawResult = await this.registry.executeToolRaw(mcpName, params, authInfo);
-        const result = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
-        return { providerName, id, result, success: true } as ProviderToolCallResult;
+        const rawResult = await this.registry.executeToolRaw(
+          mcpName,
+          params,
+          authInfo,
+          extra,
+        );
+        const result =
+          typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
+        return {
+          providerName,
+          id,
+          result,
+          success: true,
+        } as ProviderToolCallResult;
       }),
     );
 
@@ -118,7 +168,10 @@ export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
       return {
         providerName: call.providerName,
         id: call.id,
-        error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+        error:
+          outcome.reason instanceof Error
+            ? outcome.reason.message
+            : String(outcome.reason),
         success: false,
       };
     });

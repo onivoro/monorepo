@@ -38,20 +38,32 @@ describe('McpLlmToolAdapter', () => {
   describe('resolveProviderToolName', () => {
     it('should resolve name using pass-through when no sanitizer', () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
-      registry.registerTool({ name: 'my-tool', description: 'desc' }, jest.fn());
+      registry.registerTool(
+        { name: 'my-tool', description: 'desc' },
+        jest.fn(),
+      );
       expect(adapter.resolveProviderToolName('my-tool')).toBe('my-tool');
     });
 
     it('should resolve sanitized name to MCP name', () => {
       const adapter = new McpLlmToolAdapter(registry, SANITIZING_CONFIG);
-      registry.registerTool({ name: 'my-cool-tool', description: 'desc' }, jest.fn());
-      expect(adapter.resolveProviderToolName('my_cool_tool')).toBe('my-cool-tool');
+      registry.registerTool(
+        { name: 'my-cool-tool', description: 'desc' },
+        jest.fn(),
+      );
+      expect(adapter.resolveProviderToolName('my_cool_tool')).toBe(
+        'my-cool-tool',
+      );
     });
 
     it('should resolve explicit alias to MCP name', () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool(
-        { name: 'my-tool', description: 'desc', aliases: { test: 'custom_name' } },
+        {
+          name: 'my-tool',
+          description: 'desc',
+          aliases: { test: 'custom_name' },
+        },
         jest.fn(),
       );
       expect(adapter.resolveProviderToolName('custom_name')).toBe('my-tool');
@@ -66,8 +78,14 @@ describe('McpLlmToolAdapter', () => {
   describe('toProviderTools', () => {
     it('should convert all tools to provider format', () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
-      registry.registerTool({ name: 'tool-a', description: 'Desc A' }, jest.fn());
-      registry.registerTool({ name: 'tool-b', description: 'Desc B' }, jest.fn());
+      registry.registerTool(
+        { name: 'tool-a', description: 'Desc A' },
+        jest.fn(),
+      );
+      registry.registerTool(
+        { name: 'tool-b', description: 'Desc B' },
+        jest.fn(),
+      );
 
       const tools = adapter.toProviderTools();
 
@@ -79,7 +97,10 @@ describe('McpLlmToolAdapter', () => {
 
     it('should apply name sanitization', () => {
       const adapter = new McpLlmToolAdapter(registry, SANITIZING_CONFIG);
-      registry.registerTool({ name: 'my-tool', description: 'desc' }, jest.fn());
+      registry.registerTool(
+        { name: 'my-tool', description: 'desc' },
+        jest.fn(),
+      );
 
       const tools = adapter.toProviderTools();
       expect(tools[0].name).toBe('my_tool');
@@ -143,8 +164,14 @@ describe('McpLlmToolAdapter', () => {
   describe('executeToolsForProvider', () => {
     it('should execute multiple tools in parallel and return results', async () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
-      registry.registerTool({ name: 'tool-a', description: 'd' }, jest.fn().mockResolvedValue({ a: 1 }));
-      registry.registerTool({ name: 'tool-b', description: 'd' }, jest.fn().mockResolvedValue('text'));
+      registry.registerTool(
+        { name: 'tool-a', description: 'd' },
+        jest.fn().mockResolvedValue({ a: 1 }),
+      );
+      registry.registerTool(
+        { name: 'tool-b', description: 'd' },
+        jest.fn().mockResolvedValue('text'),
+      );
 
       const results = await adapter.executeToolsForProvider([
         { providerName: 'tool-a', params: { x: 1 }, id: 'call-1' },
@@ -152,14 +179,30 @@ describe('McpLlmToolAdapter', () => {
       ]);
 
       expect(results).toHaveLength(2);
-      expect(results[0]).toEqual({ providerName: 'tool-a', id: 'call-1', result: '{"a":1}', success: true });
-      expect(results[1]).toEqual({ providerName: 'tool-b', id: 'call-2', result: 'text', success: true });
+      expect(results[0]).toEqual({
+        providerName: 'tool-a',
+        id: 'call-1',
+        result: '{"a":1}',
+        success: true,
+      });
+      expect(results[1]).toEqual({
+        providerName: 'tool-b',
+        id: 'call-2',
+        result: 'text',
+        success: true,
+      });
     });
 
     it('should handle partial failures independently', async () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
-      registry.registerTool({ name: 'ok-tool', description: 'd' }, jest.fn().mockResolvedValue('ok'));
-      registry.registerTool({ name: 'bad-tool', description: 'd' }, jest.fn().mockRejectedValue(new Error('boom')));
+      registry.registerTool(
+        { name: 'ok-tool', description: 'd' },
+        jest.fn().mockResolvedValue('ok'),
+      );
+      registry.registerTool(
+        { name: 'bad-tool', description: 'd' },
+        jest.fn().mockRejectedValue(new Error('boom')),
+      );
 
       const results = await adapter.executeToolsForProvider([
         { providerName: 'ok-tool', params: {} },
@@ -174,14 +217,22 @@ describe('McpLlmToolAdapter', () => {
 
     it('should report unknown provider names as errors without blocking siblings', async () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
-      registry.registerTool({ name: 'real-tool', description: 'd' }, jest.fn().mockResolvedValue('done'));
+      registry.registerTool(
+        { name: 'real-tool', description: 'd' },
+        jest.fn().mockResolvedValue('done'),
+      );
 
       const results = await adapter.executeToolsForProvider([
         { providerName: 'real-tool', params: {}, id: 'a' },
         { providerName: 'ghost-tool', params: {}, id: 'b' },
       ]);
 
-      expect(results[0]).toEqual({ providerName: 'real-tool', id: 'a', result: 'done', success: true });
+      expect(results[0]).toEqual({
+        providerName: 'real-tool',
+        id: 'a',
+        result: 'done',
+        success: true,
+      });
       expect(results[1].success).toBe(false);
       expect(results[1].error).toContain('No MCP tool found');
       expect(results[1].id).toBe('b');
@@ -195,7 +246,10 @@ describe('McpLlmToolAdapter', () => {
 
     it('should pass through id from input to output', async () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
-      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn().mockResolvedValue('r'));
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        jest.fn().mockResolvedValue('r'),
+      );
 
       const results = await adapter.executeToolsForProvider([
         { providerName: 'tool', params: {}, id: 'openai-call-xyz' },
@@ -226,14 +280,28 @@ describe('McpLlmToolAdapter', () => {
 
   describe('output schema forwarding', () => {
     it('should use formatToolWithOutput when config provides it and tool has outputSchema', () => {
-      const formatToolWithOutput = jest.fn().mockReturnValue({ name: 'extended', inputSchema: {}, outputSchema: {} });
+      const formatToolWithOutput = jest
+        .fn()
+        .mockReturnValue({
+          name: 'extended',
+          inputSchema: {},
+          outputSchema: {},
+        });
       const config: LlmAdapterConfig<any> = {
         ...SIMPLE_CONFIG,
         formatToolWithOutput,
       };
       const adapter = new McpLlmToolAdapter(registry, config);
       const outputSchema = z.object({ result: z.string() });
-      registry.registerTool({ name: 'structured-tool', description: 'Returns structured', schema: z.object({ q: z.string() }), outputSchema }, jest.fn());
+      registry.registerTool(
+        {
+          name: 'structured-tool',
+          description: 'Returns structured',
+          schema: z.object({ q: z.string() }),
+          outputSchema,
+        },
+        jest.fn(),
+      );
 
       const tools = adapter.toProviderTools();
 
@@ -254,7 +322,10 @@ describe('McpLlmToolAdapter', () => {
         formatToolWithOutput,
       };
       const adapter = new McpLlmToolAdapter(registry, config);
-      registry.registerTool({ name: 'plain-tool', description: 'No output' }, jest.fn());
+      registry.registerTool(
+        { name: 'plain-tool', description: 'No output' },
+        jest.fn(),
+      );
 
       const tools = adapter.toProviderTools();
 
@@ -265,7 +336,10 @@ describe('McpLlmToolAdapter', () => {
     it('should fall back to formatTool when config lacks formatToolWithOutput (backward compat)', () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       const outputSchema = z.object({ result: z.string() });
-      registry.registerTool({ name: 'tool', description: 'd', outputSchema }, jest.fn());
+      registry.registerTool(
+        { name: 'tool', description: 'd', outputSchema },
+        jest.fn(),
+      );
 
       const tools = adapter.toProviderTools();
 
@@ -277,14 +351,22 @@ describe('McpLlmToolAdapter', () => {
     it('should return map of provider names to output JSON schemas', () => {
       const adapter = new McpLlmToolAdapter(registry, SANITIZING_CONFIG);
       const outputSchema = z.object({ result: z.string() });
-      registry.registerTool({ name: 'structured-tool', description: 'd', outputSchema }, jest.fn());
-      registry.registerTool({ name: 'plain-tool', description: 'd' }, jest.fn());
+      registry.registerTool(
+        { name: 'structured-tool', description: 'd', outputSchema },
+        jest.fn(),
+      );
+      registry.registerTool(
+        { name: 'plain-tool', description: 'd' },
+        jest.fn(),
+      );
 
       const schemas = adapter.getOutputSchemas();
 
       expect(schemas.size).toBe(1);
       expect(schemas.has('structured_tool')).toBe(true);
-      expect(schemas.get('structured_tool')).toEqual(expect.objectContaining({ type: 'object' }));
+      expect(schemas.get('structured_tool')).toEqual(
+        expect.objectContaining({ type: 'object' }),
+      );
       expect(schemas.has('plain_tool')).toBe(false);
     });
 
@@ -301,7 +383,10 @@ describe('McpLlmToolAdapter', () => {
   describe('executeToolCallForProvider', () => {
     it('should return ProviderToolCallResult with success for valid tool', async () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
-      registry.registerTool({ name: 'my-tool', description: 'd' }, jest.fn().mockResolvedValue({ ok: true }));
+      registry.registerTool(
+        { name: 'my-tool', description: 'd' },
+        jest.fn().mockResolvedValue({ ok: true }),
+      );
 
       const result = await adapter.executeToolCallForProvider({
         providerName: 'my-tool',
@@ -331,10 +416,20 @@ describe('McpLlmToolAdapter', () => {
 
     it('should pass through id from input to output', async () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
-      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn().mockResolvedValue('r'));
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        jest.fn().mockResolvedValue('r'),
+      );
 
-      const withId = await adapter.executeToolCallForProvider({ providerName: 'tool', params: {}, id: 'abc' });
-      const withoutId = await adapter.executeToolCallForProvider({ providerName: 'tool', params: {} });
+      const withId = await adapter.executeToolCallForProvider({
+        providerName: 'tool',
+        params: {},
+        id: 'abc',
+      });
+      const withoutId = await adapter.executeToolCallForProvider({
+        providerName: 'tool',
+        params: {},
+      });
 
       expect(withId.id).toBe('abc');
       expect(withoutId.id).toBeUndefined();
@@ -363,6 +458,78 @@ describe('McpLlmToolAdapter', () => {
       const result2 = adapter.resolveProviderToolName('tool-a');
       expect(result1).toBe('tool-a');
       expect(result2).toBe('tool-a');
+    });
+  });
+
+  // The registry has always accepted a per-execution context; the adapter used
+  // to drop it, which silently cost callers their abort signal and the
+  // progress/log channels.
+  describe('execution context forwarding', () => {
+    it('forwards the extra context to the registry on a single execution', async () => {
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
+      const executeToolRaw = jest
+        .spyOn(registry, 'executeToolRaw')
+        .mockResolvedValue('ok');
+      registry.registerTool({ name: 'my-tool', description: 'd' }, jest.fn());
+
+      const controller = new AbortController();
+      const extra = { sessionId: 's1', signal: controller.signal };
+
+      await adapter.executeToolForProvider(
+        'my-tool',
+        { a: 1 },
+        undefined,
+        extra,
+      );
+
+      expect(executeToolRaw).toHaveBeenCalledWith(
+        'my-tool',
+        { a: 1 },
+        undefined,
+        extra,
+      );
+    });
+
+    it('forwards the extra context for every call in a batch', async () => {
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
+      const executeToolRaw = jest
+        .spyOn(registry, 'executeToolRaw')
+        .mockResolvedValue('ok');
+      registry.registerTool({ name: 'a', description: 'd' }, jest.fn());
+      registry.registerTool({ name: 'b', description: 'd' }, jest.fn());
+
+      const extra = { sessionId: 's1' };
+
+      await adapter.executeToolsForProvider(
+        [
+          { providerName: 'a', params: {}, id: '1' },
+          { providerName: 'b', params: {}, id: '2' },
+        ],
+        undefined,
+        extra,
+      );
+
+      expect(executeToolRaw).toHaveBeenCalledTimes(2);
+      for (const call of executeToolRaw.mock.calls) {
+        expect(call[3]).toBe(extra);
+      }
+    });
+
+    it('stays callable without an extra context', async () => {
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
+      const executeToolRaw = jest
+        .spyOn(registry, 'executeToolRaw')
+        .mockResolvedValue('ok');
+      registry.registerTool({ name: 'my-tool', description: 'd' }, jest.fn());
+
+      await adapter.executeToolForProvider('my-tool', {});
+
+      expect(executeToolRaw).toHaveBeenCalledWith(
+        'my-tool',
+        {},
+        undefined,
+        undefined,
+      );
     });
   });
 });

@@ -10,8 +10,8 @@ npm install @onivoro/server-mcp-llm-adapter
 
 ### Peer dependencies
 
-| Package | Version |
-|---------|---------|
+| Package          | Version                |
+| ---------------- | ---------------------- |
 | `@nestjs/common` | `^10.0.0 \|\| ^11.0.0` |
 
 `@onivoro/server-mcp` is a hard dependency — installed automatically.
@@ -20,27 +20,27 @@ npm install @onivoro/server-mcp-llm-adapter
 
 Configs map to **the API you are calling**, not the model or hosting platform. A model hosted on AWS Bedrock can be called through different APIs, each with its own tool format.
 
-| API you are calling | Config | Module method |
-|---------------------|--------|---------------|
-| AWS Bedrock **Converse / ConverseStream** | `BEDROCK_CONVERSE_CONFIG` | `forBedrockConverse()` |
-| AWS Bedrock **Mantle** (Anthropic Messages format) | `BEDROCK_MANTLE_CONFIG` | `forBedrockMantle()` |
-| AWS Bedrock **OpenAI-compatible** | `BEDROCK_OPENAI_CONFIG` | `forBedrockOpenAi()` |
-| OpenAI **Chat Completions** (also xAI, Groq, Together) | `OPENAI_CONFIG` | `forOpenAi()` |
-| Anthropic **Messages** | `CLAUDE_CONFIG` | `forClaude()` |
-| Google **Gemini** | `GEMINI_CONFIG` | `forGemini()` |
-| Mistral **La Plateforme** | `MISTRAL_CONFIG` | `forMistral()` |
+| API you are calling                                    | Config                    | Module method          |
+| ------------------------------------------------------ | ------------------------- | ---------------------- |
+| AWS Bedrock **Converse / ConverseStream**              | `BEDROCK_CONVERSE_CONFIG` | `forBedrockConverse()` |
+| AWS Bedrock **Mantle** (Anthropic Messages format)     | `BEDROCK_MANTLE_CONFIG`   | `forBedrockMantle()`   |
+| AWS Bedrock **OpenAI-compatible**                      | `BEDROCK_OPENAI_CONFIG`   | `forBedrockOpenAi()`   |
+| OpenAI **Chat Completions** (also xAI, Groq, Together) | `OPENAI_CONFIG`           | `forOpenAi()`          |
+| Anthropic **Messages**                                 | `CLAUDE_CONFIG`           | `forClaude()`          |
+| Google **Gemini**                                      | `GEMINI_CONFIG`           | `forGemini()`          |
+| Mistral **La Plateforme**                              | `MISTRAL_CONFIG`          | `forMistral()`         |
 
 ### Bedrock examples
 
 Bedrock exposes multiple API surfaces. Each has its own tool format — pick the config that matches the API you are calling:
 
-| Scenario | Config |
-|----------|--------|
+| Scenario                                            | Config                    |
+| --------------------------------------------------- | ------------------------- |
 | Any model via Bedrock **Converse / ConverseStream** | `BEDROCK_CONVERSE_CONFIG` |
-| Bedrock **Mantle** (Anthropic Messages format) | `BEDROCK_MANTLE_CONFIG` |
-| Bedrock **OpenAI-compatible** endpoint | `BEDROCK_OPENAI_CONFIG` |
-| Claude on Bedrock via **InvokeModel** | `CLAUDE_CONFIG` |
-| Mistral on Bedrock via **InvokeModel** | `MISTRAL_CONFIG` |
+| Bedrock **Mantle** (Anthropic Messages format)      | `BEDROCK_MANTLE_CONFIG`   |
+| Bedrock **OpenAI-compatible** endpoint              | `BEDROCK_OPENAI_CONFIG`   |
+| Claude on Bedrock via **InvokeModel**               | `CLAUDE_CONFIG`           |
+| Mistral on Bedrock via **InvokeModel**              | `MISTRAL_CONFIG`          |
 
 Mantle and Converse are mutually exclusive access paths — never mix them. `BEDROCK_MANTLE_CONFIG` uses the Anthropic Messages tool format (`input_schema`) while `BEDROCK_CONVERSE_CONFIG` uses the Converse `toolSpec` envelope. Similarly, `BEDROCK_OPENAI_CONFIG` uses the OpenAI function-calling format independently from `OPENAI_CONFIG` — each has its own alias key for per-provider name overrides.
 
@@ -58,10 +58,7 @@ import { EmojiToolService } from './services/emoji-tool.service';
 import { ChatService } from './services/chat.service';
 
 @Module({
-  imports: [
-    McpRegistryModule.registerOnly(),
-    McpLlmAdapterModule.forBedrockConverse(),
-  ],
+  imports: [McpRegistryModule.registerOnly(), McpLlmAdapterModule.forBedrockConverse()],
   providers: [EmojiToolService, ChatService],
 })
 export class AppModule {}
@@ -84,10 +81,7 @@ export class ChatService {
     // ... call the LLM provider with tools ...
 
     // When the provider returns a tool call:
-    const result = await this.adapter.executeToolForProvider(
-      toolCall.name,
-      toolCall.input,
-    );
+    const result = await this.adapter.executeToolForProvider(toolCall.name, toolCall.input);
   }
 }
 ```
@@ -101,10 +95,10 @@ LLM providers can return multiple tool calls in a single turn — OpenAI returns
 ```typescript
 // LLM returned multiple tool calls in one turn
 const results = await this.adapter.executeToolsForProvider(
-  toolCalls.map(tc => ({
+  toolCalls.map((tc) => ({
     providerName: tc.name,
     params: tc.input,
-    id: tc.id,  // OpenAI tool_call.id, Claude tool_use.id, Bedrock toolUseId
+    id: tc.id, // OpenAI tool_call.id, Claude tool_use.id, Bedrock toolUseId
   })),
   authInfo,
 );
@@ -142,11 +136,16 @@ For custom providers that support per-tool output schemas, use `formatToolWithOu
 const MY_CONFIG: LlmAdapterConfig<MyToolDef> = {
   aliasKey: 'myProvider',
   formatTool: (name, description, inputSchema) => ({
-    name, description, inputSchema,
+    name,
+    description,
+    inputSchema,
   }),
   // Called instead of formatTool when the tool has an outputSchema
   formatToolWithOutput: (name, description, inputSchema, outputSchema) => ({
-    name, description, inputSchema, outputSchema,
+    name,
+    description,
+    inputSchema,
+    outputSchema,
   }),
 };
 ```
@@ -181,20 +180,21 @@ McpLlmAdapterModule.forProvider(MY_CONFIG);
 
 ## McpLlmToolAdapter API
 
-| Method | Description |
-|--------|-------------|
-| `toProviderTools()` | Returns `T[]` — tool definitions in the provider's format |
-| `getOutputSchemas()` | Returns `Map<string, Record<string, unknown>>` — provider tool names to output JSON Schemas (only tools with `outputSchema`) |
-| `resolveProviderToolName(providerName)` | Maps a provider-specific tool name back to the MCP tool name, or `undefined` |
-| `executeToolForProvider(providerName, params, authInfo?)` | Resolves name, executes tool, returns stringified result |
-| `executeToolCallForProvider(toolCall, authInfo?)` | Executes a single `ProviderToolCall`, returns `ProviderToolCallResult` with id passthrough |
-| `executeToolsForProvider(toolCalls, authInfo?)` | Executes multiple tool calls in parallel. Returns `ProviderToolCallResult[]` with per-call success/error |
+| Method                                                    | Description                                                                                                                  |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `toProviderTools()`                                       | Returns `T[]` — tool definitions in the provider's format                                                                    |
+| `getOutputSchemas()`                                      | Returns `Map<string, Record<string, unknown>>` — provider tool names to output JSON Schemas (only tools with `outputSchema`) |
+| `resolveProviderToolName(providerName)`                   | Maps a provider-specific tool name back to the MCP tool name, or `undefined`                                                 |
+| `executeToolForProvider(providerName, params, authInfo?)` | Resolves name, executes tool, returns stringified result                                                                     |
+| `executeToolCallForProvider(toolCall, authInfo?)`         | Executes a single `ProviderToolCall`, returns `ProviderToolCallResult` with id passthrough                                   |
+| `executeToolsForProvider(toolCalls, authInfo?)`           | Executes multiple tool calls in parallel. Returns `ProviderToolCallResult[]` with per-call success/error                     |
 
 ## Name handling
 
 Each config has an `aliasKey` (e.g., `'bedrock'`, `'bedrock-mantle'`, `'bedrock-openai'`, `'openai'`) used to look up per-provider name overrides from the `@McpTool` decorator's `aliases` parameter.
 
 Resolution order:
+
 1. **Explicit alias** — `aliases[aliasKey]` if present
 2. **Sanitized name** — `sanitizeName(mcpName)` if the config defines a sanitizer
 3. **MCP name as-is** — used directly when no alias or sanitizer applies
@@ -213,40 +213,40 @@ Providers that require name sanitization (Bedrock Converse, Gemini) apply it aut
 
 ```typescript
 // Module
-McpLlmAdapterModule                // NestJS module — forProvider(), forBedrockConverse(), forBedrockMantle(), forBedrockOpenAi(), forOpenAi(), forClaude(), forGemini(), forMistral()
+McpLlmAdapterModule; // NestJS module — forProvider(), forBedrockConverse(), forBedrockMantle(), forBedrockOpenAi(), forOpenAi(), forClaude(), forGemini(), forMistral()
 
 // Adapter
-McpLlmToolAdapter                  // Injectable — toProviderTools(), getOutputSchemas(), resolveProviderToolName(), executeToolForProvider(), executeToolCallForProvider(), executeToolsForProvider()
-ProviderToolCall                // Input type for single/batch execution — { providerName, params, id? }
-ProviderToolCallResult          // Output type for single/batch execution — { providerName, id?, result?, error?, success }
+McpLlmToolAdapter; // Injectable — toProviderTools(), getOutputSchemas(), resolveProviderToolName(), executeToolForProvider(), executeToolCallForProvider(), executeToolsForProvider()
+ProviderToolCall; // Input type for single/batch execution — { providerName, params, id? }
+ProviderToolCallResult; // Output type for single/batch execution — { providerName, id?, result?, error?, success }
 
 // Config
-LlmAdapterConfig                // Interface for custom provider configs
-LLM_ADAPTER_CONFIG              // Injection token
-resolveProviderName             // Utility: resolves provider name from metadata + config
+LlmAdapterConfig; // Interface for custom provider configs
+LLM_ADAPTER_CONFIG; // Injection token
+resolveProviderName; // Utility: resolves provider name from metadata + config
 
 // Prebuilt configs
-BEDROCK_CONVERSE_CONFIG          // AWS Bedrock Converse API
-BEDROCK_MANTLE_CONFIG            // AWS Bedrock Mantle (Anthropic Messages format)
-BEDROCK_OPENAI_CONFIG            // AWS Bedrock OpenAI-compatible endpoint
-OPENAI_CONFIG                    // OpenAI Chat Completions API
-CLAUDE_CONFIG                    // Anthropic Messages API
-GEMINI_CONFIG                    // Google Gemini API
-MISTRAL_CONFIG                   // Mistral La Plateforme API
+BEDROCK_CONVERSE_CONFIG; // AWS Bedrock Converse API
+BEDROCK_MANTLE_CONFIG; // AWS Bedrock Mantle (Anthropic Messages format)
+BEDROCK_OPENAI_CONFIG; // AWS Bedrock OpenAI-compatible endpoint
+OPENAI_CONFIG; // OpenAI Chat Completions API
+CLAUDE_CONFIG; // Anthropic Messages API
+GEMINI_CONFIG; // Google Gemini API
+MISTRAL_CONFIG; // Mistral La Plateforme API
 
 // Shared formatters (used internally by prebuilt configs, also available for custom configs)
-formatAnthropicTool              // Anthropic Messages format — { name, description, input_schema }
-formatOpenAiTool                 // OpenAI function format — { type: 'function', function: { name, description, parameters } }
+formatAnthropicTool; // Anthropic Messages format — { name, description, input_schema }
+formatOpenAiTool; // OpenAI function format — { type: 'function', function: { name, description, parameters } }
 
 // Types
-BedrockConverseToolDefinition    // { toolSpec: { name, description, inputSchema: { json } } }
-OpenAiToolDefinition             // { type: 'function', function: { name, description, parameters } }
-ClaudeToolDefinition             // { name, description, input_schema }
-GeminiToolDefinition             // { name, description, parameters }
+BedrockConverseToolDefinition; // { toolSpec: { name, description, inputSchema: { json } } }
+OpenAiToolDefinition; // { type: 'function', function: { name, description, parameters } }
+ClaudeToolDefinition; // { name, description, input_schema }
+GeminiToolDefinition; // { name, description, parameters }
 ```
 
 ## Related libraries
 
-| Library | Purpose |
-|---------|---------|
+| Library                                                                    | Purpose                                                                     |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | [`@onivoro/server-mcp`](https://www.npmjs.com/package/@onivoro/server-mcp) | Transport-agnostic MCP tool registry, decorators, HTTP and stdio transports |
