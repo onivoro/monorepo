@@ -1,0 +1,27 @@
+{
+  "name": "lib-server-agentic",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/agentic/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/agentic",
+        "main": "libs/server/agentic/src/index.ts",
+        "tsConfig": "libs/server/agentic/tsconfig.lib.json",
+        "assets": [
+          "libs/server/agentic/README.md",
+          "libs/server/agentic/LICENSE",
+          "libs/server/agentic/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

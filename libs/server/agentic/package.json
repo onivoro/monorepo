@@ -1,0 +1,42 @@
+{
+  "name": "@onivoro/server-agentic",
+  "version": "24.38.2",
+  "description": "Agentic chat run loop for NestJS: multi-step model turns, streaming part persistence, and tool execution with timeout and abort",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/agentic/README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "agentic",
+    "agent",
+    "ai",
+    "llm",
+    "chat",
+    "streaming",
+    "tool-use",
+    "nestjs",
+    "claude",
+    "anthropic",
+    "bedrock"
+  ],
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "@nestjs/swagger": "*",
+    "@onivoro/isomorphic-agentic": "^24.38.2"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}
