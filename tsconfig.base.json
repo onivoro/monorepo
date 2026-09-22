@@ -20,6 +20,7 @@
     "paths": {
       "@onivoro/browser-jsonrpc": ["libs/browser/jsonrpc/src/index.ts"],
       "@onivoro/browser-redux": ["libs/browser/redux/src/index.ts"],
+      "@onivoro/isomorphic-agentic": ["libs/isomorphic/agentic/src/index.ts"],
       "@onivoro/isomorphic-axios": ["libs/isomorphic/axios/src/index.ts"],
       "@onivoro/isomorphic-common": ["libs/isomorphic/common/src/index.ts"],
       "@onivoro/isomorphic-fhir": ["libs/isomorphic/fhir/src/index.ts"],

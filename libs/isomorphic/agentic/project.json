@@ -1,0 +1,27 @@
+{
+  "name": "lib-isomorphic-agentic",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/isomorphic/agentic/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/isomorphic/agentic",
+        "main": "libs/isomorphic/agentic/src/index.ts",
+        "tsConfig": "libs/isomorphic/agentic/tsconfig.lib.json",
+        "assets": [
+          "libs/isomorphic/agentic/README.md",
+          "libs/isomorphic/agentic/LICENSE",
+          "libs/isomorphic/agentic/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}
