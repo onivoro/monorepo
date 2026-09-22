@@ -1,0 +1,42 @@
+{
+  "name": "@onivoro/server-agentic-mcp",
+  "version": "24.38.2",
+  "description": "Exposes MCP tools to an agentic run loop, and consumes remote MCP servers as agentic tools",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/agentic-mcp/README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "agentic",
+    "agent",
+    "ai",
+    "llm",
+    "tool-use",
+    "nestjs"
+  ],
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "@onivoro/isomorphic-agentic": "^24.38.2",
+    "@onivoro/server-agentic": "^24.38.2",
+    "@onivoro/server-html": "^24.38.2",
+    "@onivoro/server-mcp": "^24.38.2",
+    "@onivoro/server-mcp-llm-adapter": "^24.38.2"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}

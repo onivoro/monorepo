@@ -1,0 +1,27 @@
+{
+  "name": "lib-server-agentic-mcp",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/agentic-mcp/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/agentic-mcp",
+        "main": "libs/server/agentic-mcp/src/index.ts",
+        "tsConfig": "libs/server/agentic-mcp/tsconfig.lib.json",
+        "assets": [
+          "libs/server/agentic-mcp/README.md",
+          "libs/server/agentic-mcp/LICENSE",
+          "libs/server/agentic-mcp/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}
