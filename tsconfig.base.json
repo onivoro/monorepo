@@ -19,6 +19,9 @@
     "baseUrl": ".",
     "paths": {
       "@onivoro/browser-agentic": ["libs/browser/agentic/src/index.ts"],
+      "@onivoro/browser-agentic-mui": [
+        "libs/browser/agentic-mui/src/index.ts"
+      ],
       "@onivoro/browser-jsonrpc": ["libs/browser/jsonrpc/src/index.ts"],
       "@onivoro/browser-redux": ["libs/browser/redux/src/index.ts"],
       "@onivoro/isomorphic-agentic": ["libs/isomorphic/agentic/src/index.ts"],

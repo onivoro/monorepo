@@ -1,0 +1,45 @@
+{
+  "name": "@onivoro/browser-agentic-mui",
+  "version": "24.38.2",
+  "description": "MUI chat components for @onivoro/browser-agentic: a conversation page, a streaming message surface, and a contextual resource drawer",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/browser/agentic-mui/README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "agentic",
+    "agent",
+    "ai",
+    "llm",
+    "chat",
+    "react",
+    "mui",
+    "material-ui",
+    "components"
+  ],
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@emotion/react": "^11.0.0",
+    "@emotion/styled": "^11.0.0",
+    "@mui/icons-material": "^6.0.0 || ^7.0.0",
+    "@mui/material": "^6.0.0 || ^7.0.0",
+    "@onivoro/browser-agentic": "^24.38.2",
+    "@onivoro/isomorphic-agentic": "^24.38.2",
+    "react": ">=18",
+    "react-markdown": ">=9",
+    "remark-gfm": ">=4"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}

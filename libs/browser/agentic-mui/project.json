@@ -1,0 +1,27 @@
+{
+  "name": "lib-browser-agentic-mui",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/browser/agentic-mui/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/browser/agentic-mui",
+        "main": "libs/browser/agentic-mui/src/index.ts",
+        "tsConfig": "libs/browser/agentic-mui/tsconfig.lib.json",
+        "assets": [
+          "libs/browser/agentic-mui/README.md",
+          "libs/browser/agentic-mui/LICENSE",
+          "libs/browser/agentic-mui/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}
