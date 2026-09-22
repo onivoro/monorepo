@@ -1,0 +1,38 @@
+{
+  "name": "@onivoro/browser-agentic",
+  "version": "24.38.2",
+  "description": "Headless browser client for @onivoro/server-agentic: fetch client, conversation state hook, and a transport-agnostic event stream seam",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/browser/agentic/README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "agentic",
+    "agent",
+    "ai",
+    "llm",
+    "chat",
+    "react",
+    "hooks",
+    "streaming",
+    "headless"
+  ],
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@onivoro/isomorphic-agentic": "^24.38.2",
+    "react": ">=18"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}

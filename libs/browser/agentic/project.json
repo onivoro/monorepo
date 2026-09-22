@@ -1,0 +1,27 @@
+{
+  "name": "lib-browser-agentic",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/browser/agentic/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/browser/agentic",
+        "main": "libs/browser/agentic/src/index.ts",
+        "tsConfig": "libs/browser/agentic/tsconfig.lib.json",
+        "assets": [
+          "libs/browser/agentic/README.md",
+          "libs/browser/agentic/LICENSE",
+          "libs/browser/agentic/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}
