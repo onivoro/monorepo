@@ -1,0 +1,34 @@
+{
+  "name": "@onivoro/server-mcp-audit",
+  "version": "24.38.2",
+  "description": "Audit interception for MCP tool calls: who called what, with which arguments, and how it ended",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-audit/README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "audit",
+    "observability",
+    "nestjs"
+  ],
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@onivoro/server-mcp": "^24.38.2"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}

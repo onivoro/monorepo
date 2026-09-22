@@ -1,0 +1,38 @@
+{
+  "name": "@onivoro/server-agentic-typeorm",
+  "version": "24.38.2",
+  "description": "TypeORM persistence for @onivoro/server-agentic: entities, repositories, and a migration factory that adapts to your tenancy model",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/agentic-typeorm/README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "agentic",
+    "agent",
+    "ai",
+    "llm",
+    "chat",
+    "typeorm",
+    "postgres",
+    "nestjs"
+  ],
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@onivoro/isomorphic-agentic": "^24.38.2",
+    "typeorm": "^0.3.0"
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md"
+  ]
+}

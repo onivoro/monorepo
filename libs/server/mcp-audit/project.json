@@ -1,0 +1,27 @@
+{
+  "name": "lib-server-mcp-audit",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/mcp-audit/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/mcp-audit",
+        "main": "libs/server/mcp-audit/src/index.ts",
+        "tsConfig": "libs/server/mcp-audit/tsconfig.lib.json",
+        "assets": [
+          "libs/server/mcp-audit/README.md",
+          "libs/server/mcp-audit/LICENSE",
+          "libs/server/mcp-audit/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

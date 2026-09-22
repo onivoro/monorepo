@@ -1,0 +1,27 @@
+{
+  "name": "lib-server-agentic-typeorm",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/agentic-typeorm/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/agentic-typeorm",
+        "main": "libs/server/agentic-typeorm/src/index.ts",
+        "tsConfig": "libs/server/agentic-typeorm/tsconfig.lib.json",
+        "assets": [
+          "libs/server/agentic-typeorm/README.md",
+          "libs/server/agentic-typeorm/LICENSE",
+          "libs/server/agentic-typeorm/package.json"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}
