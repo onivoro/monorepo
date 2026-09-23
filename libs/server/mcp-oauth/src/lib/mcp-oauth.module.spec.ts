@@ -1,7 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { Injectable, Module, RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA } from '@nestjs/common/constants';
-import { McpOAuthModule } from './mcp-oauth.module';
+import {
+  McpOAuthModule,
+  protectedResourceWildcardRoute,
+} from './mcp-oauth.module';
 import { MCP_OAUTH_CONFIG } from './mcp-oauth-config-token';
 import { MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth-server-provider-token';
 import { McpMemoryClientsStore } from './mcp-memory-clients-store';
@@ -213,3 +216,10 @@ function getControllerRequestMethods(controller: any): RequestMethod[] {
     .map((name) => Reflect.getMetadata(METHOD_METADATA, controller.prototype[name]))
     .filter((method) => typeof method === 'number');
 }
+
+describe('protectedResourceWildcardRoute', () => {
+  it('uses the form each Nest major accepts', () => {
+    expect(protectedResourceWildcardRoute('10.4.20')).toBe(':resourcePath(*)');
+    expect(protectedResourceWildcardRoute('11.2.1')).toBe('*resourcePath');
+  });
+});

@@ -72,6 +72,24 @@ function createWellKnownOAuthController() {
   return DynamicWellKnownOAuthController;
 }
 
+/**
+ * The wildcard route for path-suffixed protected resource metadata
+ * (`/.well-known/oauth-protected-resource/<resource path>`, RFC 9728 §3.1).
+ *
+ * Nest 11 moved to path-to-regexp v8, which rejects the `:param(*)` form Nest 10
+ * requires and requires the `*param` form Nest 10 misreads. No single string
+ * works on both, so the syntax follows the Nest that is actually installed.
+ */
+export function protectedResourceWildcardRoute(nestVersion: string): string {
+  const major = Number.parseInt(nestVersion, 10);
+  return major >= 11 ? '*resourcePath' : ':resourcePath(*)';
+}
+
+const PROTECTED_RESOURCE_WILDCARD = protectedResourceWildcardRoute(
+  // Read at load, before any route below is declared.
+  require('@nestjs/core/package.json').version,
+);
+
 function createProtectedResourceController() {
   @Controller('.well-known/oauth-protected-resource')
   class DynamicProtectedResourceController {
@@ -87,12 +105,12 @@ function createProtectedResourceController() {
       await this.dispatch(req, res);
     }
 
-    @Get(':resourcePath(*)')
+    @Get(PROTECTED_RESOURCE_WILDCARD)
     async handlePathProtectedResourceGet(@Req() req: Request, @Res() res: Response) {
       await this.dispatch(req, res);
     }
 
-    @Options(':resourcePath(*)')
+    @Options(PROTECTED_RESOURCE_WILDCARD)
     async handlePathProtectedResourceOptions(@Req() req: Request, @Res() res: Response) {
       await this.dispatch(req, res);
     }
