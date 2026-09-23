@@ -1,6 +1,6 @@
 import { AGENTIC_TOOL_PROVIDER } from '@onivoro/server-agentic';
 import { DynamicModule, Module } from '@nestjs/common';
-import { McpToolRegistry } from '@onivoro/server-mcp';
+import { McpRegistryModule, McpToolRegistry } from '@onivoro/server-mcp';
 import {
   LLM_ADAPTER_CONFIG,
   McpLlmToolAdapter,
@@ -14,9 +14,23 @@ import { McpRegistryAgenticToolProvider } from './mcp-registry-agentic-tool-prov
 
 @Module({})
 export class AgenticMcpModule {
-  static configure(config: AgenticMcpConfig = {}): DynamicModule {
+  /**
+   * `imports` supplies `McpToolRegistry`, and defaults to this package owning
+   * one.
+   *
+   * It is a parameter rather than a fixed import because the registry is not
+   * global: a host that also serves MCP over HTTP already has one, and letting
+   * this module create a second would split the catalogue silently — tools
+   * registered once would appear to only one of the two consumers. Such a host
+   * passes the module that exports its registry instead.
+   */
+  static configure(
+    config: AgenticMcpConfig = {},
+    imports: DynamicModule['imports'] = [McpRegistryModule.registerOnly()],
+  ): DynamicModule {
     return {
       module: AgenticMcpModule,
+      imports,
       providers: [
         { provide: AGENTIC_MCP_CONFIG, useValue: config },
         {
