@@ -1,13 +1,11 @@
-import { Psychology } from '@mui/icons-material';
-import {
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  Drawer,
-  Stack,
-  Typography,
-} from '@mui/material';
+import Psychology from '@mui/icons-material/Psychology';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
+import CircularProgress from '@mui/material/CircularProgress';
+import Drawer from '@mui/material/Drawer';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AgenticConversation,

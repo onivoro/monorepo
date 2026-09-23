@@ -8,55 +8,51 @@ import type {
 } from '@onivoro/isomorphic-agentic';
 import { renderAgenticPrompt } from '@onivoro/isomorphic-agentic';
 import { extractAgenticPromptParameters } from '@onivoro/isomorphic-agentic';
-import {
-  AddOutlined,
-  ArrowBackOutlined,
-  BuildOutlined,
-  CheckCircleOutline,
-  ClearOutlined,
-  CloseOutlined,
-  DeleteOutline,
-  EditOutlined,
-  ContentCopyOutlined,
-  ErrorOutline,
-  ExpandMoreOutlined,
-  LibraryBooksOutlined,
-  Psychology,
-  PsychologyOutlined,
-  SearchOutlined,
-  SendOutlined,
-} from '@mui/icons-material';
-import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
-  Alert,
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  Collapse,
-  Divider,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
-  InputAdornment,
-  List,
-  ListItem,
-  ListItemText,
-  LinearProgress,
-  Paper,
-  Skeleton,
-  Snackbar,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-  useMediaQuery,
-  useTheme,
-} from '@mui/material';
+import AddOutlined from '@mui/icons-material/AddOutlined';
+import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
+import BuildOutlined from '@mui/icons-material/BuildOutlined';
+import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline';
+import ClearOutlined from '@mui/icons-material/ClearOutlined';
+import CloseOutlined from '@mui/icons-material/CloseOutlined';
+import DeleteOutline from '@mui/icons-material/DeleteOutline';
+import EditOutlined from '@mui/icons-material/EditOutlined';
+import ContentCopyOutlined from '@mui/icons-material/ContentCopyOutlined';
+import ErrorOutline from '@mui/icons-material/ErrorOutline';
+import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined';
+import LibraryBooksOutlined from '@mui/icons-material/LibraryBooksOutlined';
+import Psychology from '@mui/icons-material/Psychology';
+import PsychologyOutlined from '@mui/icons-material/PsychologyOutlined';
+import SearchOutlined from '@mui/icons-material/SearchOutlined';
+import SendOutlined from '@mui/icons-material/SendOutlined';
+import Accordion from '@mui/material/Accordion';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
+import CircularProgress from '@mui/material/CircularProgress';
+import Collapse from '@mui/material/Collapse';
+import Divider from '@mui/material/Divider';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemText from '@mui/material/ListItemText';
+import LinearProgress from '@mui/material/LinearProgress';
+import Paper from '@mui/material/Paper';
+import Skeleton from '@mui/material/Skeleton';
+import Snackbar from '@mui/material/Snackbar';
+import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import {
   FC,
   FormEvent,
