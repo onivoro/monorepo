@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/browser-agentic",
-  "version": "24.38.2",
+  "version": "24.39.0",
   "description": "Headless browser client for @onivoro/server-agentic: fetch client, conversation state hook, and a transport-agnostic event stream seam",
   "license": "MIT",
   "type": "commonjs",
@@ -26,7 +26,7 @@
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
-    "@onivoro/isomorphic-agentic": "^24.38.2",
+    "@onivoro/isomorphic-agentic": "^24.39.0",
     "react": ">=18"
   },
   "files": [

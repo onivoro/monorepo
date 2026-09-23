@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-aws-observability",
-  "version": "24.38.2",
+  "version": "24.39.0",
   "description": "AWS X-Ray tracing and CloudWatch EMF metrics helpers for NestJS services.",
   "license": "MIT",
   "type": "commonjs",

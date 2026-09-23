@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-agentic-typeorm",
-  "version": "24.38.2",
+  "version": "24.39.0",
   "description": "TypeORM persistence for @onivoro/server-agentic: entities, repositories, and a migration factory that adapts to your tenancy model",
   "license": "MIT",
   "type": "commonjs",
@@ -26,7 +26,7 @@
   },
   "peerDependencies": {
     "@nestjs/common": "^10.0.0 || ^11.0.0",
-    "@onivoro/isomorphic-agentic": "^24.38.2",
+    "@onivoro/isomorphic-agentic": "^24.39.0",
     "typeorm": "^0.3.0"
   },
   "files": [

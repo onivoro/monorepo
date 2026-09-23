@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-agentic-bedrock",
-  "version": "24.38.2",
+  "version": "24.39.0",
   "description": "AWS Bedrock streaming model provider for @onivoro/server-agentic, with pluggable per-model wire protocols",
   "license": "MIT",
   "type": "commonjs",
@@ -31,8 +31,8 @@
     "@aws-sdk/client-bedrock-runtime": "^3.0.0",
     "@nestjs/common": "^10.0.0 || ^11.0.0",
     "@nestjs/core": "^10.0.0 || ^11.0.0",
-    "@onivoro/isomorphic-agentic": "^24.38.2",
-    "@onivoro/server-agentic": "^24.38.2"
+    "@onivoro/isomorphic-agentic": "^24.39.0",
+    "@onivoro/server-agentic": "^24.39.0"
   },
   "files": [
     "**/*.js",

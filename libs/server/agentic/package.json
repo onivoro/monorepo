@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-agentic",
-  "version": "24.38.2",
+  "version": "24.39.0",
   "description": "Agentic chat run loop for NestJS: multi-step model turns, streaming part persistence, and tool execution with timeout and abort",
   "license": "MIT",
   "type": "commonjs",
@@ -31,7 +31,7 @@
     "@nestjs/common": "^10.0.0 || ^11.0.0",
     "@nestjs/core": "^10.0.0 || ^11.0.0",
     "@nestjs/swagger": "*",
-    "@onivoro/isomorphic-agentic": "^24.38.2"
+    "@onivoro/isomorphic-agentic": "^24.39.0"
   },
   "files": [
     "**/*.js",
