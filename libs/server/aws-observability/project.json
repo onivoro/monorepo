@@ -1,0 +1,28 @@
+{
+  "name": "lib-server-aws-observability",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/aws-observability/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/server/aws-observability",
+        "main": "libs/server/aws-observability/src/index.ts",
+        "tsConfig": "libs/server/aws-observability/tsconfig.lib.json",
+        "assets": [
+          "libs/server/aws-observability/README.md",
+          "libs/server/aws-observability/LICENSE",
+          "libs/server/aws-observability/package.json",
+          "libs/server/aws-observability/examples/**/*"
+        ],
+        "updateBuildableProjectPackageJsonDependencies": true
+      }
+    },
+    "nx-release-publish": {
+      "executor": "@nx/js:release-publish"
+    }
+  },
+  "tags": []
+}

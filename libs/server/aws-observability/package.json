@@ -1,0 +1,57 @@
+{
+  "name": "@onivoro/server-aws-observability",
+  "version": "24.38.2",
+  "description": "AWS X-Ray tracing and CloudWatch EMF metrics helpers for NestJS services.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./bootstrap": {
+      "types": "./src/bootstrap.d.ts",
+      "default": "./src/bootstrap.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onivoro/monorepo.git"
+  },
+  "keywords": [
+    "aws",
+    "cloudwatch",
+    "embedded-metrics",
+    "nestjs",
+    "observability",
+    "x-ray",
+    "xray"
+  ],
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "*",
+    "@nestjs/core": "*",
+    "aws-embedded-metrics": "*",
+    "aws-sdk": "*",
+    "aws-xray-sdk-core": "*",
+    "aws-xray-sdk-express": "*",
+    "express": "*",
+    "rxjs": "*"
+  },
+  "peerDependenciesMeta": {
+    "aws-sdk": {
+      "optional": true
+    }
+  },
+  "files": [
+    "**/*.js",
+    "**/*.d.ts",
+    "**/*.js.map",
+    "README.md",
+    "examples"
+  ]
+}

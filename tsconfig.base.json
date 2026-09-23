@@ -19,9 +19,7 @@
     "baseUrl": ".",
     "paths": {
       "@onivoro/browser-agentic": ["libs/browser/agentic/src/index.ts"],
-      "@onivoro/browser-agentic-mui": [
-        "libs/browser/agentic-mui/src/index.ts"
-      ],
+      "@onivoro/browser-agentic-mui": ["libs/browser/agentic-mui/src/index.ts"],
       "@onivoro/browser-jsonrpc": ["libs/browser/jsonrpc/src/index.ts"],
       "@onivoro/browser-redux": ["libs/browser/redux/src/index.ts"],
       "@onivoro/isomorphic-agentic": ["libs/isomorphic/agentic/src/index.ts"],
@@ -49,6 +47,12 @@
       "@onivoro/server-aws-ecs": ["libs/server/aws-ecs/src/index.ts"],
       "@onivoro/server-aws-iam": ["libs/server/aws-iam/src/index.ts"],
       "@onivoro/server-aws-kinesis": ["libs/server/aws-kinesis/src/index.ts"],
+      "@onivoro/server-aws-observability": [
+        "libs/server/aws-observability/src/index.ts"
+      ],
+      "@onivoro/server-aws-observability/bootstrap": [
+        "libs/server/aws-observability/src/bootstrap.ts"
+      ],
       "@onivoro/server-aws-redshift": ["libs/server/aws-redshift/src/index.ts"],
       "@onivoro/server-aws-s3": ["libs/server/aws-s3/src/index.ts"],
       "@onivoro/server-aws-sns": ["libs/server/aws-sns/src/index.ts"],
