@@ -5,6 +5,7 @@ export * from './lib/entities/agentic-prompt.entity';
 export * from './lib/entities/agentic-run.entity';
 export * from './lib/entities/agentic-entities.constant';
 export * from './lib/repositories/agentic-conversation.repository';
+export * from './lib/repositories/agentic-mappers';
 export * from './lib/repositories/agentic-message.repository';
 export * from './lib/repositories/agentic-prompt.repository';
 export * from './lib/repositories/agentic-repositories.constant';
