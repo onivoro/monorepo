@@ -618,3 +618,614 @@ function message(
     ...input,
   };
 }
+
+describe(`${AgenticChatService.name} streaming and lifecycle`, () => {
+  function modelOf(
+    ...steps: Array<unknown[] | (() => never)>
+  ): AgenticModelProvider & { requests: unknown[] } {
+    const requests: unknown[] = [];
+    let step = 0;
+    return {
+      provider: 'test',
+      model: 'test-model',
+      requests,
+      async *stream(request) {
+        requests.push(request);
+        const current = steps[Math.min(step++, steps.length - 1)];
+        if (typeof current === 'function') current();
+        for (const event of current as never[]) yield event;
+      },
+    };
+  }
+
+  function toolProviderOf(
+    executeTool: AgenticToolProvider['executeTool'],
+  ): AgenticToolProvider {
+    return {
+      async listTools() {
+        return [{ name: 'lookup', inputSchema: { type: 'object' } }];
+      },
+      executeTool: jest.fn(executeTool),
+    };
+  }
+
+  const toolCallStep = (input: unknown = {}) => [
+    { type: 'tool-call', id: 'call-1', name: 'lookup', input },
+    { type: 'finish', reason: 'tool-calls' },
+  ];
+  const textStep = [
+    { type: 'text-delta', id: 'text-0', text: 'done' },
+    { type: 'text-end', id: 'text-0' },
+    { type: 'finish', reason: 'stop' },
+  ];
+
+  async function toolResultFor(
+    toolProvider: AgenticToolProvider | undefined,
+    config = {},
+    input: Partial<Parameters<AgenticChatService['sendUserMessage']>[0]> = {},
+    toolInput: unknown = {},
+  ) {
+    const messages = new InMemoryMessageRepository();
+    const service = new AgenticChatService(
+      { messages },
+      modelOf(toolCallStep(toolInput), textStep),
+      toolProvider,
+      undefined,
+      deterministicIds(),
+      config,
+    );
+    await service.sendUserMessage({
+      conversationId: 'conversation-1',
+      text: 'go',
+      ...input,
+    });
+    return (await messages.listByConversationId('conversation-1')).find(
+      (item) => item.role === 'tool',
+    )?.parts[0];
+  }
+
+  it('streams text and reasoning parts, records usage and completes the run', async () => {
+    const messages = new InMemoryMessageRepository();
+    const runs = {
+      create: jest.fn(async (run) => ({ ...run, metadata: { created: true } })),
+      update: jest.fn(async (run) => run),
+      get: jest.fn(),
+    };
+    const usage = {
+      recordMessageUsage: jest.fn(async () => undefined),
+      recordRunUsage: jest.fn(async () => undefined),
+    };
+    const events: AgenticEvent[] = [];
+    const model = modelOf([
+      { type: 'reasoning-start', id: 'r-0' },
+      { type: 'reasoning-delta', id: 'r-0', text: 'think' },
+      { type: 'reasoning-delta', id: 'r-0', text: 'ing' },
+      { type: 'reasoning-end', id: 'r-0' },
+      { type: 'text-start', id: 't-0' },
+      { type: 'text-delta', id: 't-0', text: 'Hi' },
+      { type: 'text-end', id: 't-0' },
+      { type: 'text-end', id: 'missing-part' },
+      { type: 'step-finish', reason: 'stop', usage: { inputTokens: 2 } },
+      {
+        type: 'finish',
+        reason: 'stop',
+        usage: { inputTokens: 3, outputTokens: 4 },
+      },
+    ]);
+    const service = new AgenticChatService(
+      { messages, runs, usage },
+      model,
+      undefined,
+      { publish: async (event) => void events.push(event) },
+      deterministicIds(),
+      { defaultSystemPrompt: 'be nice' },
+    );
+
+    const run = await service.sendUserMessage({
+      conversationId: 'conversation-1',
+      text: 'hi',
+      userId: 'user-1',
+      metadata: { tenant: 'a' },
+    });
+
+    expect(model.requests[0]).toMatchObject({
+      system: 'be nice',
+      tools: [],
+      stepIndex: 0,
+      metadata: { tenant: 'a' },
+    });
+    expect(run).toMatchObject({
+      status: 'complete',
+      metadata: { created: true },
+      usage: { inputTokens: 5, outputTokens: 4 },
+    });
+    expect(runs.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'complete' }),
+    );
+    expect(usage.recordMessageUsage).toHaveBeenCalledWith(
+      'msg-2',
+      expect.objectContaining({ inputTokens: 5, outputTokens: 4 }),
+    );
+    expect(usage.recordRunUsage).toHaveBeenCalledWith(
+      'run-0',
+      expect.objectContaining({ inputTokens: 5, outputTokens: 4 }),
+    );
+    const assistant = (
+      await messages.listByConversationId('conversation-1')
+    ).find((item) => item.role === 'assistant');
+    expect(assistant).toMatchObject({
+      status: 'complete',
+      model: 'test-model',
+      provider: 'test',
+    });
+    expect(assistant?.parts).toMatchObject([
+      { id: 'r-0', type: 'reasoning', text: 'thinking', status: 'complete' },
+      { id: 't-0', type: 'text', text: 'Hi', status: 'complete' },
+    ]);
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        'message.upsert',
+        'run.upsert',
+        'message.part.upsert',
+        'message.part.delta',
+      ]),
+    );
+    expect(events.filter((event) => event.type === 'run.upsert')).toHaveLength(
+      2,
+    );
+  });
+
+  it('records empty usage when the model reports none', async () => {
+    const usage = {
+      recordMessageUsage: jest.fn(async () => undefined),
+      recordRunUsage: jest.fn(async () => undefined),
+    };
+    const service = new AgenticChatService(
+      { messages: new InMemoryMessageRepository(), usage },
+      modelOf([{ type: 'finish', reason: 'stop' }]),
+      undefined,
+      undefined,
+      deterministicIds(),
+      undefined,
+    );
+
+    await service.sendUserMessage({ conversationId: 'c', text: 'hi' });
+
+    expect(usage.recordMessageUsage).toHaveBeenCalledWith('msg-2', {});
+    expect(usage.recordRunUsage).toHaveBeenCalledWith('run-0', {});
+  });
+
+  it('prefers the explicit system prompt and model over the defaults', async () => {
+    const model = modelOf([{ type: 'finish', reason: 'stop' }]);
+    const service = new AgenticChatService(
+      { messages: new InMemoryMessageRepository() },
+      model,
+      undefined,
+      undefined,
+      deterministicIds(),
+      { defaultSystemPrompt: 'default' },
+    );
+
+    const run = await service.sendUserMessage({
+      conversationId: 'c',
+      text: 'hi',
+      system: 'explicit',
+      model: 'other-model',
+      temperature: 0.2,
+      maxTokens: 10,
+    });
+
+    expect(model.requests[0]).toMatchObject({
+      system: 'explicit',
+      model: 'other-model',
+      temperature: 0.2,
+      maxTokens: 10,
+    });
+    expect(run.model).toBe('other-model');
+  });
+
+  it('falls back to timestamp ids when no id generator is provided', async () => {
+    const service = new AgenticChatService(
+      { messages: new InMemoryMessageRepository() },
+      modelOf([{ type: 'finish', reason: 'stop' }]),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    const run = await service.sendUserMessage({
+      conversationId: 'c',
+      text: 'hi',
+    });
+
+    expect(run.id).toMatch(/^run_\d+$/);
+    expect(run.userMessageId).toMatch(/^msg_\d+$/);
+  });
+
+  it('marks the assistant message and run as aborted when the model finishes with abort', async () => {
+    const messages = new InMemoryMessageRepository();
+    const service = new AgenticChatService(
+      { messages },
+      modelOf([{ type: 'finish', reason: 'abort' }]),
+      undefined,
+      undefined,
+      deterministicIds(),
+      {},
+    );
+
+    const run = await service.sendUserMessage({
+      conversationId: 'c',
+      text: 'hi',
+    });
+
+    expect(run.status).toBe('aborted');
+    expect(
+      (await messages.listByConversationId('c')).find(
+        (item) => item.role === 'assistant',
+      )?.status,
+    ).toBe('aborted');
+  });
+
+  it('publishes provider errors, records an error part and rethrows', async () => {
+    const messages = new InMemoryMessageRepository();
+    const runs = {
+      create: jest.fn(async (run) => run),
+      update: jest.fn(async (run) => run),
+      get: jest.fn(),
+    };
+    const events: AgenticEvent[] = [];
+    const service = new AgenticChatService(
+      { messages, runs },
+      modelOf([
+        { type: 'text-delta', id: 't-0', text: 'partial' },
+        { type: 'provider-error', message: 'throttled', retryable: true },
+      ]),
+      undefined,
+      { publish: async (event) => void events.push(event) },
+      deterministicIds(),
+      {},
+    );
+
+    await expect(
+      service.sendUserMessage({ conversationId: 'c', text: 'hi' }),
+    ).rejects.toThrow('throttled');
+
+    const runErrors = events.filter((event) => event.type === 'run.error');
+    expect(runErrors).toEqual([
+      expect.objectContaining({ message: 'throttled', retryable: true }),
+      expect.objectContaining({ message: 'throttled', retryable: true }),
+    ]);
+    expect(runs.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'error', errorMessage: 'throttled' }),
+    );
+    const assistant = (await messages.listByConversationId('c')).find(
+      (item) => item.role === 'assistant',
+    );
+    expect(assistant?.status).toBe('error');
+    expect(assistant?.parts).toMatchObject([
+      { type: 'text', text: 'partial' },
+      { type: 'error', message: 'throttled', status: 'error' },
+    ]);
+  });
+
+  it('stringifies non-Error failures from the model stream', async () => {
+    const service = new AgenticChatService(
+      { messages: new InMemoryMessageRepository() },
+      modelOf(() => {
+        throw 'plain failure';
+      }),
+      undefined,
+      undefined,
+      deterministicIds(),
+      {},
+    );
+
+    await expect(
+      service.sendUserMessage({ conversationId: 'c', text: 'hi' }),
+    ).rejects.toBe('plain failure');
+  });
+
+  it.each([
+    ['name', Object.assign(new Error('stop'), { name: 'AbortError' })],
+    ['message', new Error('AbortError')],
+    ['node message', new Error('The operation was aborted')],
+  ])(
+    'resolves an aborted run instead of throwing (abort detected by %s)',
+    async (_label, error) => {
+      const messages = new InMemoryMessageRepository();
+      const events: AgenticEvent[] = [];
+      const service = new AgenticChatService(
+        { messages },
+        modelOf(() => {
+          throw error;
+        }),
+        undefined,
+        { publish: async (event) => void events.push(event) },
+        deterministicIds(),
+        {},
+      );
+
+      const run = await service.sendUserMessage({
+        conversationId: 'c',
+        text: 'hi',
+      });
+
+      expect(run).toMatchObject({
+        status: 'aborted',
+        errorMessage: error.message,
+      });
+      expect(events.find((event) => event.type === 'run.error')).toMatchObject({
+        retryable: false,
+      });
+      expect(
+        (await messages.listByConversationId('c')).find(
+          (item) => item.role === 'assistant',
+        )?.parts,
+      ).toMatchObject([{ type: 'error', status: 'aborted' }]);
+    },
+  );
+
+  it('streams tool input deltas into the tool-call part before executing it', async () => {
+    const messages = new InMemoryMessageRepository();
+    const toolProvider = toolProviderOf(async (call) => ({
+      toolCallId: call.id,
+      name: call.name,
+      result: { ok: true },
+    }));
+    const service = new AgenticChatService(
+      { messages },
+      modelOf(
+        [
+          { type: 'tool-input-delta', id: 'call-1', name: 'lookup', text: '{' },
+          { type: 'tool-input-delta', id: 'call-1', name: 'lookup', text: '}' },
+          { type: 'tool-input-end', id: 'call-1', name: 'lookup' },
+          { type: 'tool-call', id: 'call-1', name: 'lookup', input: {} },
+          { type: 'finish', reason: 'tool-calls' },
+        ],
+        textStep,
+      ),
+      toolProvider,
+      undefined,
+      deterministicIds(),
+      {},
+    );
+
+    await service.sendUserMessage({
+      conversationId: 'c',
+      text: 'go',
+      userId: 'u',
+      sessionId: 's',
+      authInfo: { token: 't' },
+    });
+
+    expect(toolProvider.executeTool).toHaveBeenCalledWith(
+      { id: 'call-1', name: 'lookup', input: {}, providerMetadata: undefined },
+      expect.objectContaining({
+        conversationId: 'c',
+        userId: 'u',
+        sessionId: 's',
+        authInfo: { token: 't' },
+        signal: expect.any(Object),
+      }),
+    );
+    const persisted = await messages.listByConversationId('c');
+    expect(
+      persisted
+        .find((item) => item.role === 'assistant')
+        ?.parts.find((part) => part.type === 'tool-call'),
+    ).toMatchObject({ inputText: '{}', status: 'complete' });
+    expect(
+      persisted.find((item) => item.role === 'tool')?.parts[0],
+    ).toMatchObject({
+      resultText: JSON.stringify({ ok: true }, null, 2),
+      status: 'complete',
+    });
+  });
+
+  it('reports a missing tool provider as a tool error', async () => {
+    await expect(toolResultFor(undefined)).resolves.toMatchObject({
+      isError: true,
+      result: 'Tool provider is not configured for lookup',
+    });
+  });
+
+  it('turns thrown tool errors into tool error results', async () => {
+    await expect(
+      toolResultFor(
+        toolProviderOf(async () => {
+          throw new Error('boom');
+        }),
+      ),
+    ).resolves.toMatchObject({ isError: true, result: 'boom' });
+
+    await expect(
+      toolResultFor(
+        toolProviderOf(async () => {
+          throw 'string failure';
+        }),
+      ),
+    ).resolves.toMatchObject({ isError: true, result: 'string failure' });
+  });
+
+  it('executes tools whose input is not a plain object', async () => {
+    const provider = toolProviderOf(async (call) => ({
+      toolCallId: call.id,
+      name: call.name,
+      result: 'ok',
+    }));
+    await toolResultFor(provider, {}, {}, ['a']);
+    await toolResultFor(provider, {}, {}, null);
+    expect(provider.executeTool).toHaveBeenCalledTimes(2);
+  });
+
+  it('prefers provider resultText and truncates long tool results', async () => {
+    await expect(
+      toolResultFor(
+        toolProviderOf(async (call) => ({
+          toolCallId: call.id,
+          name: call.name,
+          result: 'ignored',
+          resultText: 'abcdefghij',
+        })),
+        { maxToolResultTextLength: 4 },
+      ),
+    ).resolves.toMatchObject({ resultText: 'abcd\n... [truncated]' });
+  });
+
+  it('falls back to String() for results that cannot be serialized', async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    await expect(
+      toolResultFor(
+        toolProviderOf(async (call) => ({
+          toolCallId: call.id,
+          name: call.name,
+          result: circular,
+        })),
+      ),
+    ).resolves.toMatchObject({ resultText: '[object Object]' });
+  });
+
+  it('runs tools without a timer when the timeout is disabled', async () => {
+    await expect(
+      toolResultFor(
+        toolProviderOf(async (call) => ({
+          toolCallId: call.id,
+          name: call.name,
+          result: 'slow but fine',
+        })),
+        { toolExecutionTimeoutMs: 0 },
+      ),
+    ).resolves.toMatchObject({ resultText: 'slow but fine' });
+  });
+
+  it('aborts tool execution immediately when the request signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort('user cancelled');
+    const provider = toolProviderOf(() => new Promise(() => undefined));
+
+    await expect(
+      toolResultFor(provider, {}, { signal: controller.signal }),
+    ).resolves.toMatchObject({ isError: true, result: 'user cancelled' });
+  });
+
+  it('aborts in-flight tool execution when the request signal aborts', async () => {
+    const controller = new AbortController();
+    const reason = new Error('cancelled mid-flight');
+    const provider = toolProviderOf((_call, context) => {
+      setTimeout(() => controller.abort(reason), 0);
+      return new Promise((_resolve, reject) => {
+        context.signal?.addEventListener('abort', () =>
+          reject(new Error('should lose the race')),
+        );
+      });
+    });
+
+    await expect(
+      toolResultFor(provider, {}, { signal: controller.signal }),
+    ).resolves.toMatchObject({ isError: true, result: 'cancelled mid-flight' });
+  });
+
+  it('keeps partially stale tool messages and strips stale tool calls from other runs', async () => {
+    const messages = new InMemoryMessageRepository([
+      message({
+        id: 'assistant-no-run',
+        role: 'assistant',
+        parts: [
+          {
+            id: 'p-call',
+            type: 'tool-call',
+            toolCallId: 'bad-call',
+            name: 'x',
+            input: {},
+          },
+          { id: 'p-text', type: 'text', text: 'kept text' },
+        ],
+      }),
+      message({
+        id: 'assistant-only-call',
+        role: 'assistant',
+        parts: [
+          {
+            id: 'p-call-2',
+            type: 'tool-call',
+            toolCallId: 'bad-call',
+            name: 'x',
+            input: {},
+          },
+        ],
+      }),
+      message({
+        id: 'tool-mixed',
+        role: 'tool',
+        parts: [
+          {
+            id: 'p-bad',
+            type: 'tool-result',
+            toolCallId: 'bad-call',
+            name: 'x',
+            result: 'fail',
+            isError: true,
+          },
+          {
+            id: 'p-good',
+            type: 'tool-result',
+            toolCallId: 'good-call',
+            name: 'x',
+            result: 'ok',
+          },
+        ],
+      }),
+      message({
+        id: 'tool-good',
+        role: 'tool',
+        parts: [
+          {
+            id: 'p-good-2',
+            type: 'tool-result',
+            toolCallId: 'good-call-2',
+            name: 'x',
+            result: 'ok',
+          },
+        ],
+      }),
+      message({
+        id: 'assistant-clean',
+        role: 'assistant',
+        parts: [{ id: 'p-clean', type: 'text', text: 'clean' }],
+      }),
+      message({
+        id: 'system-message',
+        role: 'system',
+        parts: [{ id: 'p-sys', type: 'text', text: 'sys' }],
+      }),
+    ]);
+    const model = modelOf([{ type: 'finish', reason: 'stop' }]);
+    const service = new AgenticChatService(
+      { messages },
+      model,
+      undefined,
+      undefined,
+      deterministicIds(),
+      {},
+    );
+
+    await service.sendUserMessage({
+      conversationId: 'conversation-1',
+      text: 'x',
+    });
+
+    const sent = (model.requests[0] as { messages: AgenticMessage[] }).messages;
+    expect(sent.map((item) => item.id)).toEqual([
+      'assistant-no-run',
+      'tool-mixed',
+      'tool-good',
+      'assistant-clean',
+      'system-message',
+      'msg-1',
+    ]);
+    expect(sent[0].parts.map((part) => part.id)).toEqual(['p-text']);
+    expect(sent[1].parts.map((part) => part.id)).toEqual(['p-good']);
+  });
+});

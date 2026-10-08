@@ -5,7 +5,7 @@ AWS SNS integration for NestJS applications.
 ## Installation
 
 ```bash
-npm install @onivoro/server-aws-sns
+npm install @onivoro/server-aws-sns @aws-sdk/client-sns
 ```
 
 ## Overview
@@ -20,22 +20,29 @@ import { ServerAwsSnsModule } from '@onivoro/server-aws-sns';
 
 @Module({
   imports: [
-    ServerAwsSnsModule.configure()
-  ]
+    ServerAwsSnsModule.configure({
+      AWS_REGION: process.env.AWS_REGION!,
+      AWS_PROFILE: process.env.AWS_PROFILE, // optional
+    }),
+  ],
 })
 export class AppModule {}
 ```
 
 ## Configuration
 
-The module uses environment-based configuration:
+`configure()` takes the config object directly; the module does not read environment variables itself.
 
 ```typescript
 export class ServerAwsSnsConfig {
+  AWS_PROFILE?: string;
   AWS_REGION: string;
-  AWS_PROFILE?: string;  // Optional AWS profile
 }
 ```
+
+Credentials come from [`@onivoro/server-aws-credential-providers`](../aws-credential-providers/): when `AWS_PROFILE` is set the named profile is used, otherwise the AWS SDK default credential chain applies.
+
+The module provides and exports an `SNSClient` (configured with `AWS_REGION`) and `ServerAwsSnsConfig`.
 
 ## Usage
 
@@ -54,9 +61,9 @@ export class NotificationService {
     const command = new PublishCommand({
       TopicArn: topicArn,
       Message: message,
-      Subject: subject
+      Subject: subject,
     });
-    
+
     return await this.snsClient.send(command);
   }
 
@@ -64,18 +71,18 @@ export class NotificationService {
   async sendSMS(phoneNumber: string, message: string) {
     const command = new PublishCommand({
       PhoneNumber: phoneNumber,
-      Message: message
+      Message: message,
     });
-    
+
     return await this.snsClient.send(command);
   }
 
   // Create topic
   async createTopic(topicName: string) {
     const command = new CreateTopicCommand({
-      Name: topicName
+      Name: topicName,
     });
-    
+
     const response = await this.snsClient.send(command);
     return response.TopicArn;
   }
@@ -85,109 +92,10 @@ export class NotificationService {
     const command = new SubscribeCommand({
       TopicArn: topicArn,
       Protocol: 'email',
-      Endpoint: email
+      Endpoint: email,
     });
-    
+
     return await this.snsClient.send(command);
-  }
-}
-```
-
-## Complete Example
-
-```typescript
-import { Module, Injectable, Controller, Post, Body } from '@nestjs/common';
-import { ServerAwsSnsModule } from '@onivoro/server-aws-sns';
-import { 
-  SNSClient, 
-  PublishCommand, 
-  CreateTopicCommand, 
-  ListTopicsCommand,
-  DeleteTopicCommand 
-} from '@aws-sdk/client-sns';
-
-@Module({
-  imports: [ServerAwsSnsModule.configure()],
-  controllers: [NotificationController],
-  providers: [NotificationService]
-})
-export class NotificationModule {}
-
-@Injectable()
-export class NotificationService {
-  constructor(private readonly snsClient: SNSClient) {}
-
-  async sendNotification(type: string, message: string, recipients: string[]) {
-    const topicName = `notifications-${type}`;
-    
-    // Create or get topic
-    const createCommand = new CreateTopicCommand({ Name: topicName });
-    const { TopicArn } = await this.snsClient.send(createCommand);
-
-    // Publish message
-    const publishCommand = new PublishCommand({
-      TopicArn,
-      Message: JSON.stringify({
-        default: message,
-        email: message,
-        sms: message.substring(0, 140) // SMS has character limit
-      }),
-      MessageStructure: 'json',
-      Subject: `${type} Notification`
-    });
-
-    return await this.snsClient.send(publishCommand);
-  }
-
-  async sendBulkSMS(phoneNumbers: string[], message: string) {
-    const results = await Promise.allSettled(
-      phoneNumbers.map(phone => 
-        this.snsClient.send(new PublishCommand({
-          PhoneNumber: phone,
-          Message: message
-        }))
-      )
-    );
-
-    return {
-      successful: results.filter(r => r.status === 'fulfilled').length,
-      failed: results.filter(r => r.status === 'rejected').length
-    };
-  }
-
-  async listTopics() {
-    const command = new ListTopicsCommand({});
-    const response = await this.snsClient.send(command);
-    return response.Topics;
-  }
-}
-
-@Controller('notifications')
-export class NotificationController {
-  constructor(private readonly notificationService: NotificationService) {}
-
-  @Post('send')
-  async sendNotification(@Body() body: {
-    type: string;
-    message: string;
-    recipients: string[];
-  }) {
-    return await this.notificationService.sendNotification(
-      body.type,
-      body.message,
-      body.recipients
-    );
-  }
-
-  @Post('sms/bulk')
-  async sendBulkSMS(@Body() body: {
-    phoneNumbers: string[];
-    message: string;
-  }) {
-    return await this.notificationService.sendBulkSMS(
-      body.phoneNumbers,
-      body.message
-    );
   }
 }
 ```
@@ -197,7 +105,10 @@ export class NotificationController {
 Since this module only provides the client, here are examples of common operations:
 
 ### Topic Management
+
 ```typescript
+import { CreateTopicCommand, DeleteTopicCommand, ListTopicsCommand, PublishCommand, SubscribeCommand } from '@aws-sdk/client-sns';
+
 // Create topic
 const createCommand = new CreateTopicCommand({ Name: 'my-topic' });
 const { TopicArn } = await snsClient.send(createCommand);
@@ -212,12 +123,13 @@ await snsClient.send(deleteCommand);
 ```
 
 ### Subscriptions
+
 ```typescript
 // Email subscription
 const subscribeCommand = new SubscribeCommand({
   TopicArn: 'arn:aws:sns:...',
   Protocol: 'email',
-  Endpoint: 'user@example.com'
+  Endpoint: 'user@example.com',
 });
 await snsClient.send(subscribeCommand);
 
@@ -225,17 +137,18 @@ await snsClient.send(subscribeCommand);
 const smsSubscribeCommand = new SubscribeCommand({
   TopicArn: 'arn:aws:sns:...',
   Protocol: 'sms',
-  Endpoint: '+1234567890'
+  Endpoint: '+1234567890',
 });
 await snsClient.send(smsSubscribeCommand);
 ```
 
 ### Publishing
+
 ```typescript
 // Simple message
 const publishCommand = new PublishCommand({
   TopicArn: 'arn:aws:sns:...',
-  Message: 'Hello World'
+  Message: 'Hello World',
 });
 await snsClient.send(publishCommand);
 
@@ -245,21 +158,11 @@ const structuredCommand = new PublishCommand({
   Message: JSON.stringify({
     default: 'Default message',
     email: 'Detailed email message',
-    sms: 'Short SMS'
+    sms: 'Short SMS',
   }),
-  MessageStructure: 'json'
+  MessageStructure: 'json',
 });
 await snsClient.send(structuredCommand);
-```
-
-## Environment Variables
-
-```bash
-# Required
-AWS_REGION=us-east-1
-
-# Optional
-AWS_PROFILE=my-profile
 ```
 
 ## Limitations

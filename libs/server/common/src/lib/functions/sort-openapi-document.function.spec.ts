@@ -22,8 +22,17 @@ describe('sortOpenApiDocument', () => {
     const input = {
       components: {
         schemas: {
-          Zebra: { type: 'object', properties: { name: { type: 'string' }, age: { type: 'number' } } },
-          Apple: { type: 'object', properties: { color: { type: 'string' }, bitter: { type: 'boolean' } } },
+          Zebra: {
+            type: 'object',
+            properties: { name: { type: 'string' }, age: { type: 'number' } },
+          },
+          Apple: {
+            type: 'object',
+            properties: {
+              color: { type: 'string' },
+              bitter: { type: 'boolean' },
+            },
+          },
         },
       },
     };
@@ -31,8 +40,14 @@ describe('sortOpenApiDocument', () => {
     const sorted = sortOpenApiDocument(input) as any;
 
     expect(Object.keys(sorted.components.schemas)).toEqual(['Apple', 'Zebra']);
-    expect(Object.keys(sorted.components.schemas.Apple.properties)).toEqual(['bitter', 'color']);
-    expect(Object.keys(sorted.components.schemas.Zebra.properties)).toEqual(['age', 'name']);
+    expect(Object.keys(sorted.components.schemas.Apple.properties)).toEqual([
+      'bitter',
+      'color',
+    ]);
+    expect(Object.keys(sorted.components.schemas.Zebra.properties)).toEqual([
+      'age',
+      'name',
+    ]);
   });
 
   it('sorts tags array by name', () => {
@@ -46,7 +61,11 @@ describe('sortOpenApiDocument', () => {
 
     const sorted = sortOpenApiDocument(input) as any;
 
-    expect(sorted.tags.map((t: any) => t.name)).toEqual(['alpha', 'mu', 'zeta']);
+    expect(sorted.tags.map((t: any) => t.name)).toEqual([
+      'alpha',
+      'mu',
+      'zeta',
+    ]);
   });
 
   it('sorts operation parameters by (in, name)', () => {
@@ -78,14 +97,23 @@ describe('sortOpenApiDocument', () => {
   it('produces a stable string when re-sorting an already-sorted document', () => {
     const input = {
       paths: {
-        '/b': { get: { parameters: [{ in: 'query', name: 'b' }, { in: 'query', name: 'a' }] } },
+        '/b': {
+          get: {
+            parameters: [
+              { in: 'query', name: 'b' },
+              { in: 'query', name: 'a' },
+            ],
+          },
+        },
         '/a': { post: { responses: { '404': {}, '200': {} } } },
       },
       tags: [{ name: 'b' }, { name: 'a' }],
     };
 
     const onceSorted = JSON.stringify(sortOpenApiDocument(input));
-    const twiceSorted = JSON.stringify(sortOpenApiDocument(JSON.parse(onceSorted)));
+    const twiceSorted = JSON.stringify(
+      sortOpenApiDocument(JSON.parse(onceSorted)),
+    );
 
     expect(twiceSorted).toBe(onceSorted);
   });
@@ -94,12 +122,49 @@ describe('sortOpenApiDocument', () => {
     expect(sortOpenApiDocument(null as any)).toBeNull();
     expect(sortOpenApiDocument(42 as any)).toBe(42);
     expect(sortOpenApiDocument('hello' as any)).toBe('hello');
-    expect(sortOpenApiDocument(['c', 'a', 'b'] as any)).toEqual(['c', 'a', 'b']);
+    expect(sortOpenApiDocument(['c', 'a', 'b'] as any)).toEqual([
+      'c',
+      'a',
+      'b',
+    ]);
   });
 
   it('handles missing tags and missing paths without throwing', () => {
     expect(() => sortOpenApiDocument({})).not.toThrow();
     expect(() => sortOpenApiDocument({ paths: {} })).not.toThrow();
     expect(() => sortOpenApiDocument({ tags: [] })).not.toThrow();
+  });
+
+  it('tolerates tags and parameters without names and non-object path items/operations', () => {
+    const input = {
+      tags: [{ name: 'b' }, null, {}, { name: 'a' }],
+      paths: {
+        '/x': {
+          summary: 'not an operation',
+          get: {
+            parameters: [
+              { name: 'q' },
+              null,
+              { in: 'query' },
+              { in: 'path', name: 'id' },
+            ],
+          },
+          post: null,
+        },
+        '/y': null,
+      },
+    } as any;
+
+    const sorted = sortOpenApiDocument(input) as any;
+
+    expect(sorted.tags).toEqual([null, {}, { name: 'a' }, { name: 'b' }]);
+    expect(sorted.paths['/x'].get.parameters).toEqual([
+      null,
+      { name: 'q' },
+      { in: 'path', name: 'id' },
+      { in: 'query' },
+    ]);
+    expect(sorted.paths['/x'].summary).toBe('not an operation');
+    expect(sorted.paths['/y']).toBeNull();
   });
 });

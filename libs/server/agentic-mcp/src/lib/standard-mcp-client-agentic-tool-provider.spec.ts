@@ -166,3 +166,146 @@ describe(StandardMcpClientAgenticToolProvider.name, () => {
     });
   });
 });
+
+describe(`${StandardMcpClientAgenticToolProvider.name} (name resolution)`, () => {
+  const context = { conversationId: 'c', runId: 'r' };
+
+  function setup(
+    tools: Array<{ name: string; inputSchema?: Record<string, unknown> }>,
+    config?: ConstructorParameters<
+      typeof StandardMcpClientAgenticToolProvider
+    >[1],
+    result: unknown = 'done',
+  ) {
+    const client = {
+      listTools: jest.fn().mockResolvedValue({ tools }),
+      callTool: jest.fn().mockResolvedValue(result),
+    };
+    return {
+      client,
+      provider: new StandardMcpClientAgenticToolProvider(client, config),
+    };
+  }
+
+  it('lists tools with a default schema, sanitized names and metadata', async () => {
+    const { provider } = setup([{ name: 'read.file' }]);
+    await expect(provider.listTools()).resolves.toEqual([
+      {
+        name: 'mcp__mcp__read_file',
+        description: undefined,
+        inputSchema: { type: 'object', properties: {} },
+        providerMetadata: {
+          mcp: {
+            originalName: 'read.file',
+            namespace: 'mcp',
+            client: 'standard',
+          },
+        },
+      },
+    ]);
+  });
+
+  it('maps a sanitized exposed name back to the original tool name', async () => {
+    const { client, provider } = setup([{ name: 'read.file' }]);
+    const result = await provider.executeTool(
+      { id: '1', name: 'mcp__mcp__read_file', input: { a: 1 } },
+      context,
+    );
+    expect(client.callTool).toHaveBeenCalledWith({
+      name: 'read.file',
+      arguments: { a: 1 },
+    });
+    expect(result).toEqual({
+      toolCallId: '1',
+      name: 'mcp__mcp__read_file',
+      result: 'done',
+      resultText: 'done',
+      providerMetadata: {
+        mcp: {
+          originalName: 'read.file',
+          namespace: 'mcp',
+          client: 'standard',
+        },
+      },
+    });
+  });
+
+  it('falls back to the unprefixed sanitized name when no tool matches', async () => {
+    const { client, provider } = setup([]);
+    await provider.executeTool(
+      { id: '1', name: 'mcp__mcp__ghost', input: {} },
+      context,
+    );
+    expect(client.callTool).toHaveBeenCalledWith({
+      name: 'ghost',
+      arguments: {},
+    });
+  });
+
+  it('accepts an unprefixed name when namespaces are exposed', async () => {
+    const { client, provider } = setup([{ name: 'raw' }]);
+    await provider.executeTool({ id: '1', name: 'raw', input: {} }, context);
+    await provider.executeTool(
+      { id: '2', name: 'unknown', input: {} },
+      context,
+    );
+    expect(client.callTool.mock.calls.map(([params]) => params.name)).toEqual([
+      'raw',
+      'unknown',
+    ]);
+  });
+
+  it('lists raw names when namespaces are not exposed', async () => {
+    const { provider } = setup([{ name: 'read.file' }], {
+      exposeNamespace: false,
+    });
+    await expect(provider.listTools()).resolves.toMatchObject([
+      { name: 'read.file' },
+    ]);
+  });
+
+  it('passes an unknown name through when namespaces are not exposed', async () => {
+    const { client, provider } = setup([], { exposeNamespace: false });
+    await provider.executeTool(
+      { id: '1', name: 'whatever', input: {} },
+      context,
+    );
+    expect(client.callTool).toHaveBeenCalledWith({
+      name: 'whatever',
+      arguments: {},
+    });
+  });
+
+  it('stringifies object results and falls back to String() for circular ones', async () => {
+    const { provider } = setup([{ name: 'x' }], {}, { ok: true });
+    await expect(
+      provider.executeTool(
+        { id: '1', name: 'mcp__mcp__x', input: {} },
+        context,
+      ),
+    ).resolves.toMatchObject({
+      resultText: JSON.stringify({ ok: true }, null, 2),
+    });
+
+    const circular: Record<string, unknown> = {};
+    circular['self'] = circular;
+    const { provider: circularProvider } = setup([{ name: 'x' }], {}, circular);
+    await expect(
+      circularProvider.executeTool(
+        { id: '1', name: 'mcp__mcp__x', input: {} },
+        context,
+      ),
+    ).resolves.toMatchObject({ resultText: '[object Object]' });
+  });
+
+  it('propagates client failures', async () => {
+    const { client, provider } = setup([{ name: 'x' }]);
+    client.callTool.mockRejectedValue(new Error('transport closed'));
+    await expect(
+      provider.executeTool(
+        { id: '1', name: 'mcp__mcp__x', input: {} },
+        context,
+      ),
+    ).rejects.toThrow('transport closed');
+  });
+});

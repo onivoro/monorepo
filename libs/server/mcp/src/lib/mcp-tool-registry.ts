@@ -42,8 +42,14 @@ export class McpToolRegistry {
   private readonly changeListeners: McpRegistrationChangeListener[] = [];
   private readonly resourceSubscriptions = new Map<string, Set<string>>();
   private readonly resourceUpdateListeners: McpResourceUpdateListener[] = [];
-  private toolEnabledDelegate?: (name: string, enabled: boolean) => void;
-  private guardResolver?: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate;
+  private readonly toolEnabledDelegates = new Set<
+    (name: string, enabled: boolean) => void
+  >();
+  private readonly disabledTools = new Set<string>();
+  private serverWired = false;
+  private guardResolver?: (
+    guardClass: new (...args: any[]) => McpCanActivate,
+  ) => McpCanActivate;
   private providerResolver?: (cls: new (...args: any[]) => any) => any;
   private authStrategy?: McpAuthStrategy;
 
@@ -130,7 +136,9 @@ export class McpToolRegistry {
   }
 
   setGuardResolver(
-    resolver: (guardClass: new (...args: any[]) => McpCanActivate) => McpCanActivate,
+    resolver: (
+      guardClass: new (...args: any[]) => McpCanActivate,
+    ) => McpCanActivate,
   ): void {
     this.guardResolver = resolver;
   }
@@ -139,7 +147,9 @@ export class McpToolRegistry {
     this.authStrategy = strategy;
   }
 
-  setProviderResolver(resolver: (cls: new (...args: any[]) => any) => any): void {
+  setProviderResolver(
+    resolver: (cls: new (...args: any[]) => any) => any,
+  ): void {
     this.providerResolver = resolver;
   }
 
@@ -153,28 +163,45 @@ export class McpToolRegistry {
   }
 
   /**
-   * Set a delegate for enabling/disabling tools on the underlying McpServer.
-   * Called by `wireRegistryToServer` — consumers should use `setToolEnabled()` instead.
+   * Add a delegate for enabling/disabling tools on an underlying McpServer.
+   * Called by `wireRegistryToServer` (once per wired server) — consumers should use
+   * `setToolEnabled()` instead. Returns a function that removes the delegate.
    */
-  setToolEnabledDelegate(delegate: (name: string, enabled: boolean) => void): void {
-    this.toolEnabledDelegate = delegate;
+  setToolEnabledDelegate(
+    delegate: (name: string, enabled: boolean) => void,
+  ): () => void {
+    this.toolEnabledDelegates.add(delegate);
+    this.serverWired = true;
+    return () => {
+      this.toolEnabledDelegates.delete(delegate);
+    };
   }
 
   /**
-   * Enable or disable a tool at runtime.
+   * Enable or disable a tool at runtime, on every wired server.
+   * The state is remembered, so servers wired later (e.g. new HTTP sessions) start with it.
    * Disabled tools are hidden from `tools/list` and reject calls with "tool not found".
-   * Requires a wired server (via wireRegistryToServer, McpHttpModule, or McpStdioModule).
+   * Requires a server to have been wired (via wireRegistryToServer, McpHttpModule, or McpStdioModule).
    */
   setToolEnabled(name: string, enabled: boolean): void {
     if (!this.tools.has(name)) {
       throw new Error(`MCP tool "${name}" is not registered.`);
     }
-    if (!this.toolEnabledDelegate) {
+    if (!this.serverWired) {
       throw new Error(
         'No server wired. setToolEnabled requires an active transport (HTTP, stdio, or custom).',
       );
     }
-    this.toolEnabledDelegate(name, enabled);
+    if (enabled) this.disabledTools.delete(name);
+    else this.disabledTools.add(name);
+    for (const delegate of this.toolEnabledDelegates) {
+      delegate(name, enabled);
+    }
+  }
+
+  /** Whether a tool is enabled (tools are enabled unless `setToolEnabled(name, false)` was called). */
+  isToolEnabled(name: string): boolean {
+    return !this.disabledTools.has(name);
   }
 
   registerTool(
@@ -256,8 +283,16 @@ export class McpToolRegistry {
     extra?: {
       sessionId?: string;
       signal?: AbortSignal;
-      sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
-      sendLog?: (level: McpLogLevel, data: unknown, logger?: string) => Promise<void>;
+      sendProgress?: (
+        progress: number,
+        total?: number,
+        message?: string,
+      ) => Promise<void>;
+      sendLog?: (
+        level: McpLogLevel,
+        data: unknown,
+        logger?: string,
+      ) => Promise<void>;
       createMessage?: (params: Record<string, unknown>) => Promise<unknown>;
       elicitInput?: (params: Record<string, unknown>) => Promise<unknown>;
       listRoots?: () => Promise<unknown>;
@@ -294,7 +329,7 @@ export class McpToolRegistry {
       if (!this.guardResolver) {
         throw new Error(
           `Tool "${name}" has guards configured but no guard resolver is set. ` +
-          'Ensure the module supports guard resolution.',
+            'Ensure the module supports guard resolution.',
         );
       }
       for (const { guardClass, config } of entry.guards) {
@@ -347,8 +382,16 @@ export class McpToolRegistry {
     extra?: {
       sessionId?: string;
       signal?: AbortSignal;
-      sendProgress?: (progress: number, total?: number, message?: string) => Promise<void>;
-      sendLog?: (level: McpLogLevel, data: unknown, logger?: string) => Promise<void>;
+      sendProgress?: (
+        progress: number,
+        total?: number,
+        message?: string,
+      ) => Promise<void>;
+      sendLog?: (
+        level: McpLogLevel,
+        data: unknown,
+        logger?: string,
+      ) => Promise<void>;
       createMessage?: (params: Record<string, unknown>) => Promise<unknown>;
       elicitInput?: (params: Record<string, unknown>) => Promise<unknown>;
       listRoots?: () => Promise<unknown>;
@@ -357,11 +400,7 @@ export class McpToolRegistry {
     try {
       const result = await this.executeToolRaw(name, params, authInfo, extra);
 
-      if (
-        result &&
-        typeof result === 'object' &&
-        (result as any).content
-      ) {
+      if (result && typeof result === 'object' && (result as any).content) {
         return result as McpToolResult;
       }
 

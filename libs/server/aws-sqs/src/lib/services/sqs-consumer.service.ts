@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand, DeleteMessageBatchCommand, Message } from '@aws-sdk/client-sqs';
+import {
+  SQSClient,
+  ReceiveMessageCommand,
+  DeleteMessageCommand,
+  DeleteMessageBatchCommand,
+  Message,
+} from '@aws-sdk/client-sqs';
 
 export interface SqsConsumerConfig {
   queueUrl: string;
@@ -11,7 +17,10 @@ export interface SqsConsumerConfig {
 }
 
 export interface MessageHandler<T = any> {
-  handleMessage(messageBody: T, messageAttributes?: Record<string, any>): Promise<void>;
+  handleMessage(
+    messageBody: T,
+    messageAttributes?: Record<string, any>,
+  ): Promise<void>;
 }
 
 @Injectable()
@@ -25,7 +34,7 @@ export class SqsConsumerService {
   constructor(
     private sqsClient: SQSClient,
     private messageHandler: MessageHandler,
-    config: SqsConsumerConfig
+    config: SqsConsumerConfig,
   ) {
     // Merge with defaults
     this.config = {
@@ -34,7 +43,7 @@ export class SqsConsumerService {
       visibilityTimeout: config.visibilityTimeout ?? 300,
       waitTimeSeconds: config.waitTimeSeconds ?? 20,
       errorDelayMs: config.errorDelayMs ?? 5000,
-      emptyQueueDelayMs: config.emptyQueueDelayMs ?? 1000
+      emptyQueueDelayMs: config.emptyQueueDelayMs ?? 1000,
     };
   }
 
@@ -45,7 +54,9 @@ export class SqsConsumerService {
     }
 
     this.isPolling = true;
-    console.log(`Starting continuous SQS polling for ${this.getQueueName()}...`);
+    console.log(
+      `Starting continuous SQS polling for ${this.getQueueName()}...`,
+    );
 
     // Start the continuous polling loop
     this.pollingPromise = this.continuousPolling();
@@ -71,7 +82,9 @@ export class SqsConsumerService {
 
         if (messageCount === this.config.maxMessages) {
           // Queue likely has more messages, poll immediately
-          console.log(`Queue ${this.getQueueName()} may have more messages, polling again immediately...`);
+          console.log(
+            `Queue ${this.getQueueName()} may have more messages, polling again immediately...`,
+          );
           continue;
         } else if (messageCount === 0) {
           // Queue is empty, add small delay
@@ -80,7 +93,10 @@ export class SqsConsumerService {
         // If we got some messages but less than MAX, continue immediately
         // The long polling will handle the wait
       } catch (error) {
-        console.error(`Error in polling loop for ${this.getQueueName()}:`, error);
+        console.error(
+          `Error in polling loop for ${this.getQueueName()}:`,
+          error,
+        );
         // Add delay before retrying after error
         await this.delay(this.config.errorDelayMs);
       }
@@ -89,25 +105,32 @@ export class SqsConsumerService {
 
   private async pollMessages(): Promise<number> {
     try {
-      const response = await this.sqsClient.send(new ReceiveMessageCommand({
-        QueueUrl: this.config.queueUrl,
-        MaxNumberOfMessages: this.config.maxMessages,
-        WaitTimeSeconds: this.config.waitTimeSeconds,
-        VisibilityTimeout: this.config.visibilityTimeout,
-        MessageAttributeNames: ['All'],
-        AttributeNames: ['All']
-      }));
+      const response = await this.sqsClient.send(
+        new ReceiveMessageCommand({
+          QueueUrl: this.config.queueUrl,
+          MaxNumberOfMessages: this.config.maxMessages,
+          WaitTimeSeconds: this.config.waitTimeSeconds,
+          VisibilityTimeout: this.config.visibilityTimeout,
+          MessageAttributeNames: ['All'],
+          AttributeNames: ['All'],
+        }),
+      );
 
       const messages = response.Messages || [];
 
       if (messages.length > 0) {
-        console.log(`Received ${messages.length} messages from ${this.getQueueName()}`);
+        console.log(
+          `Received ${messages.length} messages from ${this.getQueueName()}`,
+        );
         await this.processMessages(messages);
       }
 
       return messages.length;
     } catch (error) {
-      console.error(`Error polling messages from ${this.getQueueName()}:`, error);
+      console.error(
+        `Error polling messages from ${this.getQueueName()}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -121,19 +144,26 @@ export class SqsConsumerService {
         await this.processMessage(message);
         processedMessageIds.push(message.MessageId!);
       } catch (error) {
-        console.error(`Failed to process message ${message.MessageId} from ${this.getQueueName()}:`, error);
+        console.error(
+          `Failed to process message ${message.MessageId} from ${this.getQueueName()}:`,
+          error,
+        );
         failedMessages.push({ message, error });
       }
     }
 
     // Delete successfully processed messages
     if (processedMessageIds.length > 0) {
-      await this.deleteProcessedMessages(messages.filter(m => processedMessageIds.includes(m.MessageId!)));
+      await this.deleteProcessedMessages(
+        messages.filter((m) => processedMessageIds.includes(m.MessageId!)),
+      );
     }
 
     // Log failed messages (they will return to queue after visibility timeout)
     if (failedMessages.length > 0) {
-      console.error(`Failed to process ${failedMessages.length} messages from ${this.getQueueName()}. They will be retried.`);
+      console.error(
+        `Failed to process ${failedMessages.length} messages from ${this.getQueueName()}. They will be retried.`,
+      );
     }
   }
 
@@ -166,35 +196,65 @@ export class SqsConsumerService {
     if (messages.length === 0) return;
 
     try {
+      let failedCount = 0;
+
       if (messages.length === 1) {
         // Single message deletion
-        await this.sqsClient.send(new DeleteMessageCommand({
-          QueueUrl: this.config.queueUrl,
-          ReceiptHandle: messages[0].ReceiptHandle!
-        }));
+        await this.sqsClient.send(
+          new DeleteMessageCommand({
+            QueueUrl: this.config.queueUrl,
+            ReceiptHandle: messages[0].ReceiptHandle!,
+          }),
+        );
       } else {
         // Batch deletion for multiple messages
         const entries = messages.map((message, index) => ({
           Id: index.toString(),
-          ReceiptHandle: message.ReceiptHandle!
+          ReceiptHandle: message.ReceiptHandle!,
         }));
 
-        await this.sqsClient.send(new DeleteMessageBatchCommand({
-          QueueUrl: this.config.queueUrl,
-          Entries: entries
-        }));
+        const { Failed = [] } = await this.sqsClient.send(
+          new DeleteMessageBatchCommand({
+            QueueUrl: this.config.queueUrl,
+            Entries: entries,
+          }),
+        );
+
+        // DeleteMessageBatch reports per-entry failures in `Failed` instead of throwing
+        if (Failed.length > 0) {
+          failedCount = Failed.length;
+          const failures = Failed.map(({ Id, Code, Message, SenderFault }) => ({
+            MessageId: messages[Number(Id)]?.MessageId,
+            Code,
+            Message,
+            SenderFault,
+          }));
+          console.error(
+            `Failed to delete ${failedCount} of ${messages.length} processed messages from ${this.getQueueName()}. They will be redelivered:`,
+            failures,
+          );
+        }
       }
 
-      console.log(`Successfully deleted ${messages.length} processed messages from ${this.getQueueName()}`);
+      if (failedCount < messages.length) {
+        console.log(
+          `Successfully deleted ${messages.length - failedCount} processed messages from ${this.getQueueName()}`,
+        );
+      }
     } catch (error) {
-      console.error(`Error deleting messages from ${this.getQueueName()}:`, error);
+      console.error(
+        `Error deleting messages from ${this.getQueueName()}:`,
+        error,
+      );
       // Don't throw - messages will become visible again after timeout
     }
   }
 
   // Manual trigger for processing messages (useful for testing)
   async processQueueManually() {
-    console.log(`Manually triggering queue processing for ${this.getQueueName()}...`);
+    console.log(
+      `Manually triggering queue processing for ${this.getQueueName()}...`,
+    );
     await this.pollMessages();
   }
 
@@ -207,13 +267,13 @@ export class SqsConsumerService {
       config: {
         maxMessages: this.config.maxMessages,
         visibilityTimeout: this.config.visibilityTimeout,
-        waitTimeSeconds: this.config.waitTimeSeconds
-      }
+        waitTimeSeconds: this.config.waitTimeSeconds,
+      },
     };
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private getQueueName(): string {

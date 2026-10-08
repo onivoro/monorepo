@@ -19,7 +19,7 @@ export function createEntitySlice<T extends { id: number | string }>(
 
   type ExtendedState = EntityState<T, T['id']> & {
     focused: T;
-    focusedId: number | undefined;
+    focusedId: T['id'] | undefined;
   };
 
   const slice = createSlice({
@@ -27,7 +27,7 @@ export function createEntitySlice<T extends { id: number | string }>(
     initialState: {
       ...entityAdapter.getInitialState(),
       focused: {} as T,
-      focusedId: undefined as number | undefined,
+      focusedId: undefined as T['id'] | undefined,
     } as ExtendedState,
     reducers: {
       addOne(state, action: PayloadAction<T>) {
@@ -48,8 +48,8 @@ export function createEntitySlice<T extends { id: number | string }>(
       removeAll(state) {
         entityAdapter.removeAll(state as EntityState<T, T['id']>);
       },
-      focusOne(state, { payload }: PayloadAction<{ id: number }>) {
-        state.focusedId = payload?.id;
+      focusOne(state, { payload }: PayloadAction<{ id: T['id'] }>) {
+        (state as ExtendedState).focusedId = payload?.id;
       },
     },
   });
@@ -59,10 +59,11 @@ export function createEntitySlice<T extends { id: number | string }>(
   const customSelectors = {
     entities: (state: any): Record<T['id'], T> => state[name]?.entities || {},
     ids: (state: any): readonly T['id'][] => state[name]?.ids || [],
-    focusedId: (state: any): number | undefined => state[name]?.focusedId,
+    focusedId: (state: any): T['id'] | undefined => state[name]?.focusedId,
     focused: (state: any): T | undefined => {
       const sliceState = state[name];
-      return sliceState?.focusedId
+      return sliceState?.focusedId !== undefined &&
+        sliceState?.focusedId !== null
         ? sliceState.entities[sliceState.focusedId]
         : undefined;
     },

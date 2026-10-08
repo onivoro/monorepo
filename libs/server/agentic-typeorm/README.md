@@ -5,50 +5,32 @@ TypeORM persistence for
 entities, repositories implementing the contract's ports, and a migration
 **factory** that adapts to your tenancy model rather than assuming one.
 
+PostgreSQL only: the schema uses `jsonb` and `timestamptz`, and the queries use
+`ILIKE` and jsonb containment.
+
 ## Installation
 
 ```bash
-npm install @onivoro/server-agentic-typeorm @onivoro/isomorphic-agentic typeorm
+npm install @onivoro/server-agentic-typeorm @onivoro/isomorphic-agentic @nestjs/common typeorm
 ```
 
 ## Tables
 
-| Table                            | Holds                                     |
-| -------------------------------- | ----------------------------------------- |
-| `agentic_conversations`          | title, status, participants, metadata     |
-| `agentic_messages`               | role, status, parts (jsonb), usage        |
-| `agentic_runs`                   | one turn: user + assistant message, usage |
-| `agentic_conversation_summaries` | compaction records                        |
-| `agentic_prompts`                | the per-owner prompt library              |
+| Table                            | Holds                                     | Entity                             |
+| -------------------------------- | ----------------------------------------- | ---------------------------------- |
+| `agentic_conversations`          | title, status, participants, metadata     | `AgenticConversationRecord`        |
+| `agentic_messages`               | role, status, parts (jsonb), usage        | `AgenticMessageRecord`             |
+| `agentic_runs`                   | one turn: user + assistant message, usage | `AgenticRunRecord`                 |
+| `agentic_conversation_summaries` | compaction records                        | `AgenticConversationSummaryRecord` |
+| `agentic_prompts`                | the per-owner prompt library              | `AgenticPromptRecord`              |
 
-Names are fixed. The entities carry them in `@Entity()` and the repositories
-reference those entities directly, so a rename would silently disagree with the
-code that reads the rows. Everything _else_ about the schema is yours.
+`agenticEntities` lists all five records for your DataSource or
+`TypeOrmModule.forFeature`.
 
-## Adding columns
-
-`additionalColumns` gets a column into the database; an abstract base gets it
-into the entity. Both halves are needed, because a column the ORM cannot see is
-one it will not write on insert or read back on select.
-
-Every entity ships as an abstract `…Columns` base plus a concrete `…Record`
-that extends it and carries the `@Entity()`. Use the record as-is when the
-schema needs nothing added; subclass the base when it does:
-
-```ts
-import { AgenticConversationColumns } from '@onivoro/server-agentic-typeorm';
-
-@Entity('agentic_conversations')
-export class AgenticConversation extends AgenticConversationColumns {
-  @Column({ name: 'tenant_id', type: 'uuid' })
-  tenantId: string;
-}
-```
-
-TypeORM treats an abstract base's columns as the subclass's own, so the result
-is one entity with the full column set — not an inheritance hierarchy the
-database has to know about. Register your subclass instead of the shipped
-record, and pass the matching `additionalColumns` to the migration factory.
+Names are fixed (`AgenticTable`). The entities carry them in `@Entity()` and the
+repositories reference those entities directly, so a rename would silently
+disagree with the code that reads the rows. Everything _else_ about the schema is
+yours.
 
 ## The simple case
 
@@ -59,7 +41,8 @@ export { CreateAgenticChatTables1782300000100 } from '@onivoro/server-agentic-ty
 export { CreateAgenticPromptTables1782300000200 } from '@onivoro/server-agentic-typeorm';
 ```
 
-No tenant scoping, this package's own keys and indexes.
+The first creates the four chat tables, the second `agentic_prompts`. No tenant
+scoping, this package's own keys and indexes.
 
 ## Adapting the schema
 
@@ -67,6 +50,7 @@ Anything beyond that — a tenant column, row-level security, composite keys —
 means writing your own thin migration over the same factory:
 
 ```ts
+import type { MigrationInterface, QueryRunner } from 'typeorm';
 import { createAgenticChatTables, dropAgenticChatTables, type CreateAgenticTablesOptions } from '@onivoro/server-agentic-typeorm';
 
 const TENANT: CreateAgenticTablesOptions = {
@@ -106,6 +90,11 @@ export class AddAgenticChat1787000000280 implements MigrationInterface {
 }
 ```
 
+`createAgenticPromptTables` / `dropAgenticPromptTables` take the same options
+for `agentic_prompts`. `agenticCreateTableSql(table, options?)` returns one
+table's `CREATE TABLE` statement, and `AGENTIC_CHAT_TABLES` /
+`AGENTIC_PROMPT_TABLES` list each set in creation order.
+
 ### Options
 
 | Option              | Default | Effect                                                |
@@ -124,18 +113,83 @@ first insert can happen.
 never created fails the migration, so the drop path honours
 `createForeignKeys` and `createIndexes` too.
 
-## Repositories
+## Adding columns to the entities
 
-`DefaultAgenticRepositories` bundles the five repositories into the
-`AgenticRepositories` port the run loop expects:
+`additionalColumns` gets a column into the database; an entity that declares it
+gets it into the ORM. Both halves are needed, because a column the ORM cannot
+see is one it will not write on insert or read back on select.
+
+Every entity ships as an abstract `…Columns` base plus a concrete `…Record`
+that extends it and carries the `@Entity()`:
 
 ```ts
-{ provide: AGENTIC_REPOSITORIES, useExisting: DefaultAgenticRepositories }
+import { Column, Entity } from 'typeorm';
+import { AgenticConversationColumns } from '@onivoro/server-agentic-typeorm';
+
+@Entity('agentic_conversations')
+export class TenantConversation extends AgenticConversationColumns {
+  @Column({ name: 'tenant_id', type: 'uuid' })
+  tenantId: string;
+}
 ```
 
-Each repository takes an `EntityManager`, so a host that scopes work to a
-transaction — as row-level security requires — constructs them inside it rather
-than reaching for a globally-injected connection.
+TypeORM treats an abstract base's columns as the subclass's own, so the result
+is one entity with the full column set — not an inheritance hierarchy the
+database has to know about.
+
+**The shipped repositories do not use your subclass.** They read and write the
+shipped `…Record` classes, which know nothing about `tenant_id`, so they will
+not populate it and need those records registered. A schema with extra columns
+needs its own repositories over its own entities (implementing the
+`@onivoro/isomorphic-agentic` repository interfaces), or column defaults /
+triggers that fill the extra columns without the ORM's help.
+
+## Repositories
+
+| Class                           | Implements                                                                                                                                                                                                             |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AgenticConversationRepository` | `AgenticConversationRepository`; `list` filters by status (default `active`), participant, `resourceType` / `resourceId` metadata and a search over id, title and message text; limit defaults to 50, clamped to 1–100 |
+| `AgenticMessageRepository`      | `AgenticMessageRepository`, plus `listNewestByConversationId` and `countByConversationId` (needed by `AgenticConversationLifecycleService`)                                                                            |
+| `AgenticRunRepository`          | `AgenticRunRepository`                                                                                                                                                                                                 |
+| `AgenticUsageRepository`        | `AgenticUsageRepository`; writes the `usage` column of a message or run                                                                                                                                                |
+| `AgenticSummaryRepository`      | `AgenticSummaryRepository`                                                                                                                                                                                             |
+| `AgenticPromptRepository`       | `AgenticPromptRepository`; owner-scoped, search over title and text, limit defaults to 100, clamped to 1–200                                                                                                           |
+
+`DefaultAgenticRepositories` bundles all six into the `AgenticRepositories` port
+the run loop expects, and `agenticRepositories` lists the seven classes as
+providers. Each repository's only constructor argument is a TypeORM
+`EntityManager`, so Nest can build them wherever one is injectable (for example
+under `@nestjs/typeorm`):
+
+```ts
+import { AGENTIC_REPOSITORIES, AgenticChatModule } from '@onivoro/server-agentic';
+import { agenticRepositories, DefaultAgenticRepositories } from '@onivoro/server-agentic-typeorm';
+
+AgenticChatModule.configure({
+  providers: [...agenticRepositories, { provide: AGENTIC_REPOSITORIES, useExisting: DefaultAgenticRepositories }],
+});
+```
+
+A host that scopes work to a transaction — as row-level security requires —
+constructs them inside it instead:
+
+```ts
+import { AgenticConversationRepository, AgenticMessageRepository, AgenticPromptRepository, AgenticRunRepository, AgenticSummaryRepository, AgenticUsageRepository, DefaultAgenticRepositories } from '@onivoro/server-agentic-typeorm';
+
+await dataSource.transaction(async (manager) => {
+  const repositories = new DefaultAgenticRepositories(new AgenticConversationRepository(manager), new AgenticMessageRepository(manager), new AgenticPromptRepository(manager), new AgenticRunRepository(manager), new AgenticUsageRepository(manager), new AgenticSummaryRepository(manager));
+  // ...
+});
+```
+
+## Mappers
+
+The repositories convert between records and contract types with exported
+functions: `toConversationRecord` / `fromConversationRecord`, `toMessageRecord` /
+`fromMessageRecord`, `toRunRecord` / `fromRunRecord`, `toSummaryRecord` /
+`fromSummaryRecord`, `toPromptRecord` / `fromPromptRecord`, plus `toDate` and
+`toIso` for the ISO-string ↔ `Date` boundary. Reuse them in your own
+repositories.
 
 ## License
 

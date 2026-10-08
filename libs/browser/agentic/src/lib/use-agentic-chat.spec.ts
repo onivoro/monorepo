@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { AgenticEvent, AgenticMessage } from '@onivoro/isomorphic-agentic';
 import type { AgenticChatClient } from './agentic-chat-client';
 import {
+  createUseAgenticChat,
   useConfiguredAgenticChat,
   useNoAgenticEventStream,
   type UseAgenticEventStream,
@@ -192,6 +193,110 @@ describe('useConfiguredAgenticChat', () => {
 
     expect(result.current.error).toBe('rejected');
     expect(result.current.isSending).toBe(false);
+  });
+});
+
+describe('useConfiguredAgenticChat lifecycle', () => {
+  it('reload fetches messages again and applies updates', async () => {
+    const listAgenticMessages = jest
+      .fn()
+      .mockResolvedValueOnce([message('m1', 'one')])
+      .mockResolvedValueOnce([message('m1', 'one'), message('m2', 'two')]);
+    const client = fakeClient({ listAgenticMessages });
+    const { result } = renderHook(() =>
+      useConfiguredAgenticChat('c1', { client }),
+    );
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    expect(listAgenticMessages).toHaveBeenCalledTimes(2);
+    expect(result.current.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+    expect(result.current.error).toBeUndefined();
+  });
+
+  it('stringifies non-Error failures', async () => {
+    const client = fakeClient({
+      listAgenticMessages: jest.fn().mockRejectedValue('plain'),
+    });
+    const { result } = renderHook(() =>
+      useConfiguredAgenticChat('c1', { client }),
+    );
+    await waitFor(() => expect(result.current.error).toBe('plain'));
+  });
+
+  it('discards a load that resolves after unmount', async () => {
+    let resolve: (messages: AgenticMessage[]) => void = () => undefined;
+    const client = fakeClient({
+      listAgenticMessages: jest.fn(
+        () => new Promise<AgenticMessage[]>((r) => (resolve = r)),
+      ),
+    });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+    const { result, unmount } = renderHook(() =>
+      useConfiguredAgenticChat('c1', { client }),
+    );
+    expect(result.current.isLoading).toBe(true);
+
+    unmount();
+    await act(async () => {
+      resolve([message('m1', 'late')]);
+    });
+
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.isLoading).toBe(true);
+    errorSpy.mockRestore();
+  });
+
+  it('reloads when the conversation id changes', async () => {
+    const listAgenticMessages = jest.fn().mockResolvedValue([]);
+    const client = fakeClient({ listAgenticMessages });
+    const { rerender, result } = renderHook(
+      ({ id }) => useConfiguredAgenticChat(id, { client }),
+      { initialProps: { id: 'c1' } },
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    rerender({ id: 'c2' });
+    await waitFor(() =>
+      expect(listAgenticMessages).toHaveBeenLastCalledWith('c2'),
+    );
+    expect(result.current.conversationId).toBe('c2');
+  });
+
+  it('forwards send metadata', async () => {
+    const client = fakeClient();
+    const { result } = renderHook(() =>
+      useConfiguredAgenticChat('c1', { client }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(async () => {
+      await result.current.sendMessage('hi', { source: 'test' });
+    });
+    expect(client.agenticFetch).toHaveBeenCalledWith(
+      '/api/agentic-chat/c1/messages',
+      expect.objectContaining({
+        body: JSON.stringify({ metadata: { source: 'test' }, text: 'hi' }),
+      }),
+    );
+  });
+});
+
+describe('createUseAgenticChat', () => {
+  it('binds the client and stream to a hook taking only the conversation id', async () => {
+    const client = fakeClient({
+      listAgenticMessages: jest.fn().mockResolvedValue([message('m1', 'hi')]),
+    });
+    const useEventStream: UseAgenticEventStream = () => ({ isConnected: true });
+    const useAgenticChat = createUseAgenticChat({ client, useEventStream });
+
+    const { result } = renderHook(() => useAgenticChat('c1'));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    expect(result.current.isConnected).toBe(true);
+    expect(client.listAgenticMessages).toHaveBeenCalledWith('c1');
   });
 });
 

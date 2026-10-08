@@ -101,9 +101,7 @@ export function renderMcpToolCatalogHtml(
                     $h1({ textContent: title }),
                     $p({
                       className: 'lede',
-                      textContent: safeText(
-                        `${sortedTools.length} registered tools with names, descriptions, and input schemas.`,
-                      ),
+                      textContent: `${sortedTools.length} registered tools with names, descriptions, and input schemas.`,
                     }),
                     ...renderInstallationGuide(config),
                   ],
@@ -190,7 +188,7 @@ function renderGroup(group: McpToolCatalogGroup) {
           $span({ textContent: group.label }),
           $span({
             className: 'count',
-            textContent: safeText(group.tools.length.toString()),
+            textContent: group.tools.length.toString(),
           }),
         ],
       }),
@@ -210,7 +208,7 @@ function renderToolCard(tool: McpToolCatalogEntry) {
           children: [
             $strong({ textContent: 'Annotations: ' }),
             $span({
-              textContent: safeText(stringifyCompact(tool.annotations)),
+              textContent: stringifyCompact(tool.annotations),
             }),
           ],
         })
@@ -222,10 +220,8 @@ function renderToolCard(tool: McpToolCatalogEntry) {
       $div({
         className: 'tool-heading',
         children: [
-          $code({ className: 'tool-name', textContent: safeText(tool.name) }),
-          tool.title
-            ? $p({ className: 'title', textContent: safeText(tool.title) })
-            : '',
+          $code({ className: 'tool-name', textContent: tool.name }),
+          tool.title ? $p({ className: 'title', textContent: tool.title }) : '',
         ],
       }),
       $div({
@@ -233,9 +229,7 @@ function renderToolCard(tool: McpToolCatalogEntry) {
         children: [
           $span({ className: 'label', textContent: 'Description' }),
           $p({
-            textContent: safeText(
-              tool.description || 'No description provided.',
-            ),
+            textContent: tool.description || 'No description provided.',
           }),
           annotations,
         ],
@@ -248,7 +242,7 @@ function renderToolCard(tool: McpToolCatalogEntry) {
             children: [
               $summary({ textContent: 'View schema' }),
               $pre({
-                textContent: safeText(stringifyPretty(tool.jsonSchema ?? {})),
+                textContent: stringifyPretty(tool.jsonSchema ?? {}),
               }),
             ],
           }),
@@ -303,15 +297,6 @@ function stringifyPretty(value: unknown) {
 
 function stringifyCompact(value: unknown) {
   return JSON.stringify(value);
-}
-
-function safeText(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 const $section = (props?: Parameters<typeof $div>[0]) =>

@@ -8,9 +8,12 @@ A simple Twilio integration module for NestJS applications, providing basic SMS 
 npm install @onivoro/server-twilio twilio
 ```
 
+`@nestjs/common` and `twilio` are peer dependencies; `@onivoro/server-common` is installed as a regular dependency.
+
 ## Overview
 
 This library provides:
+
 - NestJS module for Twilio integration
 - Basic SMS sending functionality
 - SMS message listing
@@ -19,21 +22,22 @@ This library provides:
 ## Module Setup
 
 ```typescript
+import { Module } from '@nestjs/common';
 import { ServerTwilioModule, ServerTwilioConfig } from '@onivoro/server-twilio';
 
 const config = new ServerTwilioConfig(
-  process.env.TWILIO_ACCOUNT_SID,   // Your Twilio Account SID
-  process.env.TWILIO_AUTH_TOKEN,    // Your Twilio Auth Token
-  process.env.TWILIO_FROM           // Your Twilio phone number (e.g., +1234567890)
+  process.env.TWILIO_ACCOUNT_SID!, // Your Twilio Account SID
+  process.env.TWILIO_AUTH_TOKEN!, // Your Twilio Auth Token
+  process.env.TWILIO_FROM!, // Your Twilio phone number (e.g., +1234567890)
 );
 
 @Module({
-  imports: [
-    ServerTwilioModule.configure(config)
-  ]
+  imports: [ServerTwilioModule.configure(config)],
 })
 export class AppModule {}
 ```
+
+`ServerTwilioModule.configure(config)` constructs one `Twilio` client immediately (when `configure()` is called) and returns a dynamic module (not global) that provides and exports `TwilioService`, `SmsService`, and the `Twilio` client. `ServerTwilioConfig` itself is not registered as a provider; read it from the public `twilioService.config` property if you need it.
 
 ## Configuration
 
@@ -44,7 +48,7 @@ export class ServerTwilioConfig {
   constructor(
     public TWILIO_ACCOUNT_SID: string,
     public TWILIO_AUTH_TOKEN: string,
-    public TWILIO_FROM: string        // Default sender phone number
+    public TWILIO_FROM: string, // Default sender phone number
   ) {}
 }
 ```
@@ -96,30 +100,33 @@ export class MessageService {
 
 ### Direct Twilio Client Access
 
-You can inject the Twilio client directly for advanced operations:
+The package re-exports `Twilio` from `twilio`, and the module registers the client under that class as its injection token:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { Twilio } from '@onivoro/server-twilio';
+import { Twilio, TwilioService } from '@onivoro/server-twilio';
 
 @Injectable()
 export class AdvancedTwilioService {
-  constructor(private twilio: Twilio) {}
+  constructor(
+    private twilio: Twilio,
+    private twilioService: TwilioService,
+  ) {}
 
   async sendSmsWithMediaUrl(to: string, body: string, mediaUrl: string) {
     return await this.twilio.messages.create({
       body,
-      from: process.env.TWILIO_FROM,
+      from: this.twilioService.config.TWILIO_FROM,
       to,
-      mediaUrl: [mediaUrl]
+      mediaUrl: [mediaUrl],
     });
   }
 
   async makeCall(to: string, twimlUrl: string) {
     return await this.twilio.calls.create({
-      from: process.env.TWILIO_FROM,
+      from: this.twilioService.config.TWILIO_FROM,
       to,
-      url: twimlUrl
+      url: twimlUrl,
     });
   }
 
@@ -137,9 +144,10 @@ export class AdvancedTwilioService {
 async sendSms(to: string, body: string): Promise<void>
 ```
 
-Sends an SMS message. Throws an error if sending fails.
+Sends an SMS from `config.TWILIO_FROM`. On failure it logs `{ error, msg }` with `console.error` and re-throws the original error.
 
 Parameters:
+
 - `to` - Recipient phone number (E.164 format recommended, e.g., +1234567890)
 - `body` - SMS message content
 
@@ -149,9 +157,10 @@ Parameters:
 async index(to: string, limit = 100): Promise<MessageInstance[]>
 ```
 
-Lists SMS messages sent to a specific phone number.
+Lists messages sent to a specific phone number via `twilio.messages.list({ to, limit })`. Errors are not caught.
 
 Parameters:
+
 - `to` - Phone number to filter messages
 - `limit` - Maximum number of messages to return (default: 100)
 
@@ -168,7 +177,7 @@ export class CommunicationService {
   constructor(
     private twilioService: TwilioService,
     private smsService: SmsService,
-    private twilio: Twilio
+    private twilio: Twilio,
   ) {}
 
   async sendVerificationCode(phoneNumber: string, code: string) {
@@ -183,7 +192,7 @@ export class CommunicationService {
 
   async checkForVerificationCode(phoneNumber: string): Promise<string | null> {
     const messages = await this.smsService.index(phoneNumber, 10);
-    
+
     // Look for recent messages containing verification code
     for (const message of messages) {
       const codeMatch = message.body.match(/\d{6}/);
@@ -191,20 +200,22 @@ export class CommunicationService {
         return codeMatch[0];
       }
     }
-    
+
     return null;
   }
 
   async sendAppointmentReminder(phoneNumber: string, appointmentTime: Date) {
-    // Using the Twilio client directly for scheduled messages
+    // Using the Twilio client directly for scheduled messages.
+    // Twilio requires a Messaging Service (not a `from` number) for scheduling,
+    // and sendAt must be between 15 minutes and 35 days in the future.
     const sendAt = new Date(appointmentTime.getTime() - 60 * 60 * 1000); // 1 hour before
-    
+
     await this.twilio.messages.create({
       body: `Reminder: You have an appointment at ${appointmentTime.toLocaleString()}`,
-      from: process.env.TWILIO_FROM,
+      messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
       to: phoneNumber,
       scheduleType: 'fixed',
-      sendAt: sendAt
+      sendAt: sendAt,
     });
   }
 }
@@ -212,7 +223,7 @@ export class CommunicationService {
 
 ## Error Handling
 
-Both services include basic error handling:
+`TwilioService.sendSms` logs and re-throws errors; `SmsService.index` lets errors propagate unchanged:
 
 ```typescript
 try {
@@ -234,8 +245,8 @@ try {
 1. Phone numbers should be in E.164 format (e.g., +1234567890)
 2. The `TWILIO_FROM` number must be a Twilio phone number you own
 3. Trial accounts can only send SMS to verified phone numbers
-4. The module creates a single Twilio client instance
-5. Error handling is basic - errors are logged and re-thrown
+4. Each `configure()` call creates a single Twilio client instance shared by both services
+5. Error handling is basic - `sendSms` logs and re-throws; `index` does not catch
 
 ## Limitations
 

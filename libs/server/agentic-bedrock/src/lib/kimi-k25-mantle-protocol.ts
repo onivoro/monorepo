@@ -129,7 +129,12 @@ function isToolCallWithInput(part: AgenticPart): part is AgenticToolCallPart {
 
 function partText(message: AgenticMessage): string {
   return message.parts
-    .filter((part) => part.type === 'text' || part.type === 'reasoning')
+    .filter(
+      (part) =>
+        part.type === 'text' ||
+        part.type === 'reasoning' ||
+        part.type === 'summary',
+    )
     .map((part) => (part as { text?: string }).text ?? '')
     .join('');
 }
@@ -154,6 +159,7 @@ export const kimiK25MantleProtocol: IAgenticBedrockProtocol = {
     buildKimiK25MantleRequestBody({
       ...request,
       maxTokens: request.maxTokens ?? defaults.maxTokens,
+      temperature: defaults.sendTemperature ? request.temperature : undefined,
     }),
   createParser: (stepIndex) =>
     new BedrockMessagesStreamParser(stepIndex, { nativeToolCallSyntax: true }),

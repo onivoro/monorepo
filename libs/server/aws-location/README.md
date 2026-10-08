@@ -1,18 +1,18 @@
 # @onivoro/server-aws-location
 
-AWS Location Service integration for NestJS applications with geocoding and route calculation capabilities.
+AWS Location Service integration for NestJS applications with geocoding and route calculation, plus Swagger-annotated DTOs for the results.
 
 ## Installation
 
 ```bash
-npm install @onivoro/server-aws-location
+npm install @onivoro/server-aws-location @aws-sdk/client-location @nestjs/common @nestjs/swagger
 ```
 
-## Overview
-
-This library provides AWS Location Service integration for NestJS applications, offering geocoding and route calculation functionality.
+`@aws-sdk/client-location`, `@nestjs/common` and `@nestjs/swagger` (used by the DTOs) are peer dependencies.
 
 ## Module Setup
+
+`ServerAwsLocationModule.configure(config)` takes the configuration object directly; the module does not read environment variables itself.
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -20,282 +20,156 @@ import { ServerAwsLocationModule } from '@onivoro/server-aws-location';
 
 @Module({
   imports: [
-    ServerAwsLocationModule.configure()
-  ]
+    ServerAwsLocationModule.configure({
+      AWS_REGION: process.env.AWS_REGION!,
+      PLACE_INDEX_NAME: process.env.PLACE_INDEX_NAME!,
+      ROUTE_CALCULATOR_NAME: process.env.ROUTE_CALCULATOR_NAME!,
+      AWS_PROFILE: process.env.AWS_PROFILE, // optional
+    }),
+  ],
 })
 export class AppModule {}
 ```
 
-## Configuration
+The module is not global. It provides and exports `LocationService`, `ServerAwsLocationConfig`, a `LocationClient` instance, and the `AwsCredentials` provider from `@onivoro/server-aws-credential-providers`.
 
-The module uses environment-based configuration:
+## Configuration
 
 ```typescript
 export class ServerAwsLocationConfig {
-  AWS_LOCATION_INDEX_NAME: string;  // The name of your AWS Location place index
-  AWS_LOCATION_CALCULATOR_NAME: string;  // The name of your AWS Location route calculator
+  AWS_PROFILE?: string; // optional named profile from ~/.aws
   AWS_REGION: string;
-  AWS_PROFILE?: string;  // Optional AWS profile
+  ROUTE_CALCULATOR_NAME: string; // route calculator used by calculateRoute
+  PLACE_INDEX_NAME: string; // place index used by geocodeAddress
 }
 ```
 
-## Service
+### AWS Credentials
 
-### LocationService
+Credentials are resolved by [`@onivoro/server-aws-credential-providers`](../aws-credential-providers/):
 
-The service provides two main operations:
+- If `AWS_PROFILE` is set, credentials are loaded from that profile in the shared credentials file. If that fails, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (or their lowercase forms) from the environment are used.
+- If `AWS_PROFILE` is not set, the client uses the AWS SDK's default credential provider chain.
+
+## LocationService
+
+### `geocodeAddress(address: string, maxResults = 20): Promise<GeocodingResultDto[]>`
+
+Runs `SearchPlaceIndexForText` against `PLACE_INDEX_NAME` and maps each result to a `GeocodingResultDto`:
+
+- `text` - the place label (`''` if missing)
+- `coordinates` - `{ longitude, latitude }`
+- `country`, `region`, `municipality`, `street`, `postalCode` - when present
+- `relevance` - the result's relevance score (`0` if missing)
+
+Returns `[]` when there are no results. Any failure is logged and rethrown as `BadRequestException('Failed to geocode address.')`.
+
+### `calculateRoute(request: RouteCalculationRequestDto): Promise<RouteCalculationResultDto>`
+
+Runs `CalculateRoute` against `ROUTE_CALCULATOR_NAME` between `departurePosition` and `destinationPosition` (each `{ longitude, latitude }`). `distanceUnit` (`'Miles' | 'Kilometers'`) and `travelMode` (`'Car' | 'Truck' | 'Bicycle' | 'Walking'`) fall back to `'Miles'` and `'Car'` when `undefined`.
+
+Returns only the route summary:
+
+- `distance` - total distance in `distanceUnit` (`0` if missing)
+- `duration` - `{ hours, minutes }`, derived from the summary's duration seconds (remaining seconds are dropped)
+
+Missing positions throw `BadRequestException('Invalid location data provided.')`; AWS errors are logged and rethrown as `BadRequestException('Failed to calculate route.')`.
+
+### Example
 
 ```typescript
-import { Injectable } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Query } from '@nestjs/common';
 import { LocationService } from '@onivoro/server-aws-location';
 
-@Injectable()
-export class GeocodingService {
+@Controller('delivery')
+export class DeliveryController {
   constructor(private readonly locationService: LocationService) {}
 
-  // Geocode an address to coordinates
-  async getCoordinates(address: string) {
-    const results = await this.locationService.geocodeAddress(address);
-    
-    if (results && results.length > 0) {
-      const location = results[0];
-      return {
-        lat: location.Place.Geometry.Point[1],
-        lng: location.Place.Geometry.Point[0],
-        label: location.Place.Label,
-        confidence: location.Place.Confidence
-      };
-    }
-    
-    return null;
-  }
+  @Get('estimate')
+  async estimate(@Query('pickup') pickup: string, @Query('dropoff') dropoff: string) {
+    const [[from], [to]] = await Promise.all([this.locationService.geocodeAddress(pickup, 1), this.locationService.geocodeAddress(dropoff, 1)]);
 
-  // Calculate route between two points
-  async getRoute(startLat: number, startLng: number, endLat: number, endLng: number) {
-    const route = await this.locationService.calculateRoute(
-      startLat,
-      startLng,
-      endLat,
-      endLng
-    );
-    
+    if (!from || !to) {
+      throw new NotFoundException('Address not found');
+    }
+
+    const route = await this.locationService.calculateRoute({
+      departurePosition: from.coordinates,
+      destinationPosition: to.coordinates,
+      distanceUnit: 'Kilometers',
+      travelMode: 'Car',
+    });
+
     return {
-      distance: route.Summary.Distance,
-      duration: route.Summary.DurationSeconds,
-      legs: route.Legs
+      from: from.text,
+      to: to.text,
+      distanceKm: route.distance,
+      duration: route.duration, // { hours, minutes }
     };
   }
 }
 ```
 
-## Method Details
+## DTOs
 
-### geocodeAddress(address: string)
+All DTOs are classes decorated with `@ApiProperty`, so they can be used directly in Swagger-documented controllers.
 
-Converts an address string to geographic coordinates.
-
-- **Returns**: Array of search results with place information including coordinates, labels, and confidence scores
-- **Uses**: The place index configured in `AWS_LOCATION_INDEX_NAME`
-
-### calculateRoute(startLat, startLng, endLat, endLng)
-
-Calculates a route between two geographic points.
-
-- **Parameters**:
-  - `startLat`: Starting point latitude
-  - `startLng`: Starting point longitude
-  - `endLat`: Destination latitude
-  - `endLng`: Destination longitude
-- **Returns**: Route information including distance, duration, and turn-by-turn directions
-- **Uses**: The route calculator configured in `AWS_LOCATION_CALCULATOR_NAME`
+| Export                       | Fields                                                                                                                |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `LocationDto`                | `longitude: number`, `latitude: number`                                                                               |
+| `Coordinates`                | `longitude: number`, `latitude: number` (used by `GeocodingResultDto`)                                                |
+| `GeocodingResultDto`         | `text`, `coordinates: Coordinates`, optional `country`, `region`, `municipality`, `street`, `postalCode`, `relevance` |
+| `RouteCalculationRequestDto` | `departurePosition: LocationDto`, `destinationPosition: LocationDto`, `distanceUnit`, `travelMode`                    |
+| `RouteCalculationResultDto`  | `distance: number`, `duration: DurationDto`                                                                           |
+| `DurationDto`                | `hours: number`, `minutes: number`                                                                                    |
 
 ## Direct Client Access
 
-The service exposes the underlying Location client for advanced operations:
+The service keeps its client private, but the module exports the `LocationClient` provider, so you can inject it for operations the service doesn't cover:
 
 ```typescript
-import { 
-  GetPlaceCommand,
-  SearchPlaceIndexForPositionCommand,
-  BatchGetDevicePositionCommand
-} from '@aws-sdk/client-location';
+import { Injectable } from '@nestjs/common';
+import { LocationClient, SearchPlaceIndexForPositionCommand } from '@aws-sdk/client-location';
+import { ServerAwsLocationConfig } from '@onivoro/server-aws-location';
 
 @Injectable()
-export class AdvancedLocationService {
-  constructor(private readonly locationService: LocationService) {}
+export class ReverseGeocodingService {
+  constructor(
+    private readonly locationClient: LocationClient,
+    private readonly config: ServerAwsLocationConfig,
+  ) {}
 
-  // Reverse geocoding - coordinates to address
-  async reverseGeocode(lat: number, lng: number) {
-    const command = new SearchPlaceIndexForPositionCommand({
-      IndexName: process.env.AWS_LOCATION_INDEX_NAME,
-      Position: [lng, lat] // Note: AWS Location uses [longitude, latitude]
-    });
-    
-    return await this.locationService.locationClient.send(command);
-  }
-
-  // Get place details by ID
-  async getPlaceDetails(placeId: string) {
-    const command = new GetPlaceCommand({
-      IndexName: process.env.AWS_LOCATION_INDEX_NAME,
-      PlaceId: placeId
-    });
-    
-    return await this.locationService.locationClient.send(command);
-  }
-}
-```
-
-## Complete Example
-
-```typescript
-import { Module, Injectable, Controller, Get, Query } from '@nestjs/common';
-import { ServerAwsLocationModule, LocationService } from '@onivoro/server-aws-location';
-
-@Module({
-  imports: [ServerAwsLocationModule.configure()],
-  controllers: [DeliveryController],
-  providers: [DeliveryService]
-})
-export class DeliveryModule {}
-
-@Injectable()
-export class DeliveryService {
-  constructor(private readonly locationService: LocationService) {}
-
-  async calculateDeliveryRoute(pickupAddress: string, deliveryAddress: string) {
-    try {
-      // Geocode both addresses
-      const [pickupResults, deliveryResults] = await Promise.all([
-        this.locationService.geocodeAddress(pickupAddress),
-        this.locationService.geocodeAddress(deliveryAddress)
-      ]);
-
-      if (!pickupResults?.length || !deliveryResults?.length) {
-        throw new Error('Unable to geocode addresses');
-      }
-
-      const pickup = pickupResults[0].Place.Geometry.Point;
-      const delivery = deliveryResults[0].Place.Geometry.Point;
-
-      // Calculate route
-      const route = await this.locationService.calculateRoute(
-        pickup[1], // lat
-        pickup[0], // lng
-        delivery[1], // lat
-        delivery[0]  // lng
-      );
-
-      return {
-        pickup: {
-          address: pickupResults[0].Place.Label,
-          coordinates: { lat: pickup[1], lng: pickup[0] }
-        },
-        delivery: {
-          address: deliveryResults[0].Place.Label,
-          coordinates: { lat: delivery[1], lng: delivery[0] }
-        },
-        route: {
-          distanceKm: route.Summary.Distance,
-          durationMinutes: Math.ceil(route.Summary.DurationSeconds / 60),
-          steps: route.Legs[0]?.Steps.map(step => ({
-            distance: step.Distance,
-            duration: step.DurationSeconds,
-            instruction: step.EndPosition
-          }))
-        }
-      };
-    } catch (error) {
-      console.error('Route calculation failed:', error);
-      throw error;
-    }
-  }
-
-  async estimateDeliveryTime(distance: number, trafficMultiplier: number = 1.2) {
-    // Average delivery speed in km/h
-    const averageSpeed = 40;
-    const baseTime = (distance / averageSpeed) * 60; // minutes
-    return Math.ceil(baseTime * trafficMultiplier);
-  }
-}
-
-@Controller('delivery')
-export class DeliveryController {
-  constructor(private readonly deliveryService: DeliveryService) {}
-
-  @Get('route')
-  async getDeliveryRoute(
-    @Query('pickup') pickup: string,
-    @Query('delivery') delivery: string
-  ) {
-    return await this.deliveryService.calculateDeliveryRoute(pickup, delivery);
+  reverseGeocode(longitude: number, latitude: number) {
+    return this.locationClient.send(
+      new SearchPlaceIndexForPositionCommand({
+        IndexName: this.config.PLACE_INDEX_NAME,
+        Position: [longitude, latitude], // AWS Location uses [longitude, latitude]
+      }),
+    );
   }
 }
 ```
 
 ## AWS Location Service Setup
 
-Before using this library, you need to set up AWS Location Service resources:
+Create the place index and route calculator the module is configured with:
 
-1. **Create a Place Index** for geocoding:
 ```bash
 aws location create-place-index \
   --index-name my-place-index \
-  --data-source Esri \
-  --pricing-plan RequestBasedUsage
-```
+  --data-source Esri
 
-2. **Create a Route Calculator** for routing:
-```bash
 aws location create-route-calculator \
   --calculator-name my-route-calculator \
-  --data-source Esri \
-  --pricing-plan RequestBasedUsage
+  --data-source Esri
 ```
 
-## Environment Variables
+## Exports
 
-```bash
-# Required: AWS Location resource names
-AWS_LOCATION_INDEX_NAME=my-place-index
-AWS_LOCATION_CALCULATOR_NAME=my-route-calculator
-
-# Required: AWS region
-AWS_REGION=us-east-1
-
-# Optional: AWS profile
-AWS_PROFILE=my-profile
-```
-
-## Error Handling
-
-```typescript
-try {
-  const results = await locationService.geocodeAddress('invalid address xyz123');
-} catch (error) {
-  if (error.name === 'ResourceNotFoundException') {
-    console.error('Place index not found');
-  } else if (error.name === 'ValidationException') {
-    console.error('Invalid input parameters');
-  }
-}
-```
-
-## Limitations
-
-- Only provides two methods: geocoding and route calculation
-- No support for geofencing or device tracking
-- Limited to single address geocoding (no batch operations)
-- Route calculation limited to two-point routes
-- For advanced features, use the exposed `locationClient` directly
-
-## Best Practices
-
-1. **Resource Names**: Store AWS Location resource names in environment variables
-2. **Error Handling**: Always handle cases where geocoding returns no results
-3. **Coordinate Order**: AWS Location uses [longitude, latitude] order
-4. **Rate Limiting**: Implement appropriate rate limiting for production use
-5. **Caching**: Consider caching geocoding results to reduce API calls
+- `ServerAwsLocationModule` - dynamic module with `configure(config)`
+- `ServerAwsLocationConfig` - configuration class (also injectable)
+- `LocationService` - `geocodeAddress`, `calculateRoute`
+- `LocationDto`, `Coordinates`, `GeocodingResultDto`, `RouteCalculationRequestDto`, `RouteCalculationResultDto`, `DurationDto`
 
 ## License
 

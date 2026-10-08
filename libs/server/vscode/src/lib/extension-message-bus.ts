@@ -212,7 +212,9 @@ export class ExtensionMessageBus implements MessageBus, OnModuleDestroy {
         targets.push('extension');
         this.dispatchLocalNotification(actualMethod, params);
       }
-      this.log(`sendNotification: "${actualMethod}" -> sent to [${targets.join(', ')}]`);
+      this.log(
+        `sendNotification: "${actualMethod}" -> sent to [${targets.join(', ')}]`,
+      );
       return;
     }
 
@@ -221,7 +223,9 @@ export class ExtensionMessageBus implements MessageBus, OnModuleDestroy {
       .sendRequest(actualMethod, params)
       .catch((err) => this.log(`Server notification error: ${err.message}`));
     this.webviewProvider.postMessage(notification);
-    this.log(`sendNotification: "${actualMethod}" -> broadcast to [server, webview]`);
+    this.log(
+      `sendNotification: "${actualMethod}" -> broadcast to [server, webview]`,
+    );
   }
 
   /**
@@ -387,7 +391,9 @@ export class ExtensionMessageBus implements MessageBus, OnModuleDestroy {
       result = await this.routeRequest(method, message.params, 'webview');
       this.log(`handleWebviewMessage: "${method}" -> routed successfully`);
     } catch (err) {
-      this.log(`handleWebviewMessage: "${method}" -> routing failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.log(
+        `handleWebviewMessage: "${method}" -> routing failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       console.error(
         '[ExtensionMessageBus] Error handling webview message:',
         err,
@@ -481,6 +487,8 @@ export class ExtensionMessageBus implements MessageBus, OnModuleDestroy {
     this.webviewProvider.onMessage((message: unknown) => {
       if (this.isJsonRpcRequest(message)) {
         this.handleWebviewMessage(message as JsonRpcRequest);
+      } else if (this.isJsonRpcResponse(message)) {
+        this.handleWebviewResponse(message);
       } else {
         this.log('Message is not a valid JSON-RPC request');
       }
@@ -596,6 +604,21 @@ export class ExtensionMessageBus implements MessageBus, OnModuleDestroy {
       'jsonrpc' in message &&
       'method' in message &&
       'id' in message
+    );
+  }
+
+  /**
+   * Check if a message is a JSON-RPC response (an `id` and no `method`).
+   * `result` is not required, because a void result can be dropped when the
+   * message is serialized.
+   */
+  private isJsonRpcResponse(message: unknown): message is JsonRpcResponse {
+    return (
+      typeof message === 'object' &&
+      message !== null &&
+      'jsonrpc' in message &&
+      'id' in message &&
+      !('method' in message)
     );
   }
 

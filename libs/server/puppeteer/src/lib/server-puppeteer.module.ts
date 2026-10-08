@@ -17,7 +17,7 @@ export class ServerPuppeteerModule {
       providers: [
         {
           provide: ServerPuppeteerConfig,
-          useValue: serverPuppeteerConfig
+          useValue: serverPuppeteerConfig,
         },
         {
           provide: Browser,
@@ -28,10 +28,10 @@ export class ServerPuppeteerModule {
 
             return browser;
           },
-          inject: [ServerPuppeteerConfig]
+          inject: [ServerPuppeteerConfig],
         },
-        PuppeteerService
-      ]
+        PuppeteerService,
+      ],
     });
   }
 }

@@ -8,9 +8,12 @@ A simple SendGrid integration module for NestJS applications, providing basic em
 npm install @onivoro/server-sendgrid @sendgrid/mail
 ```
 
+`@nestjs/common` and `@sendgrid/mail` are peer dependencies; `@onivoro/server-common` is installed as a regular dependency.
+
 ## Overview
 
 This library provides:
+
 - NestJS module for SendGrid integration
 - Basic email sending with attachments
 - Simple configuration management
@@ -19,20 +22,27 @@ This library provides:
 ## Module Setup
 
 ```typescript
+import { Module } from '@nestjs/common';
 import { ServerSendgridModule, ServerSendgridConfig } from '@onivoro/server-sendgrid';
 
 const config = new ServerSendgridConfig(
-  process.env.SENDGRID_API_KEY,    // Your SendGrid API key
-  'noreply@yourcompany.com'        // From email address
+  process.env.SENDGRID_API_KEY, // Your SendGrid API key
+  'noreply@yourcompany.com', // From email address
 );
 
 @Module({
-  imports: [
-    ServerSendgridModule.configure(config)
-  ]
+  imports: [ServerSendgridModule.configure(config)],
 })
 export class AppModule {}
 ```
+
+`ServerSendgridModule.configure(config)` returns a dynamic module (not global) that provides and exports:
+
+- `ServerSendgridConfig` — the config instance you passed in
+- `MailService` (from `@sendgrid/mail`) — the default `@sendgrid/mail` client, with `setApiKey(config.SENDGRID_API_KEY)` already called
+- `EmailService`
+
+Import the module into each module that injects `EmailService`, or re-export it from a shared module.
 
 ## Configuration
 
@@ -41,8 +51,8 @@ The `ServerSendgridConfig` class requires two parameters:
 ```typescript
 export class ServerSendgridConfig {
   constructor(
-    public SENDGRID_API_KEY: string,  // SendGrid API key
-    public FROM: string               // Default sender email
+    public SENDGRID_API_KEY: string, // SendGrid API key
+    public FROM: string, // Default sender email
   ) {}
 }
 ```
@@ -51,7 +61,7 @@ export class ServerSendgridConfig {
 
 ### EmailService
 
-The service provides a single method for sending emails:
+The service provides a single method for sending emails. The `from` address is always `config.FROM`, and the injected config is available as the public `emailService.config` property.
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -63,11 +73,11 @@ export class NotificationService {
 
   async sendWelcomeEmail(userEmail: string, userName: string) {
     await this.emailService.sendEmail(
-      userEmail,                                    // to
-      'Welcome to Our Platform!',                   // subject
+      userEmail, // to
+      'Welcome to Our Platform!', // subject
       `<h1>Hello ${userName}</h1><p>Welcome!</p>`, // html
-      `Hello ${userName}, Welcome!`,               // text
-      []                                           // attachments (optional)
+      `Hello ${userName}, Welcome!`, // text
+      [], // attachments (optional)
     );
   }
 }
@@ -88,10 +98,13 @@ async sendEmail(
     filename: string;
     type: string;      // MIME type
   }>
-): Promise<any>
+): Promise<[ClientResponse, {}]>
 ```
 
+The return value is whatever `MailService.send()` from `@sendgrid/mail` resolves to.
+
 Parameters:
+
 - `to` - Recipient email address
 - `subject` - Email subject line
 - `html` - HTML content of the email
@@ -111,7 +124,7 @@ export class InvoiceService {
 
   async sendInvoice(customerEmail: string, invoiceNumber: string, pdfPath: string) {
     const pdfContent = readFileSync(pdfPath).toString('base64');
-    
+
     await this.emailService.sendEmail(
       customerEmail,
       `Invoice #${invoiceNumber}`,
@@ -121,17 +134,19 @@ export class InvoiceService {
         <p>Thank you for your business!</p>
       `,
       `Invoice #${invoiceNumber}\n\nPlease find your invoice attached.\n\nThank you for your business!`,
-      [{
-        content: pdfContent,
-        filename: `invoice-${invoiceNumber}.pdf`,
-        type: 'application/pdf'
-      }]
+      [
+        {
+          content: pdfContent,
+          filename: `invoice-${invoiceNumber}.pdf`,
+          type: 'application/pdf',
+        },
+      ],
     );
   }
 
   async sendPasswordReset(userEmail: string, resetToken: string) {
     const resetUrl = `https://yourapp.com/reset-password?token=${resetToken}`;
-    
+
     await this.emailService.sendEmail(
       userEmail,
       'Password Reset Request',
@@ -140,7 +155,7 @@ export class InvoiceService {
         <p><a href="${resetUrl}">Click here to reset your password</a></p>
         <p>This link will expire in 1 hour.</p>
       `,
-      `You requested a password reset.\n\nClick here to reset your password: ${resetUrl}\n\nThis link will expire in 1 hour.`
+      `You requested a password reset.\n\nClick here to reset your password: ${resetUrl}\n\nThis link will expire in 1 hour.`,
     );
   }
 }
@@ -149,8 +164,8 @@ export class InvoiceService {
 ## Important Notes
 
 1. This is a basic wrapper around SendGrid's mail service
-2. The SendGrid client is initialized as a singleton
-3. Only supports single recipient emails (no bulk sending)
+2. The SendGrid client is initialized as a singleton: `setApiKey` runs only the first time the `MailService` provider is created in the process, so calling `configure()` again with a different API key has no effect
+3. `to` is typed as a single `string` (no bulk sending)
 4. The `FROM` address is configured globally for all emails
 5. No template support - you must provide HTML and text content
 6. Limited error handling - errors are thrown directly from SendGrid

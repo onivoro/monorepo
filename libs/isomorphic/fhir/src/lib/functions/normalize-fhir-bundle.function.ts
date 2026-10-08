@@ -153,7 +153,10 @@ export function normalizeFhirBundle(bundle: IFhirBundle): INormalizedFhirData {
   return result;
 }
 
-function processResource(resource: IFhirResource, result: INormalizedFhirData): void {
+function processResource(
+  resource: IFhirResource,
+  result: INormalizedFhirData,
+): void {
   switch (resource.resourceType) {
     case 'Patient':
       processPatient(resource as IFhirPatient, result);
@@ -203,7 +206,10 @@ function processResource(resource: IFhirResource, result: INormalizedFhirData): 
   }
 }
 
-function processPatient(patient: IFhirPatient, result: INormalizedFhirData): void {
+function processPatient(
+  patient: IFhirPatient,
+  result: INormalizedFhirData,
+): void {
   const patientId = uuidv4();
 
   // Main patient record
@@ -213,11 +219,21 @@ function processPatient(patient: IFhirPatient, result: INormalizedFhirData): voi
     active: patient.active,
     gender: patient.gender,
     birthDate: patient.birthDate,
-    deceased: typeof patient.deceased === 'boolean' ? patient.deceased : undefined,
-    deceasedDateTime: typeof patient.deceased === 'string' ? patient.deceased : undefined,
-    maritalStatus: patient.maritalStatus?.text || patient.maritalStatus?.coding?.[0]?.display,
-    multipleBirth: typeof patient.multipleBirth === 'boolean' ? patient.multipleBirth : undefined,
-    multipleBirthInteger: typeof patient.multipleBirth === 'number' ? patient.multipleBirth : undefined,
+    deceased:
+      typeof patient.deceased === 'boolean' ? patient.deceased : undefined,
+    deceasedDateTime:
+      typeof patient.deceased === 'string' ? patient.deceased : undefined,
+    maritalStatus:
+      patient.maritalStatus?.text ||
+      patient.maritalStatus?.coding?.[0]?.display,
+    multipleBirth:
+      typeof patient.multipleBirth === 'boolean'
+        ? patient.multipleBirth
+        : undefined,
+    multipleBirthInteger:
+      typeof patient.multipleBirth === 'number'
+        ? patient.multipleBirth
+        : undefined,
     managingOrganizationId: patient.managingOrganization?.reference,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -226,7 +242,7 @@ function processPatient(patient: IFhirPatient, result: INormalizedFhirData): voi
 
   // Process identifiers
   if (patient.identifier) {
-    patient.identifier.forEach(identifier => {
+    patient.identifier.forEach((identifier) => {
       result.patientIdentifiers.push({
         id: uuidv4(),
         patientId: patientId,
@@ -243,7 +259,7 @@ function processPatient(patient: IFhirPatient, result: INormalizedFhirData): voi
 
   // Process names
   if (patient.name) {
-    patient.name.forEach(name => {
+    patient.name.forEach((name) => {
       result.patientNames.push({
         id: uuidv4(),
         patientId: patientId,
@@ -262,28 +278,32 @@ function processPatient(patient: IFhirPatient, result: INormalizedFhirData): voi
 
   // Process addresses
   if (patient.address) {
-    patient.address.forEach(address => {
+    patient.address.forEach((address) => {
       processAddress('Patient', patientId, address, result);
     });
   }
 
   // Process telecom
   if (patient.telecom) {
-    patient.telecom.forEach(telecom => {
+    patient.telecom.forEach((telecom) => {
       processTelecom('Patient', patientId, telecom, result);
     });
   }
 
   // Process contacts
   if (patient.contact) {
-    patient.contact.forEach(contact => {
+    patient.contact.forEach((contact) => {
       const contactId = uuidv4();
       result.patientContacts.push({
         id: contactId,
         patientId: patientId,
         relationshipCode: contact.relationship?.[0]?.coding?.[0]?.code,
         relationshipText: contact.relationship?.[0]?.text,
-        name: contact.name?.text || `${contact.name?.given?.join(' ')} ${contact.name?.family}`.trim(),
+        name:
+          contact.name?.text ||
+          [contact.name?.given?.join(' '), contact.name?.family]
+            .filter(Boolean)
+            .join(' '),
         gender: contact.gender,
         organizationReference: contact.organization?.reference,
         periodStart: contact.period?.start,
@@ -293,7 +313,7 @@ function processPatient(patient: IFhirPatient, result: INormalizedFhirData): voi
 
       // Process contact's telecom and address
       if (contact.telecom) {
-        contact.telecom.forEach(telecom => {
+        contact.telecom.forEach((telecom) => {
           processTelecom('PatientContact', contactId, telecom, result);
         });
       }
@@ -305,25 +325,34 @@ function processPatient(patient: IFhirPatient, result: INormalizedFhirData): voi
 
   // Process general practitioner references
   if (patient.generalPractitioner) {
-    patient.generalPractitioner.forEach(gp => {
+    patient.generalPractitioner.forEach((gp) => {
       processReference('Patient', patientId, 'generalPractitioner', gp, result);
     });
   }
 
   // Process photo attachments
   if (patient.photo) {
-    patient.photo.forEach(photo => {
+    patient.photo.forEach((photo) => {
       processAttachment('Patient', patientId, 'photo', photo, result);
     });
   }
 
   // Process marital status
   if (patient.maritalStatus) {
-    processCodeableConcept('Patient', patientId, 'maritalStatus', patient.maritalStatus, result);
+    processCodeableConcept(
+      'Patient',
+      patientId,
+      'maritalStatus',
+      patient.maritalStatus,
+      result,
+    );
   }
 }
 
-function processPractitioner(practitioner: IFhirPractitioner, result: INormalizedFhirData): void {
+function processPractitioner(
+  practitioner: IFhirPractitioner,
+  result: INormalizedFhirData,
+): void {
   const practitionerId = uuidv4();
 
   const practitionerRecord: IPractitionerTable = {
@@ -339,7 +368,7 @@ function processPractitioner(practitioner: IFhirPractitioner, result: INormalize
 
   // Process qualifications
   if (practitioner.qualification) {
-    practitioner.qualification.forEach(qual => {
+    practitioner.qualification.forEach((qual) => {
       result.practitionerQualifications.push({
         id: uuidv4(),
         practitionerId: practitionerId,
@@ -356,43 +385,52 @@ function processPractitioner(practitioner: IFhirPractitioner, result: INormalize
 
   // Process other fields similar to patient
   if (practitioner.identifier) {
-    practitioner.identifier.forEach(identifier => {
+    practitioner.identifier.forEach((identifier) => {
       processIdentifier('Practitioner', practitionerId, identifier, result);
     });
   }
 
   if (practitioner.name) {
-    practitioner.name.forEach(name => {
+    practitioner.name.forEach((name) => {
       processHumanName('Practitioner', practitionerId, name, result);
     });
   }
 
   if (practitioner.telecom) {
-    practitioner.telecom.forEach(telecom => {
+    practitioner.telecom.forEach((telecom) => {
       processTelecom('Practitioner', practitionerId, telecom, result);
     });
   }
 
   if (practitioner.address) {
-    practitioner.address.forEach(address => {
+    practitioner.address.forEach((address) => {
       processAddress('Practitioner', practitionerId, address, result);
     });
   }
 
   if (practitioner.photo) {
-    practitioner.photo.forEach(photo => {
+    practitioner.photo.forEach((photo) => {
       processAttachment('Practitioner', practitionerId, 'photo', photo, result);
     });
   }
 
   if (practitioner.communication) {
-    practitioner.communication.forEach(comm => {
-      processCodeableConcept('Practitioner', practitionerId, 'communication', comm, result);
+    practitioner.communication.forEach((comm) => {
+      processCodeableConcept(
+        'Practitioner',
+        practitionerId,
+        'communication',
+        comm,
+        result,
+      );
     });
   }
 }
 
-function processOrganization(organization: IFhirOrganization, result: INormalizedFhirData): void {
+function processOrganization(
+  organization: IFhirOrganization,
+  result: INormalizedFhirData,
+): void {
   const organizationId = uuidv4();
 
   const organizationRecord: IOrganizationTable = {
@@ -408,7 +446,7 @@ function processOrganization(organization: IFhirOrganization, result: INormalize
 
   // Process organization types
   if (organization.type) {
-    organization.type.forEach(type => {
+    organization.type.forEach((type) => {
       const coding = type.coding?.[0];
       if (coding) {
         result.organizationTypes.push({
@@ -425,31 +463,40 @@ function processOrganization(organization: IFhirOrganization, result: INormalize
 
   // Process other fields
   if (organization.identifier) {
-    organization.identifier.forEach(identifier => {
+    organization.identifier.forEach((identifier) => {
       processIdentifier('Organization', organizationId, identifier, result);
     });
   }
 
   if (organization.telecom) {
-    organization.telecom.forEach(telecom => {
+    organization.telecom.forEach((telecom) => {
       processTelecom('Organization', organizationId, telecom, result);
     });
   }
 
   if (organization.address) {
-    organization.address.forEach(address => {
+    organization.address.forEach((address) => {
       processAddress('Organization', organizationId, address, result);
     });
   }
 
   if (organization.endpoint) {
-    organization.endpoint.forEach(endpoint => {
-      processReference('Organization', organizationId, 'endpoint', endpoint, result);
+    organization.endpoint.forEach((endpoint) => {
+      processReference(
+        'Organization',
+        organizationId,
+        'endpoint',
+        endpoint,
+        result,
+      );
     });
   }
 }
 
-function processEncounter(encounter: IFhirEncounter, result: INormalizedFhirData): void {
+function processEncounter(
+  encounter: IFhirEncounter,
+  result: INormalizedFhirData,
+): void {
   const encounterId = uuidv4();
 
   const encounterRecord: IEncounterTable = {
@@ -459,7 +506,9 @@ function processEncounter(encounter: IFhirEncounter, result: INormalizedFhirData
     class: encounter.class.code || '',
     classSystem: encounter.class.system,
     classDisplay: encounter.class.display,
-    serviceType: encounter.serviceType?.coding?.[0]?.display || encounter.serviceType?.text,
+    serviceType:
+      encounter.serviceType?.coding?.[0]?.display ||
+      encounter.serviceType?.text,
     priority: encounter.priority?.coding?.[0]?.code,
     subjectReference: encounter.subject?.reference,
     episodeOfCareReference: encounter.episodeOfCare?.[0]?.reference,
@@ -476,12 +525,14 @@ function processEncounter(encounter: IFhirEncounter, result: INormalizedFhirData
 
   // Process participants
   if (encounter.participant) {
-    encounter.participant.forEach(participant => {
+    encounter.participant.forEach((participant) => {
       result.encounterParticipants.push({
         id: uuidv4(),
         encounterId: encounterId,
         typeCode: participant.type?.[0]?.coding?.[0]?.code,
-        typeDisplay: participant.type?.[0]?.coding?.[0]?.display || participant.type?.[0]?.text,
+        typeDisplay:
+          participant.type?.[0]?.coding?.[0]?.display ||
+          participant.type?.[0]?.text,
         individualReference: participant.individual?.reference,
         periodStart: participant.period?.start,
         periodEnd: participant.period?.end,
@@ -492,42 +543,63 @@ function processEncounter(encounter: IFhirEncounter, result: INormalizedFhirData
 
   // Process subject reference
   if (encounter.subject) {
-    processReference('Encounter', encounterId, 'subject', encounter.subject, result);
+    processReference(
+      'Encounter',
+      encounterId,
+      'subject',
+      encounter.subject,
+      result,
+    );
   }
 
   // Process other references
   if (encounter.identifier) {
-    encounter.identifier.forEach(identifier => {
+    encounter.identifier.forEach((identifier) => {
       processIdentifier('Encounter', encounterId, identifier, result);
     });
   }
 
   if (encounter.basedOn) {
-    encounter.basedOn.forEach(ref => {
+    encounter.basedOn.forEach((ref) => {
       processReference('Encounter', encounterId, 'basedOn', ref, result);
     });
   }
 
   if (encounter.appointment) {
-    encounter.appointment.forEach(ref => {
+    encounter.appointment.forEach((ref) => {
       processReference('Encounter', encounterId, 'appointment', ref, result);
     });
   }
 
   if (encounter.reasonCode) {
-    encounter.reasonCode.forEach(reason => {
-      processCodeableConcept('Encounter', encounterId, 'reasonCode', reason, result);
+    encounter.reasonCode.forEach((reason) => {
+      processCodeableConcept(
+        'Encounter',
+        encounterId,
+        'reasonCode',
+        reason,
+        result,
+      );
     });
   }
 
   if (encounter.reasonReference) {
-    encounter.reasonReference.forEach(ref => {
-      processReference('Encounter', encounterId, 'reasonReference', ref, result);
+    encounter.reasonReference.forEach((ref) => {
+      processReference(
+        'Encounter',
+        encounterId,
+        'reasonReference',
+        ref,
+        result,
+      );
     });
   }
 }
 
-function processCondition(condition: IFhirCondition, result: INormalizedFhirData): void {
+function processCondition(
+  condition: IFhirCondition,
+  result: INormalizedFhirData,
+): void {
   const conditionId = uuidv4();
 
   const conditionRecord: IConditionTable = {
@@ -541,8 +613,10 @@ function processCondition(condition: IFhirCondition, result: INormalizedFhirData
     codeDisplay: condition.code?.coding?.[0]?.display || condition.code?.text,
     subjectReference: condition.subject.reference || '',
     encounterReference: condition.encounter?.reference,
-    onsetDateTime: typeof condition.onset === 'string' ? condition.onset : undefined,
-    abatementDateTime: typeof condition.abatement === 'string' ? condition.abatement : undefined,
+    onsetDateTime:
+      typeof condition.onset === 'string' ? condition.onset : undefined,
+    abatementDateTime:
+      typeof condition.abatement === 'string' ? condition.abatement : undefined,
     recordedDate: condition.recordedDate,
     recorderReference: condition.recorder?.reference,
     asserterReference: condition.asserter?.reference,
@@ -553,31 +627,40 @@ function processCondition(condition: IFhirCondition, result: INormalizedFhirData
 
   // Process other fields
   if (condition.identifier) {
-    condition.identifier.forEach(identifier => {
+    condition.identifier.forEach((identifier) => {
       processIdentifier('Condition', conditionId, identifier, result);
     });
   }
 
   if (condition.category) {
-    condition.category.forEach(cat => {
+    condition.category.forEach((cat) => {
       processCodeableConcept('Condition', conditionId, 'category', cat, result);
     });
   }
 
   if (condition.bodySite) {
-    condition.bodySite.forEach(site => {
-      processCodeableConcept('Condition', conditionId, 'bodySite', site, result);
+    condition.bodySite.forEach((site) => {
+      processCodeableConcept(
+        'Condition',
+        conditionId,
+        'bodySite',
+        site,
+        result,
+      );
     });
   }
 
   if (condition.note) {
-    condition.note.forEach(note => {
+    condition.note.forEach((note) => {
       processNote('Condition', conditionId, note, result);
     });
   }
 }
 
-function processObservation(observation: IFhirObservation, result: INormalizedFhirData): void {
+function processObservation(
+  observation: IFhirObservation,
+  result: INormalizedFhirData,
+): void {
   const observationId = uuidv4();
 
   const observationRecord: IObservationTable = {
@@ -589,13 +672,28 @@ function processObservation(observation: IFhirObservation, result: INormalizedFh
     codeDisplay: observation.code.coding?.[0]?.display || observation.code.text,
     subjectReference: observation.subject?.reference,
     encounterReference: observation.encounter?.reference,
-    effectiveDateTime: typeof observation.effective === 'string' ? observation.effective : undefined,
-    effectivePeriodStart: typeof observation.effective === 'object' && observation.effective && 'start' in observation.effective ? observation.effective.start : undefined,
-    effectivePeriodEnd: typeof observation.effective === 'object' && observation.effective && 'end' in observation.effective ? observation.effective.end : undefined,
+    effectiveDateTime:
+      typeof observation.effective === 'string'
+        ? observation.effective
+        : undefined,
+    effectivePeriodStart:
+      typeof observation.effective === 'object' &&
+      observation.effective &&
+      'start' in observation.effective
+        ? observation.effective.start
+        : undefined,
+    effectivePeriodEnd:
+      typeof observation.effective === 'object' &&
+      observation.effective &&
+      'end' in observation.effective
+        ? observation.effective.end
+        : undefined,
     issued: observation.issued,
     dataAbsentReason: observation.dataAbsentReason?.coding?.[0]?.code,
-    bodySite: observation.bodySite?.coding?.[0]?.display || observation.bodySite?.text,
-    method: observation.method?.coding?.[0]?.display || observation.method?.text,
+    bodySite:
+      observation.bodySite?.coding?.[0]?.display || observation.bodySite?.text,
+    method:
+      observation.method?.coding?.[0]?.display || observation.method?.text,
     specimenReference: observation.specimen?.reference,
     deviceReference: observation.device?.reference,
     createdAt: new Date(),
@@ -624,7 +722,7 @@ function processObservation(observation: IFhirObservation, result: INormalizedFh
 
   // Process components
   if (observation.component) {
-    observation.component.forEach(component => {
+    observation.component.forEach((component) => {
       const componentRecord: IObservationComponentTable = {
         id: uuidv4(),
         observationId: observationId,
@@ -658,61 +756,82 @@ function processObservation(observation: IFhirObservation, result: INormalizedFh
 
   // Process other fields
   if (observation.identifier) {
-    observation.identifier.forEach(identifier => {
+    observation.identifier.forEach((identifier) => {
       processIdentifier('Observation', observationId, identifier, result);
     });
   }
 
   if (observation.basedOn) {
-    observation.basedOn.forEach(ref => {
+    observation.basedOn.forEach((ref) => {
       processReference('Observation', observationId, 'basedOn', ref, result);
     });
   }
 
   if (observation.partOf) {
-    observation.partOf.forEach(ref => {
+    observation.partOf.forEach((ref) => {
       processReference('Observation', observationId, 'partOf', ref, result);
     });
   }
 
   if (observation.category) {
-    observation.category.forEach(cat => {
-      processCodeableConcept('Observation', observationId, 'category', cat, result);
+    observation.category.forEach((cat) => {
+      processCodeableConcept(
+        'Observation',
+        observationId,
+        'category',
+        cat,
+        result,
+      );
     });
   }
 
   if (observation.interpretation) {
-    observation.interpretation.forEach(interp => {
-      processCodeableConcept('Observation', observationId, 'interpretation', interp, result);
+    observation.interpretation.forEach((interp) => {
+      processCodeableConcept(
+        'Observation',
+        observationId,
+        'interpretation',
+        interp,
+        result,
+      );
     });
   }
 
   if (observation.note) {
-    observation.note.forEach(note => {
+    observation.note.forEach((note) => {
       processNote('Observation', observationId, note, result);
     });
   }
 
   if (observation.performer) {
-    observation.performer.forEach(ref => {
+    observation.performer.forEach((ref) => {
       processReference('Observation', observationId, 'performer', ref, result);
     });
   }
 
   if (observation.hasMember) {
-    observation.hasMember.forEach(ref => {
+    observation.hasMember.forEach((ref) => {
       processReference('Observation', observationId, 'hasMember', ref, result);
     });
   }
 
   if (observation.derivedFrom) {
-    observation.derivedFrom.forEach(ref => {
-      processReference('Observation', observationId, 'derivedFrom', ref, result);
+    observation.derivedFrom.forEach((ref) => {
+      processReference(
+        'Observation',
+        observationId,
+        'derivedFrom',
+        ref,
+        result,
+      );
     });
   }
 }
 
-function processMedicationRequest(medRequest: IFhirMedicationRequest, result: INormalizedFhirData): void {
+function processMedicationRequest(
+  medRequest: IFhirMedicationRequest,
+  result: INormalizedFhirData,
+): void {
   const medRequestId = uuidv4();
 
   const medRequestRecord: IMedicationRequestTable = {
@@ -723,12 +842,17 @@ function processMedicationRequest(medRequest: IFhirMedicationRequest, result: IN
     intent: medRequest.intent,
     priority: medRequest.priority,
     doNotPerform: medRequest.doNotPerform,
-    medicationCodeableConcept: typeof medRequest.medication === 'object' && 'coding' in medRequest.medication
-      ? medRequest.medication.coding?.[0]?.display || medRequest.medication.text
-      : undefined,
-    medicationReference: typeof medRequest.medication === 'object' && 'reference' in medRequest.medication
-      ? medRequest.medication.reference
-      : undefined,
+    medicationCodeableConcept:
+      typeof medRequest.medication === 'object' &&
+      'coding' in medRequest.medication
+        ? medRequest.medication.coding?.[0]?.display ||
+          medRequest.medication.text
+        : undefined,
+    medicationReference:
+      typeof medRequest.medication === 'object' &&
+      'reference' in medRequest.medication
+        ? medRequest.medication.reference
+        : undefined,
     subjectReference: medRequest.subject.reference || '',
     encounterReference: medRequest.encounter?.reference,
     authoredOn: medRequest.authoredOn,
@@ -746,15 +870,19 @@ function processMedicationRequest(medRequest: IFhirMedicationRequest, result: IN
 
   // Process dosage instructions
   if (medRequest.dosageInstruction) {
-    medRequest.dosageInstruction.forEach(dosage => {
+    medRequest.dosageInstruction.forEach((dosage) => {
       const dosageRecord: IMedicationDosageTable = {
         id: uuidv4(),
         medicationRequestId: medRequestId,
         sequence: dosage.sequence,
         text: dosage.text,
         patientInstruction: dosage.patientInstruction,
-        asNeeded: typeof dosage.asNeeded === 'boolean' ? dosage.asNeeded : undefined,
-        asNeededCode: typeof dosage.asNeeded === 'object' ? dosage.asNeeded.coding?.[0]?.code : undefined,
+        asNeeded:
+          typeof dosage.asNeeded === 'boolean' ? dosage.asNeeded : undefined,
+        asNeededCode:
+          typeof dosage.asNeeded === 'object'
+            ? dosage.asNeeded.coding?.[0]?.code
+            : undefined,
         site: dosage.site?.coding?.[0]?.display || dosage.site?.text,
         route: dosage.route?.coding?.[0]?.display || dosage.route?.text,
         method: dosage.method?.coding?.[0]?.display || dosage.method?.text,
@@ -781,67 +909,118 @@ function processMedicationRequest(medRequest: IFhirMedicationRequest, result: IN
 
   // Process other fields
   if (medRequest.identifier) {
-    medRequest.identifier.forEach(identifier => {
+    medRequest.identifier.forEach((identifier) => {
       processIdentifier('MedicationRequest', medRequestId, identifier, result);
     });
   }
 
   if (medRequest.category) {
-    medRequest.category.forEach(cat => {
-      processCodeableConcept('MedicationRequest', medRequestId, 'category', cat, result);
+    medRequest.category.forEach((cat) => {
+      processCodeableConcept(
+        'MedicationRequest',
+        medRequestId,
+        'category',
+        cat,
+        result,
+      );
     });
   }
 
   if (medRequest.reasonCode) {
-    medRequest.reasonCode.forEach(reason => {
-      processCodeableConcept('MedicationRequest', medRequestId, 'reasonCode', reason, result);
+    medRequest.reasonCode.forEach((reason) => {
+      processCodeableConcept(
+        'MedicationRequest',
+        medRequestId,
+        'reasonCode',
+        reason,
+        result,
+      );
     });
   }
 
   if (medRequest.reasonReference) {
-    medRequest.reasonReference.forEach(ref => {
-      processReference('MedicationRequest', medRequestId, 'reasonReference', ref, result);
+    medRequest.reasonReference.forEach((ref) => {
+      processReference(
+        'MedicationRequest',
+        medRequestId,
+        'reasonReference',
+        ref,
+        result,
+      );
     });
   }
 
   if (medRequest.supportingInformation) {
-    medRequest.supportingInformation.forEach(ref => {
-      processReference('MedicationRequest', medRequestId, 'supportingInformation', ref, result);
+    medRequest.supportingInformation.forEach((ref) => {
+      processReference(
+        'MedicationRequest',
+        medRequestId,
+        'supportingInformation',
+        ref,
+        result,
+      );
     });
   }
 
   if (medRequest.basedOn) {
-    medRequest.basedOn.forEach(ref => {
-      processReference('MedicationRequest', medRequestId, 'basedOn', ref, result);
+    medRequest.basedOn.forEach((ref) => {
+      processReference(
+        'MedicationRequest',
+        medRequestId,
+        'basedOn',
+        ref,
+        result,
+      );
     });
   }
 
   if (medRequest.insurance) {
-    medRequest.insurance.forEach(ref => {
-      processReference('MedicationRequest', medRequestId, 'insurance', ref, result);
+    medRequest.insurance.forEach((ref) => {
+      processReference(
+        'MedicationRequest',
+        medRequestId,
+        'insurance',
+        ref,
+        result,
+      );
     });
   }
 
   if (medRequest.note) {
-    medRequest.note.forEach(note => {
+    medRequest.note.forEach((note) => {
       processNote('MedicationRequest', medRequestId, note, result);
     });
   }
 
   if (medRequest.detectedIssue) {
-    medRequest.detectedIssue.forEach(ref => {
-      processReference('MedicationRequest', medRequestId, 'detectedIssue', ref, result);
+    medRequest.detectedIssue.forEach((ref) => {
+      processReference(
+        'MedicationRequest',
+        medRequestId,
+        'detectedIssue',
+        ref,
+        result,
+      );
     });
   }
 
   if (medRequest.eventHistory) {
-    medRequest.eventHistory.forEach(ref => {
-      processReference('MedicationRequest', medRequestId, 'eventHistory', ref, result);
+    medRequest.eventHistory.forEach((ref) => {
+      processReference(
+        'MedicationRequest',
+        medRequestId,
+        'eventHistory',
+        ref,
+        result,
+      );
     });
   }
 }
 
-function processProcedure(procedure: IFhirProcedure, result: INormalizedFhirData): void {
+function processProcedure(
+  procedure: IFhirProcedure,
+  result: INormalizedFhirData,
+): void {
   const procedureId = uuidv4();
 
   const procedureRecord: IProcedureTable = {
@@ -855,9 +1034,16 @@ function processProcedure(procedure: IFhirProcedure, result: INormalizedFhirData
     codeDisplay: procedure.code?.coding?.[0]?.display || procedure.code?.text,
     subjectReference: procedure.subject.reference || '',
     encounterReference: procedure.encounter?.reference,
-    performedDateTime: typeof procedure.performed === 'string' ? procedure.performed : undefined,
-    performedPeriodStart: typeof procedure.performed === 'object' && 'start' in procedure.performed ? procedure.performed.start : undefined,
-    performedPeriodEnd: typeof procedure.performed === 'object' && 'end' in procedure.performed ? procedure.performed.end : undefined,
+    performedDateTime:
+      typeof procedure.performed === 'string' ? procedure.performed : undefined,
+    performedPeriodStart:
+      typeof procedure.performed === 'object' && 'start' in procedure.performed
+        ? procedure.performed.start
+        : undefined,
+    performedPeriodEnd:
+      typeof procedure.performed === 'object' && 'end' in procedure.performed
+        ? procedure.performed.end
+        : undefined,
     recorderReference: procedure.recorder?.reference,
     asserterReference: procedure.asserter?.reference,
     locationReference: procedure.location?.reference,
@@ -869,7 +1055,7 @@ function processProcedure(procedure: IFhirProcedure, result: INormalizedFhirData
 
   // Process performers
   if (procedure.performer) {
-    procedure.performer.forEach(performer => {
+    procedure.performer.forEach((performer) => {
       result.procedurePerformers.push({
         id: uuidv4(),
         procedureId: procedureId,
@@ -883,85 +1069,130 @@ function processProcedure(procedure: IFhirProcedure, result: INormalizedFhirData
 
   // Process other fields
   if (procedure.identifier) {
-    procedure.identifier.forEach(identifier => {
+    procedure.identifier.forEach((identifier) => {
       processIdentifier('Procedure', procedureId, identifier, result);
     });
   }
 
   if (procedure.basedOn) {
-    procedure.basedOn.forEach(ref => {
+    procedure.basedOn.forEach((ref) => {
       processReference('Procedure', procedureId, 'basedOn', ref, result);
     });
   }
 
   if (procedure.partOf) {
-    procedure.partOf.forEach(ref => {
+    procedure.partOf.forEach((ref) => {
       processReference('Procedure', procedureId, 'partOf', ref, result);
     });
   }
 
   if (procedure.reasonCode) {
-    procedure.reasonCode.forEach(reason => {
-      processCodeableConcept('Procedure', procedureId, 'reasonCode', reason, result);
+    procedure.reasonCode.forEach((reason) => {
+      processCodeableConcept(
+        'Procedure',
+        procedureId,
+        'reasonCode',
+        reason,
+        result,
+      );
     });
   }
 
   if (procedure.reasonReference) {
-    procedure.reasonReference.forEach(ref => {
-      processReference('Procedure', procedureId, 'reasonReference', ref, result);
+    procedure.reasonReference.forEach((ref) => {
+      processReference(
+        'Procedure',
+        procedureId,
+        'reasonReference',
+        ref,
+        result,
+      );
     });
   }
 
   if (procedure.bodySite) {
-    procedure.bodySite.forEach(site => {
-      processCodeableConcept('Procedure', procedureId, 'bodySite', site, result);
+    procedure.bodySite.forEach((site) => {
+      processCodeableConcept(
+        'Procedure',
+        procedureId,
+        'bodySite',
+        site,
+        result,
+      );
     });
   }
 
   if (procedure.report) {
-    procedure.report.forEach(ref => {
+    procedure.report.forEach((ref) => {
       processReference('Procedure', procedureId, 'report', ref, result);
     });
   }
 
   if (procedure.complication) {
-    procedure.complication.forEach(comp => {
-      processCodeableConcept('Procedure', procedureId, 'complication', comp, result);
+    procedure.complication.forEach((comp) => {
+      processCodeableConcept(
+        'Procedure',
+        procedureId,
+        'complication',
+        comp,
+        result,
+      );
     });
   }
 
   if (procedure.complicationDetail) {
-    procedure.complicationDetail.forEach(ref => {
-      processReference('Procedure', procedureId, 'complicationDetail', ref, result);
+    procedure.complicationDetail.forEach((ref) => {
+      processReference(
+        'Procedure',
+        procedureId,
+        'complicationDetail',
+        ref,
+        result,
+      );
     });
   }
 
   if (procedure.followUp) {
-    procedure.followUp.forEach(followUp => {
-      processCodeableConcept('Procedure', procedureId, 'followUp', followUp, result);
+    procedure.followUp.forEach((followUp) => {
+      processCodeableConcept(
+        'Procedure',
+        procedureId,
+        'followUp',
+        followUp,
+        result,
+      );
     });
   }
 
   if (procedure.note) {
-    procedure.note.forEach(note => {
+    procedure.note.forEach((note) => {
       processNote('Procedure', procedureId, note, result);
     });
   }
 
   if (procedure.usedReference) {
-    procedure.usedReference.forEach(ref => {
+    procedure.usedReference.forEach((ref) => {
       processReference('Procedure', procedureId, 'usedReference', ref, result);
     });
   }
 
   if (procedure.usedCode) {
-    procedure.usedCode.forEach(code => {
-      processCodeableConcept('Procedure', procedureId, 'usedCode', code, result);
+    procedure.usedCode.forEach((code) => {
+      processCodeableConcept(
+        'Procedure',
+        procedureId,
+        'usedCode',
+        code,
+        result,
+      );
     });
   }
 }
 
-function processImmunization(immunization: IFhirImmunization, result: INormalizedFhirData): void {
+function processImmunization(
+  immunization: IFhirImmunization,
+  result: INormalizedFhirData,
+): void {
   const immunizationId = uuidv4();
 
   const immunizationRecord: IImmunizationTable = {
@@ -971,10 +1202,15 @@ function processImmunization(immunization: IFhirImmunization, result: INormalize
     statusReason: immunization.statusReason?.coding?.[0]?.code,
     vaccineCode: immunization.vaccineCode.coding?.[0]?.code || '',
     vaccineCodeSystem: immunization.vaccineCode.coding?.[0]?.system,
-    vaccineCodeDisplay: immunization.vaccineCode.coding?.[0]?.display || immunization.vaccineCode.text,
+    vaccineCodeDisplay:
+      immunization.vaccineCode.coding?.[0]?.display ||
+      immunization.vaccineCode.text,
     patientReference: immunization.patient.reference || '',
     encounterReference: immunization.encounter?.reference,
-    occurrenceDateTime: typeof immunization.occurrence === 'string' ? immunization.occurrence : undefined,
+    occurrenceDateTime:
+      typeof immunization.occurrence === 'string'
+        ? immunization.occurrence
+        : undefined,
     recorded: immunization.recorded,
     primarySource: immunization.primarySource,
     reportOrigin: immunization.reportOrigin?.coding?.[0]?.code,
@@ -995,43 +1231,70 @@ function processImmunization(immunization: IFhirImmunization, result: INormalize
 
   // Process other fields
   if (immunization.identifier) {
-    immunization.identifier.forEach(identifier => {
+    immunization.identifier.forEach((identifier) => {
       processIdentifier('Immunization', immunizationId, identifier, result);
     });
   }
 
   if (immunization.reasonCode) {
-    immunization.reasonCode.forEach(reason => {
-      processCodeableConcept('Immunization', immunizationId, 'reasonCode', reason, result);
+    immunization.reasonCode.forEach((reason) => {
+      processCodeableConcept(
+        'Immunization',
+        immunizationId,
+        'reasonCode',
+        reason,
+        result,
+      );
     });
   }
 
   if (immunization.reasonReference) {
-    immunization.reasonReference.forEach(ref => {
-      processReference('Immunization', immunizationId, 'reasonReference', ref, result);
+    immunization.reasonReference.forEach((ref) => {
+      processReference(
+        'Immunization',
+        immunizationId,
+        'reasonReference',
+        ref,
+        result,
+      );
     });
   }
 
   if (immunization.subpotentReason) {
-    immunization.subpotentReason.forEach(reason => {
-      processCodeableConcept('Immunization', immunizationId, 'subpotentReason', reason, result);
+    immunization.subpotentReason.forEach((reason) => {
+      processCodeableConcept(
+        'Immunization',
+        immunizationId,
+        'subpotentReason',
+        reason,
+        result,
+      );
     });
   }
 
   if (immunization.programEligibility) {
-    immunization.programEligibility.forEach(prog => {
-      processCodeableConcept('Immunization', immunizationId, 'programEligibility', prog, result);
+    immunization.programEligibility.forEach((prog) => {
+      processCodeableConcept(
+        'Immunization',
+        immunizationId,
+        'programEligibility',
+        prog,
+        result,
+      );
     });
   }
 
   if (immunization.note) {
-    immunization.note.forEach(note => {
+    immunization.note.forEach((note) => {
       processNote('Immunization', immunizationId, note, result);
     });
   }
 }
 
-function processAllergyIntolerance(allergy: IFhirAllergyIntolerance, result: INormalizedFhirData): void {
+function processAllergyIntolerance(
+  allergy: IFhirAllergyIntolerance,
+  result: INormalizedFhirData,
+): void {
   const allergyId = uuidv4();
 
   const allergyRecord: IAllergyIntoleranceTable = {
@@ -1046,7 +1309,8 @@ function processAllergyIntolerance(allergy: IFhirAllergyIntolerance, result: INo
     codeDisplay: allergy.code?.coding?.[0]?.display || allergy.code?.text,
     patientReference: allergy.patient.reference || '',
     encounterReference: allergy.encounter?.reference,
-    onsetDateTime: typeof allergy.onset === 'string' ? allergy.onset : undefined,
+    onsetDateTime:
+      typeof allergy.onset === 'string' ? allergy.onset : undefined,
     recordedDate: allergy.recordedDate,
     recorderReference: allergy.recorder?.reference,
     asserterReference: allergy.asserter?.reference,
@@ -1058,29 +1322,33 @@ function processAllergyIntolerance(allergy: IFhirAllergyIntolerance, result: INo
 
   // Process reactions
   if (allergy.reaction) {
-    allergy.reaction.forEach(reaction => {
+    allergy.reaction.forEach((reaction) => {
       const reactionId = uuidv4();
       const reactionRecord: IAllergyReactionTable = {
         id: reactionId,
         allergyIntoleranceId: allergyId,
-        substance: reaction.substance?.coding?.[0]?.display || reaction.substance?.text,
+        substance:
+          reaction.substance?.coding?.[0]?.display || reaction.substance?.text,
         description: reaction.description,
         onset: reaction.onset,
         severity: reaction.severity,
-        exposureRoute: reaction.exposureRoute?.coding?.[0]?.display || reaction.exposureRoute?.text,
+        exposureRoute:
+          reaction.exposureRoute?.coding?.[0]?.display ||
+          reaction.exposureRoute?.text,
         createdAt: new Date(),
       };
       result.allergyReactions.push(reactionRecord);
 
       // Process manifestations
       if (reaction.manifestation) {
-        reaction.manifestation.forEach(manifestation => {
+        reaction.manifestation.forEach((manifestation) => {
           result.allergyManifestations.push({
             id: uuidv4(),
             allergyReactionId: reactionId,
             code: manifestation.coding?.[0]?.code,
             codeSystem: manifestation.coding?.[0]?.system,
-            codeDisplay: manifestation.coding?.[0]?.display || manifestation.text,
+            codeDisplay:
+              manifestation.coding?.[0]?.display || manifestation.text,
             createdAt: new Date(),
           });
         });
@@ -1088,7 +1356,7 @@ function processAllergyIntolerance(allergy: IFhirAllergyIntolerance, result: INo
 
       // Process reaction notes
       if (reaction.note) {
-        reaction.note.forEach(note => {
+        reaction.note.forEach((note) => {
           processNote('AllergyReaction', reactionId, note, result);
         });
       }
@@ -1097,25 +1365,34 @@ function processAllergyIntolerance(allergy: IFhirAllergyIntolerance, result: INo
 
   // Process other fields
   if (allergy.identifier) {
-    allergy.identifier.forEach(identifier => {
+    allergy.identifier.forEach((identifier) => {
       processIdentifier('AllergyIntolerance', allergyId, identifier, result);
     });
   }
 
   if (allergy.category) {
-    allergy.category.forEach(cat => {
-      processCodeableConcept('AllergyIntolerance', allergyId, 'category', { text: cat }, result);
+    allergy.category.forEach((cat) => {
+      processCodeableConcept(
+        'AllergyIntolerance',
+        allergyId,
+        'category',
+        { text: cat },
+        result,
+      );
     });
   }
 
   if (allergy.note) {
-    allergy.note.forEach(note => {
+    allergy.note.forEach((note) => {
       processNote('AllergyIntolerance', allergyId, note, result);
     });
   }
 }
 
-function processDiagnosticReport(report: IFhirDiagnosticReport, result: INormalizedFhirData): void {
+function processDiagnosticReport(
+  report: IFhirDiagnosticReport,
+  result: INormalizedFhirData,
+): void {
   const reportId = uuidv4();
 
   const reportRecord: IDiagnosticReportTable = {
@@ -1127,9 +1404,12 @@ function processDiagnosticReport(report: IFhirDiagnosticReport, result: INormali
     codeDisplay: report.code.coding?.[0]?.display || report.code.text,
     subjectReference: report.subject?.reference,
     encounterReference: report.encounter?.reference,
-    effectiveDateTime: typeof report.effective === 'string' ? report.effective : undefined,
-    effectivePeriodStart: typeof report.effective === 'object' ? report.effective.start : undefined,
-    effectivePeriodEnd: typeof report.effective === 'object' ? report.effective.end : undefined,
+    effectiveDateTime:
+      typeof report.effective === 'string' ? report.effective : undefined,
+    effectivePeriodStart:
+      typeof report.effective === 'object' ? report.effective.start : undefined,
+    effectivePeriodEnd:
+      typeof report.effective === 'object' ? report.effective.end : undefined,
     issued: report.issued,
     conclusion: report.conclusion,
     createdAt: new Date(),
@@ -1139,7 +1419,7 @@ function processDiagnosticReport(report: IFhirDiagnosticReport, result: INormali
 
   // Process results
   if (report.result) {
-    report.result.forEach(resultRef => {
+    report.result.forEach((resultRef) => {
       result.diagnosticReportResults.push({
         id: uuidv4(),
         diagnosticReportId: reportId,
@@ -1151,61 +1431,94 @@ function processDiagnosticReport(report: IFhirDiagnosticReport, result: INormali
 
   // Process other fields
   if (report.identifier) {
-    report.identifier.forEach(identifier => {
+    report.identifier.forEach((identifier) => {
       processIdentifier('DiagnosticReport', reportId, identifier, result);
     });
   }
 
   if (report.basedOn) {
-    report.basedOn.forEach(ref => {
+    report.basedOn.forEach((ref) => {
       processReference('DiagnosticReport', reportId, 'basedOn', ref, result);
     });
   }
 
   if (report.category) {
-    report.category.forEach(cat => {
-      processCodeableConcept('DiagnosticReport', reportId, 'category', cat, result);
+    report.category.forEach((cat) => {
+      processCodeableConcept(
+        'DiagnosticReport',
+        reportId,
+        'category',
+        cat,
+        result,
+      );
     });
   }
 
   if (report.performer) {
-    report.performer.forEach(ref => {
+    report.performer.forEach((ref) => {
       processReference('DiagnosticReport', reportId, 'performer', ref, result);
     });
   }
 
   if (report.resultsInterpreter) {
-    report.resultsInterpreter.forEach(ref => {
-      processReference('DiagnosticReport', reportId, 'resultsInterpreter', ref, result);
+    report.resultsInterpreter.forEach((ref) => {
+      processReference(
+        'DiagnosticReport',
+        reportId,
+        'resultsInterpreter',
+        ref,
+        result,
+      );
     });
   }
 
   if (report.specimen) {
-    report.specimen.forEach(ref => {
+    report.specimen.forEach((ref) => {
       processReference('DiagnosticReport', reportId, 'specimen', ref, result);
     });
   }
 
   if (report.imagingStudy) {
-    report.imagingStudy.forEach(ref => {
-      processReference('DiagnosticReport', reportId, 'imagingStudy', ref, result);
+    report.imagingStudy.forEach((ref) => {
+      processReference(
+        'DiagnosticReport',
+        reportId,
+        'imagingStudy',
+        ref,
+        result,
+      );
     });
   }
 
   if (report.conclusionCode) {
-    report.conclusionCode.forEach(code => {
-      processCodeableConcept('DiagnosticReport', reportId, 'conclusionCode', code, result);
+    report.conclusionCode.forEach((code) => {
+      processCodeableConcept(
+        'DiagnosticReport',
+        reportId,
+        'conclusionCode',
+        code,
+        result,
+      );
     });
   }
 
   if (report.presentedForm) {
-    report.presentedForm.forEach(form => {
-      processAttachment('DiagnosticReport', reportId, 'presentedForm', form, result);
+    report.presentedForm.forEach((form) => {
+      processAttachment(
+        'DiagnosticReport',
+        reportId,
+        'presentedForm',
+        form,
+        result,
+      );
     });
   }
 }
 
-function processLocation(location: IFhirLocation, result: INormalizedFhirData): void {
+function processLocation(
+  location: IFhirLocation,
+  result: INormalizedFhirData,
+): void {
   const locationId = uuidv4();
 
   const locationRecord: ILocationTable = {
@@ -1216,7 +1529,9 @@ function processLocation(location: IFhirLocation, result: INormalizedFhirData): 
     name: location.name,
     description: location.description,
     mode: location.mode,
-    physicalType: location.physicalType?.coding?.[0]?.display || location.physicalType?.text,
+    physicalType:
+      location.physicalType?.coding?.[0]?.display ||
+      location.physicalType?.text,
     latitude: location.position?.latitude,
     longitude: location.position?.longitude,
     altitude: location.position?.altitude,
@@ -1230,25 +1545,31 @@ function processLocation(location: IFhirLocation, result: INormalizedFhirData): 
 
   // Process other fields
   if (location.identifier) {
-    location.identifier.forEach(identifier => {
+    location.identifier.forEach((identifier) => {
       processIdentifier('Location', locationId, identifier, result);
     });
   }
 
   if (location.alias) {
     location.alias.forEach((alias, index) => {
-      processCodeableConcept('Location', locationId, `alias[${index}]`, { text: alias }, result);
+      processCodeableConcept(
+        'Location',
+        locationId,
+        `alias[${index}]`,
+        { text: alias },
+        result,
+      );
     });
   }
 
   if (location.type) {
-    location.type.forEach(type => {
+    location.type.forEach((type) => {
       processCodeableConcept('Location', locationId, 'type', type, result);
     });
   }
 
   if (location.telecom) {
-    location.telecom.forEach(telecom => {
+    location.telecom.forEach((telecom) => {
       processTelecom('Location', locationId, telecom, result);
     });
   }
@@ -1258,13 +1579,16 @@ function processLocation(location: IFhirLocation, result: INormalizedFhirData): 
   }
 
   if (location.endpoint) {
-    location.endpoint.forEach(ref => {
+    location.endpoint.forEach((ref) => {
       processReference('Location', locationId, 'endpoint', ref, result);
     });
   }
 }
 
-function processAppointment(appointment: IFhirAppointment, result: INormalizedFhirData): void {
+function processAppointment(
+  appointment: IFhirAppointment,
+  result: INormalizedFhirData,
+): void {
   const appointmentId = uuidv4();
 
   const appointmentRecord: IAppointmentTable = {
@@ -1272,10 +1596,18 @@ function processAppointment(appointment: IFhirAppointment, result: INormalizedFh
     resourceId: appointment.id,
     status: appointment.status,
     cancelationReason: appointment.cancelationReason?.coding?.[0]?.code,
-    serviceCategory: appointment.serviceCategory?.[0]?.coding?.[0]?.display || appointment.serviceCategory?.[0]?.text,
-    serviceType: appointment.serviceType?.[0]?.coding?.[0]?.display || appointment.serviceType?.[0]?.text,
-    specialty: appointment.specialty?.[0]?.coding?.[0]?.display || appointment.specialty?.[0]?.text,
-    appointmentType: appointment.appointmentType?.coding?.[0]?.display || appointment.appointmentType?.text,
+    serviceCategory:
+      appointment.serviceCategory?.[0]?.coding?.[0]?.display ||
+      appointment.serviceCategory?.[0]?.text,
+    serviceType:
+      appointment.serviceType?.[0]?.coding?.[0]?.display ||
+      appointment.serviceType?.[0]?.text,
+    specialty:
+      appointment.specialty?.[0]?.coding?.[0]?.display ||
+      appointment.specialty?.[0]?.text,
+    appointmentType:
+      appointment.appointmentType?.coding?.[0]?.display ||
+      appointment.appointmentType?.text,
     priority: appointment.priority,
     description: appointment.description,
     start: appointment.start,
@@ -1291,7 +1623,7 @@ function processAppointment(appointment: IFhirAppointment, result: INormalizedFh
 
   // Process participants
   if (appointment.participant) {
-    appointment.participant.forEach(participant => {
+    appointment.participant.forEach((participant) => {
       result.appointmentParticipants.push({
         id: uuidv4(),
         appointmentId: appointmentId,
@@ -1308,43 +1640,64 @@ function processAppointment(appointment: IFhirAppointment, result: INormalizedFh
 
   // Process other fields
   if (appointment.identifier) {
-    appointment.identifier.forEach(identifier => {
+    appointment.identifier.forEach((identifier) => {
       processIdentifier('Appointment', appointmentId, identifier, result);
     });
   }
 
   if (appointment.reasonCode) {
-    appointment.reasonCode.forEach(reason => {
-      processCodeableConcept('Appointment', appointmentId, 'reasonCode', reason, result);
+    appointment.reasonCode.forEach((reason) => {
+      processCodeableConcept(
+        'Appointment',
+        appointmentId,
+        'reasonCode',
+        reason,
+        result,
+      );
     });
   }
 
   if (appointment.reasonReference) {
-    appointment.reasonReference.forEach(ref => {
-      processReference('Appointment', appointmentId, 'reasonReference', ref, result);
+    appointment.reasonReference.forEach((ref) => {
+      processReference(
+        'Appointment',
+        appointmentId,
+        'reasonReference',
+        ref,
+        result,
+      );
     });
   }
 
   if (appointment.supportingInformation) {
-    appointment.supportingInformation.forEach(ref => {
-      processReference('Appointment', appointmentId, 'supportingInformation', ref, result);
+    appointment.supportingInformation.forEach((ref) => {
+      processReference(
+        'Appointment',
+        appointmentId,
+        'supportingInformation',
+        ref,
+        result,
+      );
     });
   }
 
   if (appointment.slot) {
-    appointment.slot.forEach(ref => {
+    appointment.slot.forEach((ref) => {
       processReference('Appointment', appointmentId, 'slot', ref, result);
     });
   }
 
   if (appointment.basedOn) {
-    appointment.basedOn.forEach(ref => {
+    appointment.basedOn.forEach((ref) => {
       processReference('Appointment', appointmentId, 'basedOn', ref, result);
     });
   }
 }
 
-function processCareTeam(careTeam: IFhirCareTeam, result: INormalizedFhirData): void {
+function processCareTeam(
+  careTeam: IFhirCareTeam,
+  result: INormalizedFhirData,
+): void {
   const careTeamId = uuidv4();
 
   const careTeamRecord: ICareTeamTable = {
@@ -1363,11 +1716,13 @@ function processCareTeam(careTeam: IFhirCareTeam, result: INormalizedFhirData): 
 
   // Process participants
   if (careTeam.participant) {
-    careTeam.participant.forEach(participant => {
+    careTeam.participant.forEach((participant) => {
       result.careTeamParticipants.push({
         id: uuidv4(),
         careTeamId: careTeamId,
-        role: participant.role?.[0]?.coding?.[0]?.display || participant.role?.[0]?.text,
+        role:
+          participant.role?.[0]?.coding?.[0]?.display ||
+          participant.role?.[0]?.text,
         memberReference: participant.member?.reference,
         onBehalfOfReference: participant.onBehalfOf?.reference,
         periodStart: participant.period?.start,
@@ -1379,49 +1734,64 @@ function processCareTeam(careTeam: IFhirCareTeam, result: INormalizedFhirData): 
 
   // Process other fields
   if (careTeam.identifier) {
-    careTeam.identifier.forEach(identifier => {
+    careTeam.identifier.forEach((identifier) => {
       processIdentifier('CareTeam', careTeamId, identifier, result);
     });
   }
 
   if (careTeam.category) {
-    careTeam.category.forEach(cat => {
+    careTeam.category.forEach((cat) => {
       processCodeableConcept('CareTeam', careTeamId, 'category', cat, result);
     });
   }
 
   if (careTeam.reasonCode) {
-    careTeam.reasonCode.forEach(reason => {
-      processCodeableConcept('CareTeam', careTeamId, 'reasonCode', reason, result);
+    careTeam.reasonCode.forEach((reason) => {
+      processCodeableConcept(
+        'CareTeam',
+        careTeamId,
+        'reasonCode',
+        reason,
+        result,
+      );
     });
   }
 
   if (careTeam.reasonReference) {
-    careTeam.reasonReference.forEach(ref => {
+    careTeam.reasonReference.forEach((ref) => {
       processReference('CareTeam', careTeamId, 'reasonReference', ref, result);
     });
   }
 
   if (careTeam.managingOrganization) {
-    careTeam.managingOrganization.forEach(ref => {
-      processReference('CareTeam', careTeamId, 'managingOrganization', ref, result);
+    careTeam.managingOrganization.forEach((ref) => {
+      processReference(
+        'CareTeam',
+        careTeamId,
+        'managingOrganization',
+        ref,
+        result,
+      );
     });
   }
 
   if (careTeam.telecom) {
-    careTeam.telecom.forEach(telecom => {
+    careTeam.telecom.forEach((telecom) => {
       processTelecom('CareTeam', careTeamId, telecom, result);
     });
   }
 
   if (careTeam.note) {
-    careTeam.note.forEach(note => {
+    careTeam.note.forEach((note) => {
       processNote('CareTeam', careTeamId, note, result);
     });
   }
 }
 
-function processCarePlan(carePlan: IFhirCarePlan, result: INormalizedFhirData): void {
+function processCarePlan(
+  carePlan: IFhirCarePlan,
+  result: INormalizedFhirData,
+): void {
   const carePlanId = uuidv4();
 
   const carePlanRecord: ICarePlanTable = {
@@ -1444,7 +1814,7 @@ function processCarePlan(carePlan: IFhirCarePlan, result: INormalizedFhirData): 
 
   // Process activities
   if (carePlan.activity) {
-    carePlan.activity.forEach(activity => {
+    carePlan.activity.forEach((activity) => {
       const activityRecord: ICarePlanActivityTable = {
         id: uuidv4(),
         carePlanId: carePlanId,
@@ -1453,17 +1823,38 @@ function processCarePlan(carePlan: IFhirCarePlan, result: INormalizedFhirData): 
         progress: activity.progress?.[0]?.text,
         reference: activity.reference?.reference,
         kind: activity.detail?.kind,
-        code: activity.detail?.code?.coding?.[0]?.display || activity.detail?.code?.text,
+        code:
+          activity.detail?.code?.coding?.[0]?.display ||
+          activity.detail?.code?.text,
         status: activity.detail?.status || 'unknown',
         statusReason: activity.detail?.statusReason?.coding?.[0]?.code,
         doNotPerform: activity.detail?.doNotPerform,
-        scheduledDateTime: typeof activity.detail?.scheduled === 'string' ? activity.detail.scheduled : undefined,
-        scheduledPeriodStart: typeof activity.detail?.scheduled === 'object' && 'start' in activity.detail.scheduled ? activity.detail.scheduled.start : undefined,
-        scheduledPeriodEnd: typeof activity.detail?.scheduled === 'object' && 'end' in activity.detail.scheduled ? activity.detail.scheduled.end : undefined,
+        scheduledDateTime:
+          typeof activity.detail?.scheduled === 'string'
+            ? activity.detail.scheduled
+            : undefined,
+        scheduledPeriodStart:
+          typeof activity.detail?.scheduled === 'object' &&
+          'start' in activity.detail.scheduled
+            ? activity.detail.scheduled.start
+            : undefined,
+        scheduledPeriodEnd:
+          typeof activity.detail?.scheduled === 'object' &&
+          'end' in activity.detail.scheduled
+            ? activity.detail.scheduled.end
+            : undefined,
         locationReference: activity.detail?.location?.reference,
         performerReference: activity.detail?.performer?.[0]?.reference,
-        productCodeableConcept: typeof activity.detail?.product === 'object' && 'coding' in activity.detail.product ? activity.detail.product.text : undefined,
-        productReference: typeof activity.detail?.product === 'object' && 'reference' in activity.detail.product ? activity.detail.product.reference : undefined,
+        productCodeableConcept:
+          typeof activity.detail?.product === 'object' &&
+          'coding' in activity.detail.product
+            ? activity.detail.product.text
+            : undefined,
+        productReference:
+          typeof activity.detail?.product === 'object' &&
+          'reference' in activity.detail.product
+            ? activity.detail.product.reference
+            : undefined,
         dailyAmountValue: activity.detail?.dailyAmount?.value,
         dailyAmountUnit: activity.detail?.dailyAmount?.unit,
         quantityValue: activity.detail?.quantity?.value,
@@ -1477,74 +1868,79 @@ function processCarePlan(carePlan: IFhirCarePlan, result: INormalizedFhirData): 
 
   // Process other fields
   if (carePlan.identifier) {
-    carePlan.identifier.forEach(identifier => {
+    carePlan.identifier.forEach((identifier) => {
       processIdentifier('CarePlan', carePlanId, identifier, result);
     });
   }
 
   if (carePlan.basedOn) {
-    carePlan.basedOn.forEach(ref => {
+    carePlan.basedOn.forEach((ref) => {
       processReference('CarePlan', carePlanId, 'basedOn', ref, result);
     });
   }
 
   if (carePlan.replaces) {
-    carePlan.replaces.forEach(ref => {
+    carePlan.replaces.forEach((ref) => {
       processReference('CarePlan', carePlanId, 'replaces', ref, result);
     });
   }
 
   if (carePlan.partOf) {
-    carePlan.partOf.forEach(ref => {
+    carePlan.partOf.forEach((ref) => {
       processReference('CarePlan', carePlanId, 'partOf', ref, result);
     });
   }
 
   if (carePlan.category) {
-    carePlan.category.forEach(cat => {
+    carePlan.category.forEach((cat) => {
       processCodeableConcept('CarePlan', carePlanId, 'category', cat, result);
     });
   }
 
   if (carePlan.contributor) {
-    carePlan.contributor.forEach(ref => {
+    carePlan.contributor.forEach((ref) => {
       processReference('CarePlan', carePlanId, 'contributor', ref, result);
     });
   }
 
   if (carePlan.careTeam) {
-    carePlan.careTeam.forEach(ref => {
+    carePlan.careTeam.forEach((ref) => {
       processReference('CarePlan', carePlanId, 'careTeam', ref, result);
     });
   }
 
   if (carePlan.addresses) {
-    carePlan.addresses.forEach(ref => {
+    carePlan.addresses.forEach((ref) => {
       processReference('CarePlan', carePlanId, 'addresses', ref, result);
     });
   }
 
   if (carePlan.supportingInfo) {
-    carePlan.supportingInfo.forEach(ref => {
+    carePlan.supportingInfo.forEach((ref) => {
       processReference('CarePlan', carePlanId, 'supportingInfo', ref, result);
     });
   }
 
   if (carePlan.goal) {
-    carePlan.goal.forEach(ref => {
+    carePlan.goal.forEach((ref) => {
       processReference('CarePlan', carePlanId, 'goal', ref, result);
     });
   }
 
   if (carePlan.note) {
-    carePlan.note.forEach(note => {
+    carePlan.note.forEach((note) => {
       processNote('CarePlan', carePlanId, note, result);
     });
   }
 }
 
 // Helper functions for common data types
-function processAddress(resourceType: string, resourceId: string, address: IFhirAddress, result: INormalizedFhirData): void {
+function processAddress(
+  resourceType: string,
+  resourceId: string,
+  address: IFhirAddress,
+  result: INormalizedFhirData,
+): void {
   const addressRecord: IAddressTable = {
     id: uuidv4(),
     resourceType: resourceType,
@@ -1566,7 +1962,12 @@ function processAddress(resourceType: string, resourceId: string, address: IFhir
   result.addresses.push(addressRecord);
 }
 
-function processTelecom(resourceType: string, resourceId: string, telecom: IFhirContactPoint, result: INormalizedFhirData): void {
+function processTelecom(
+  resourceType: string,
+  resourceId: string,
+  telecom: IFhirContactPoint,
+  result: INormalizedFhirData,
+): void {
   const telecomRecord: ITelecomTable = {
     id: uuidv4(),
     resourceType: resourceType,
@@ -1582,7 +1983,13 @@ function processTelecom(resourceType: string, resourceId: string, telecom: IFhir
   result.telecoms.push(telecomRecord);
 }
 
-function processCodeableConcept(resourceType: string, resourceId: string, fieldName: string, concept: IFhirCodeableConcept, result: INormalizedFhirData): void {
+function processCodeableConcept(
+  resourceType: string,
+  resourceId: string,
+  fieldName: string,
+  concept: IFhirCodeableConcept,
+  result: INormalizedFhirData,
+): void {
   const conceptId = uuidv4();
   const conceptRecord: ICodeableConceptTable = {
     id: conceptId,
@@ -1596,7 +2003,7 @@ function processCodeableConcept(resourceType: string, resourceId: string, fieldN
 
   // Process codings
   if (concept.coding) {
-    concept.coding.forEach(coding => {
+    concept.coding.forEach((coding) => {
       const codingRecord: ICodingTable = {
         id: uuidv4(),
         codeableConceptId: conceptId,
@@ -1612,7 +2019,13 @@ function processCodeableConcept(resourceType: string, resourceId: string, fieldN
   }
 }
 
-function processReference(resourceType: string, resourceId: string, fieldName: string, reference: IFhirReference, result: INormalizedFhirData): void {
+function processReference(
+  resourceType: string,
+  resourceId: string,
+  fieldName: string,
+  reference: IFhirReference,
+  result: INormalizedFhirData,
+): void {
   const referenceRecord: IReferenceTable = {
     id: uuidv4(),
     resourceType: resourceType,
@@ -1620,17 +2033,30 @@ function processReference(resourceType: string, resourceId: string, fieldName: s
     fieldName: fieldName,
     reference: reference.reference,
     type: reference.type,
-    identifier: reference.identifier ? JSON.stringify(reference.identifier) : undefined,
+    identifier: reference.identifier
+      ? JSON.stringify(reference.identifier)
+      : undefined,
     display: reference.display,
     createdAt: new Date(),
   };
   result.references.push(referenceRecord);
 }
 
-function processIdentifier(resourceType: string, resourceId: string, identifier: IFhirIdentifier, result: INormalizedFhirData): void {
+function processIdentifier(
+  resourceType: string,
+  resourceId: string,
+  identifier: IFhirIdentifier,
+  result: INormalizedFhirData,
+): void {
   // We'll store identifiers in a generic way using the CodeableConcept table
   if (identifier.type) {
-    processCodeableConcept(resourceType, resourceId, 'identifier.type', identifier.type, result);
+    processCodeableConcept(
+      resourceType,
+      resourceId,
+      'identifier.type',
+      identifier.type,
+      result,
+    );
   }
 
   // Store the identifier value in the references table as a special case
@@ -1653,7 +2079,12 @@ function processIdentifier(resourceType: string, resourceId: string, identifier:
   result.references.push(identifierRecord);
 }
 
-function processNote(resourceType: string, resourceId: string, note: IFhirAnnotation, result: INormalizedFhirData): void {
+function processNote(
+  resourceType: string,
+  resourceId: string,
+  note: IFhirAnnotation,
+  result: INormalizedFhirData,
+): void {
   const noteRecord: INoteTable = {
     id: uuidv4(),
     resourceType: resourceType,
@@ -1667,7 +2098,13 @@ function processNote(resourceType: string, resourceId: string, note: IFhirAnnota
   result.notes.push(noteRecord);
 }
 
-function processAttachment(resourceType: string, resourceId: string, fieldName: string, attachment: IFhirAttachment, result: INormalizedFhirData): void {
+function processAttachment(
+  resourceType: string,
+  resourceId: string,
+  fieldName: string,
+  attachment: IFhirAttachment,
+  result: INormalizedFhirData,
+): void {
   const attachmentRecord: IAttachmentTable = {
     id: uuidv4(),
     resourceType: resourceType,
@@ -1686,8 +2123,28 @@ function processAttachment(resourceType: string, resourceId: string, fieldName: 
   result.attachments.push(attachmentRecord);
 }
 
-function processHumanName(resourceType: string, resourceId: string, name: IFhirHumanName, result: INormalizedFhirData): void {
+function processHumanName(
+  resourceType: string,
+  resourceId: string,
+  name: IFhirHumanName,
+  result: INormalizedFhirData,
+): void {
   // Store human names in a generic way using the CodeableConcept table
-  const nameText = name.text || `${name.prefix?.join(' ')} ${name.given?.join(' ')} ${name.family} ${name.suffix?.join(' ')}`.trim();
-  processCodeableConcept(resourceType, resourceId, 'name', { text: nameText }, result);
+  const nameText =
+    name.text ||
+    [
+      name.prefix?.join(' '),
+      name.given?.join(' '),
+      name.family,
+      name.suffix?.join(' '),
+    ]
+      .filter(Boolean)
+      .join(' ');
+  processCodeableConcept(
+    resourceType,
+    resourceId,
+    'name',
+    { text: nameText },
+    result,
+  );
 }

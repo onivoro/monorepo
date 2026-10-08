@@ -46,14 +46,21 @@ export class AppModule {}
 
 `McpOAuthModule` wraps the MCP SDK's `mcpAuthRouter` and exposes standard OAuth 2.1 endpoints through NestJS controllers:
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/.well-known/oauth-authorization-server` | GET | Authorization server metadata (RFC 8414) |
-| `/.well-known/oauth-protected-resource` | GET | Protected resource metadata (RFC 9728) |
-| `/authorize` | GET/POST | Authorization endpoint |
-| `/token` | POST | Token endpoint |
-| `/register` | POST | Dynamic client registration (RFC 7591) |
-| `/revoke` | POST | Token revocation (RFC 7009) |
+| Endpoint                                               | Method       | Description                                                                                                                                                                                |
+| ------------------------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/.well-known/oauth-authorization-server`              | GET, OPTIONS | Authorization server metadata (RFC 8414)                                                                                                                                                   |
+| `/.well-known/oauth-protected-resource<resource path>` | GET, OPTIONS | Protected resource metadata (RFC 9728), served at the path of `resourceServerUrl` (e.g. `/.well-known/oauth-protected-resource/mcp`). The bare path answers only when that URL has no path |
+| `/authorize`                                           | GET, POST    | Authorization endpoint                                                                                                                                                                     |
+| `/token`                                               | POST         | Token endpoint                                                                                                                                                                             |
+| `/register`                                            | POST         | Dynamic client registration (RFC 7591), only when `provider.clientsStore.registerClient` exists                                                                                            |
+| `/revoke`                                              | POST         | Token revocation (RFC 7009), only when `provider.revokeToken` exists                                                                                                                       |
+
+Behavior inherited from the SDK router:
+
+- `issuerUrl` must be HTTPS unless the host is `localhost` or `127.0.0.1` (or `MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL=true` is set), and must have no query or fragment.
+- Endpoints are rate-limited by default; tune or disable that with `authorizationOptions`, `tokenOptions`, `clientRegistrationOptions`, and `revocationOptions`.
+- The PRM document lists `issuerUrl` as the only authorization server.
+- A request on one of these routes that the router does not handle gets a `404`.
 
 ## What it does not do
 
@@ -82,33 +89,36 @@ To protect an MCP HTTP route, combine it with either:
 
 ## Standalone vs bolted-on apps
 
-This package mounts OAuth authorization-server endpoints in the Nest route space. In a standalone auth server they are exposed at paths such as `/authorize`, `/token`, `/register`, `/revoke`, and `/.well-known/oauth-authorization-server`. In an existing app with `app.setGlobalPrefix('api')`, those endpoints are exposed under `/api` unless you exclude them when setting the global prefix.
+The SDK router must sit at the application root. It advertises and matches its endpoints at fixed root paths: `/authorize`, `/token`, `/register`, `/revoke`, and `/.well-known/oauth-authorization-server`. Only the origin of `baseUrl` (or `issuerUrl`) is used to build the advertised endpoint URLs; a path on `baseUrl` is dropped, so `baseUrl: 'https://auth.example.com/api'` still advertises `https://auth.example.com/authorize`.
+
+The controllers forward the full request path (`req.originalUrl`) to the router. In an existing app with `app.setGlobalPrefix('api')`, Nest would mount the routes at `/api/authorize` and so on, the router would not match them, and they would answer `404`. Exclude these routes when you set the global prefix so they stay at the root.
 
 Set URL fields to the public URLs clients actually use:
 
-| Field | Standalone example | Existing app with `app.setGlobalPrefix('api')` |
-|-------|--------------------|-----------------------------------------------|
-| `issuerUrl` | `https://auth.example.com` | `https://auth.example.com` |
-| `baseUrl` | `https://auth.example.com` | `https://auth.example.com/api` |
-| `resourceServerUrl` | `https://api.example.com/mcp` | `https://api.example.com/api/mcp` |
+| Field               | Standalone example             | Existing app with `app.setGlobalPrefix('api')` (OAuth routes excluded) |
+| ------------------- | ------------------------------ | ---------------------------------------------------------------------- |
+| `issuerUrl`         | `https://auth.example.com`     | `https://auth.example.com`                                             |
+| `baseUrl`           | omit (defaults to `issuerUrl`) | omit                                                                   |
+| `resourceServerUrl` | `https://api.example.com/mcp`  | `https://api.example.com/api/mcp`                                      |
 
-`resourceServerUrl` is the protected MCP resource URL, not the OAuth server URL. If your MCP app uses `route: 'internal/mcp'` behind a global `api` prefix, use `https://api.example.com/api/internal/mcp`.
+`resourceServerUrl` is the protected MCP resource URL, not the OAuth server URL, and it decides the PRM path this module serves. If your MCP app uses `route: 'internal/mcp'` behind a global `api` prefix, use `https://api.example.com/api/internal/mcp`.
 
 ## Provider options
 
 ### Class reference (DI-resolved)
 
-The provider class is resolved through NestJS DI, so it can inject other services:
+`configure()` registers the provider class inside `McpOAuthModule` itself, so you do not list it in your own `providers`. Because it is instantiated in that module, it can inject `McpMemoryClientsStore`, `MCP_OAUTH_CONFIG`, and providers from global modules. If it needs services from your own modules, use `configureAsync()` (below) instead.
 
 ```typescript
+import { Injectable } from '@nestjs/common';
+import type { OAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/provider.js';
+import { McpMemoryClientsStore } from '@onivoro/server-mcp-oauth';
+
 @Injectable()
 class MyOAuthProvider implements OAuthServerProvider {
-  constructor(
-    private readonly db: DatabaseService,
-    private readonly clientsStore: McpMemoryClientsStore,
-  ) {}
+  constructor(private readonly store: McpMemoryClientsStore) {}
 
-  get clientsStore() { return this.clientsStore; }
+  get clientsStore() { return this.store; }
   async authorize(client, params, res) { ... }
   async challengeForAuthorizationCode(client, code) { ... }
   async exchangeAuthorizationCode(client, code, verifier, redirectUri, resource) { ... }
@@ -144,7 +154,7 @@ McpOAuthModule.configure({
 
 ### Async configuration with DI-resolved classes
 
-`configureAsync()` also supports class-based providers. The class just needs to be available in the Nest container:
+`configureAsync()` also supports class-based providers. It does not register the class; it looks it up with `ModuleRef.get(..., { strict: false })`, so the class must be provided by a module in the container. This is the way to give the provider dependencies from your own modules:
 
 ```typescript
 @Module({
@@ -161,28 +171,28 @@ McpOAuthModule.configureAsync({
     issuerUrl: config.getOrThrow('OAUTH_ISSUER_URL'),
     resourceServerUrl: config.getOrThrow('RESOURCE_SERVER_URL'),
   }),
-})
+});
 ```
 
 ## Configuration
 
 ### `McpOAuthConfig`
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `provider` | `OAuthServerProvider \| class` | *required* | Auth server implementation (instance or class) |
-| `issuerUrl` | `string` | *required* | Authorization server issuer URL |
-| `baseUrl` | `string?` | `issuerUrl` | Base URL for auth endpoints |
-| `scopesSupported` | `string[]?` | — | Scopes this server supports |
-| `resourceName` | `string?` | — | Human-readable resource name |
-| `resourceServerUrl` | `string?` | `baseUrl` | Public MCP endpoint URL protected by this authorization server |
-| `serviceDocumentationUrl` | `string?` | — | Service docs URL |
-| `authorizationOptions` | `object?` | — | SDK authorization handler options |
-| `tokenOptions` | `object?` | — | SDK token handler options |
-| `clientRegistrationOptions` | `object?` | — | SDK registration handler options |
-| `revocationOptions` | `object?` | — | SDK revocation handler options |
+| Field                       | Type                           | Default                     | Description                                                                                             |
+| --------------------------- | ------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `provider`                  | `OAuthServerProvider \| class` | _required_                  | Auth server implementation (instance or class)                                                          |
+| `issuerUrl`                 | `string`                       | _required_                  | Authorization server issuer URL                                                                         |
+| `baseUrl`                   | `string?`                      | `issuerUrl`                 | Origin for the advertised endpoint URLs (its path is ignored by the SDK)                                |
+| `scopesSupported`           | `string[]?`                    | —                           | Scopes this server supports                                                                             |
+| `resourceName`              | `string?`                      | —                           | Human-readable resource name in PRM                                                                     |
+| `resourceServerUrl`         | `string?`                      | `baseUrl`, then `issuerUrl` | Public MCP endpoint URL protected by this authorization server. Sets the PRM `resource` field and route |
+| `serviceDocumentationUrl`   | `string?`                      | —                           | Service docs URL (AS metadata `service_documentation`, PRM `resource_documentation`)                    |
+| `authorizationOptions`      | `object?`                      | —                           | SDK authorization handler options                                                                       |
+| `tokenOptions`              | `object?`                      | —                           | SDK token handler options                                                                               |
+| `clientRegistrationOptions` | `object?`                      | —                           | SDK registration handler options                                                                        |
+| `revocationOptions`         | `object?`                      | —                           | SDK revocation handler options                                                                          |
 
-All URL fields must be absolute URLs. Invalid values fail fast during module initialization.
+`issuerUrl`, `baseUrl`, `resourceServerUrl`, and `serviceDocumentationUrl` must be absolute URLs. With `configure()` an invalid value throws when the module is built; with `configureAsync()` it throws when the config factory resolves.
 
 ### Async configuration
 
@@ -211,13 +221,15 @@ store.seedClient('test-client-id', {
   redirect_uris: ['http://localhost:3000/callback'],
 });
 
-// Clear between tests
-store.clear();
+store.size; // number of stored clients
+store.clear(); // clear between tests
 ```
+
+`registerClient()` assigns a random UUID `client_id` and `client_id_issued_at`. `McpOAuthModule` only provides the store; your provider decides whether to use it by returning it from `clientsStore`.
 
 For production, implement `OAuthRegisteredClientsStore` with a persistent backend (database, Redis, etc.).
 
-If `McpMemoryClientsStore` is actually used to register clients outside tests, the package logs a warning because registered clients will be lost on process restart.
+Outside `NODE_ENV=test`, the package logs a warning when the configured provider's `clientsStore` is the module's `McpMemoryClientsStore`, and again the first time the store registers a client, because registered clients are lost on process restart.
 
 ## Using with [@onivoro/server-mcp-auth](https://www.npmjs.com/package/@onivoro/server-mcp-auth)
 
@@ -252,6 +264,11 @@ That composition gives you:
 - JWT verification and Protected Resource Metadata from `McpAuthModule`
 - HTTP `401` bearer challenges on the configured MCP route from `McpHttpModule`
 
+Notes:
+
+- `McpAuthModule` verifies tokens against `jwksUri`. The SDK router does not issue JWTs or serve a JWKS document; your provider must issue signed JWTs and you must publish the matching JWKS.
+- When both modules point at the same `resourceServerUrl`, both serve `/.well-known/oauth-protected-resource/<path>`, and the controller Nest registers first answers. To have one source, set `serveProtectedResourceMetadata: false` on `McpAuthModule` (you then lose its auto-discovered `scopes_supported`).
+
 ### Full-stack example
 
 ```typescript
@@ -284,16 +301,17 @@ import { MyOAuthProvider } from './my-oauth-provider';
 export class AppModule {}
 ```
 
-If this same app is bolted onto an existing Nest server with `app.setGlobalPrefix('api')`, set `baseUrl: 'https://auth.example.com/api'`, set `resourceServerUrl: 'https://api.example.com/api/mcp'`, and keep `McpHttpModule.registerAndServeHttp({ route: 'mcp', ... })`.
+If this same app is bolted onto an existing Nest server with `app.setGlobalPrefix('api')`, exclude the OAuth routes from the prefix (see [Standalone vs bolted-on apps](#standalone-vs-bolted-on-apps)), set `resourceServerUrl: 'https://api.example.com/api/mcp'` in both modules, and keep `McpHttpModule.registerAndServeHttp({ route: 'mcp', ... })`.
 
 ## Tested behavior
 
-The package test suite covers:
+The package test suite covers the following, using a mocked SDK router (the SDK's own handlers are not exercised):
 
 - route mounting for OAuth discovery endpoints
 - `configureAsync()` with DI-resolved class providers
 - composition with unprotected and protected MCP routes
 - config URL validation
+- the Nest 10 / Nest 11 wildcard syntax for the path-based PRM route
 
 ## Troubleshooting
 
@@ -304,26 +322,19 @@ The package test suite covers:
 - Async provider class is not resolving
   Ensure the provider class is actually available in the Nest container through `imports`/`providers`.
 
-## Tested wrapper behavior
-
-The wrapper itself is covered for these scenarios:
-
-- auth-server discovery endpoints are mounted in a Nest app
-- `McpOAuthModule` alone does not protect the MCP route
-- composition with `McpAuthModule` and `McpHttpModule` does protect the MCP route
-- `configureAsync()` supports DI-resolved class providers
-
 ## Platform requirement
 
 Requires NestJS Express platform (`@nestjs/platform-express`). The SDK's auth router is Express middleware.
 
 ## Exports
 
-| Export | Type | Description |
-|--------|------|-------------|
-| `McpOAuthModule` | Module | Dynamic module with `configure()` / `configureAsync()` |
-| `McpOAuthConfig` | Interface | Configuration options |
-| `McpOAuthAsyncOptions` | Interface | Async factory options |
-| `MCP_OAUTH_CONFIG` | Symbol | Injection token for config |
-| `MCP_OAUTH_SERVER_PROVIDER` | Symbol | Injection token for the resolved `OAuthServerProvider` |
-| `McpMemoryClientsStore` | Service | In-memory client store for dev/testing |
+| Export                      | Type      | Description                                                                                                                   |
+| --------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `McpOAuthModule`            | Module    | Dynamic module with `configure()` / `configureAsync()` (deprecated aliases `register()` / `registerAsync()`)                  |
+| `McpOAuthConfig`            | Interface | Configuration options                                                                                                         |
+| `McpOAuthAsyncOptions`      | Interface | Async factory options                                                                                                         |
+| `MCP_OAUTH_CONFIG`          | Symbol    | Injection token for config                                                                                                    |
+| `MCP_OAUTH_SERVER_PROVIDER` | Symbol    | Injection token for the resolved `OAuthServerProvider`                                                                        |
+| `McpMemoryClientsStore`     | Service   | In-memory `OAuthRegisteredClientsStore` for dev/testing: `getClient()`, `registerClient()`, `seedClient()`, `clear()`, `size` |
+
+The module exports `MCP_OAUTH_CONFIG`, `MCP_OAUTH_SERVER_PROVIDER`, and `McpMemoryClientsStore` to importing modules.

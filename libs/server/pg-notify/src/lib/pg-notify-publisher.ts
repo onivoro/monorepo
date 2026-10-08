@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import type { DataSource } from 'typeorm';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+// A value import, not `import type`: Nest injects by the emitted paramtype.
+import { DataSource } from 'typeorm';
 
 /**
  * Postgres caps a NOTIFY payload at 8000 bytes and rejects anything larger,
@@ -24,7 +25,7 @@ export class PgNotifyPublisher {
 
   constructor(
     private readonly dataSource: DataSource,
-    private readonly options: PgNotifyPublisherOptions = {},
+    @Optional() private readonly options: PgNotifyPublisherOptions = {},
   ) {}
 
   /**

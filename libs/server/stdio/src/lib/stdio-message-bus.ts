@@ -66,6 +66,7 @@ export class StdioMessageBus implements MessageBus, OnModuleDestroy {
   > = new Map();
   private readonly registeredMethods: Map<string, HandlerRegistrationOptions> =
     new Map();
+  private unsubscribeFromTransport?: () => void;
   private disposed = false;
 
   constructor(
@@ -118,17 +119,22 @@ export class StdioMessageBus implements MessageBus, OnModuleDestroy {
   }
 
   /**
-   * Subscribes to incoming notifications.
-   *
-   * Note: In the stdio server, notifications come from the extension.
-   * However, the current protocol primarily uses request/response.
-   * This method is provided for future compatibility.
+   * Subscribes to incoming notifications (messages from the extension
+   * with a method but no id).
    */
   onNotification<TParams = unknown>(
     method: string,
     handler: (params: TParams) => void,
   ): Disposable {
     this.ensureNotDisposed();
+
+    if (!this.unsubscribeFromTransport) {
+      this.unsubscribeFromTransport = this.transportService
+        .getTransport()
+        .onNotification((incoming, params) =>
+          this.dispatchNotification(incoming, params),
+        );
+    }
 
     if (!this.notificationHandlers.has(method)) {
       this.notificationHandlers.set(method, new Set());
@@ -215,7 +221,16 @@ export class StdioMessageBus implements MessageBus, OnModuleDestroy {
     if (this.disposed) return;
     this.disposed = true;
 
+    this.unsubscribeFromTransport?.();
+    this.unsubscribeFromTransport = undefined;
     this.notificationHandlers.clear();
+
+    if (this.registeredMethods.size > 0) {
+      const transport = this.transportService.getTransport();
+      this.registeredMethods.forEach((_options, method) =>
+        transport.removeHandler(method),
+      );
+    }
     this.registeredMethods.clear();
   }
 
@@ -224,6 +239,22 @@ export class StdioMessageBus implements MessageBus, OnModuleDestroy {
    */
   onModuleDestroy(): void {
     this.dispose();
+  }
+
+  /**
+   * Call the handlers subscribed to an incoming notification.
+   */
+  private dispatchNotification(method: string, params: unknown): void {
+    this.notificationHandlers.get(method)?.forEach((handler) => {
+      try {
+        handler(params);
+      } catch (error) {
+        console.error(
+          `[StdioMessageBus] Notification handler failed: ${method}`,
+          error,
+        );
+      }
+    });
   }
 
   /**

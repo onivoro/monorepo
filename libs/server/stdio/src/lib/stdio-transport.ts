@@ -1,5 +1,3 @@
-import { tryJsonParse } from '@onivoro/isomorphic-common';
-import { randomUUID } from 'crypto';
 import * as readline from 'readline';
 import {
   JsonRpcRequest,
@@ -34,6 +32,9 @@ import {
  */
 export class StdioTransport {
   private handlers: Map<string, JsonRpcHandlerFn> = new Map();
+  private notificationListeners: Set<
+    (method: string, params: unknown) => void
+  > = new Set();
   private rl: readline.Interface;
 
   constructor() {
@@ -88,6 +89,21 @@ export class StdioTransport {
   }
 
   /**
+   * Listen for incoming notifications (messages with a method but no id).
+   * Notifications never receive a response.
+   *
+   * @returns A function that removes the listener
+   */
+  onNotification(
+    listener: (method: string, params: unknown) => void,
+  ): () => void {
+    this.notificationListeners.add(listener);
+    return () => {
+      this.notificationListeners.delete(listener);
+    };
+  }
+
+  /**
    * Send a response back through stdout.
    */
   private send(
@@ -107,45 +123,59 @@ export class StdioTransport {
    * Handle incoming message from stdin.
    */
   private async handleMessage(line: string): Promise<void> {
+    if (!line.trim()) {
+      return;
+    }
+
+    let message: JsonRpcRequest;
     try {
-      const message: JsonRpcRequest | null = tryJsonParse(line);
-
-      if (message?.id === undefined) {
-        return;
-      }
-
-      if (!message?.method) {
-        this.send(randomUUID(), undefined, {
-          code: JsonRpcErrorCodes.INVALID_REQUEST,
-          message: 'Method not specified',
-        });
-        return;
-      }
-
-      const handler = this.handlers.get(message.method);
-      if (!handler) {
-        this.send(message.id, undefined, {
-          code: JsonRpcErrorCodes.METHOD_NOT_FOUND,
-          message: `Method not found: ${message.method}`,
-        });
-        return;
-      }
-
-      try {
-        const result = await handler(message.params);
-        this.send(message.id, result);
-      } catch (error) {
-        this.send(message.id, undefined, {
-          code: JsonRpcErrorCodes.INTERNAL_ERROR,
-          message: error instanceof Error ? error.message : 'Internal error',
-          data: error instanceof Error ? error.stack : undefined,
-        });
-      }
+      message = JSON.parse(line);
     } catch {
       // Invalid JSON - send parse error with null id per spec
       this.send(null, undefined, {
         code: JsonRpcErrorCodes.PARSE_ERROR,
         message: 'Parse error',
+      });
+      return;
+    }
+
+    if (!message?.method) {
+      const id = message?.id;
+      this.send(
+        typeof id === 'string' || typeof id === 'number' ? id : null,
+        undefined,
+        {
+          code: JsonRpcErrorCodes.INVALID_REQUEST,
+          message: 'Method not specified',
+        },
+      );
+      return;
+    }
+
+    if (message.id === undefined) {
+      this.notificationListeners.forEach((listener) =>
+        listener(message.method, message.params),
+      );
+      return;
+    }
+
+    const handler = this.handlers.get(message.method);
+    if (!handler) {
+      this.send(message.id, undefined, {
+        code: JsonRpcErrorCodes.METHOD_NOT_FOUND,
+        message: `Method not found: ${message.method}`,
+      });
+      return;
+    }
+
+    try {
+      const result = await handler(message.params);
+      this.send(message.id, result);
+    } catch (error) {
+      this.send(message.id, undefined, {
+        code: JsonRpcErrorCodes.INTERNAL_ERROR,
+        message: error instanceof Error ? error.message : 'Internal error',
+        data: error instanceof Error ? error.stack : undefined,
       });
     }
   }

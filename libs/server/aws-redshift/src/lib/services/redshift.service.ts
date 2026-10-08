@@ -1,249 +1,334 @@
 import { Injectable } from '@nestjs/common';
-import { DescribeStatementCommand, ExecuteStatementCommand, GetStatementResultCommand, RedshiftDataClient, SqlParameter } from "@aws-sdk/client-redshift-data";
-import { GetWorkgroupCommand, GetWorkgroupCommandInput, RedshiftServerlessClient } from '@aws-sdk/client-redshift-serverless';
+import {
+  DescribeStatementCommand,
+  ExecuteStatementCommand,
+  Field,
+  GetStatementResultCommand,
+  RedshiftDataClient,
+  SqlParameter,
+} from '@aws-sdk/client-redshift-data';
+import {
+  GetWorkgroupCommand,
+  GetWorkgroupCommandInput,
+  RedshiftServerlessClient,
+} from '@aws-sdk/client-redshift-serverless';
 import { randomUUID } from 'crypto';
 
-export type RedshiftQueryParameters = Record<string, string | number | boolean | null | undefined>;
+export type RedshiftQueryParameters = Record<
+  string,
+  string | number | boolean | null | undefined
+>;
 
-function toSqlParameters(parameters?: RedshiftQueryParameters | SqlParameter[]): SqlParameter[] | undefined {
-    if (!parameters) return undefined;
-    if (Array.isArray(parameters)) return parameters;
-    return Object.entries(parameters).map(([name, value]) => ({
-        name,
-        value: value === null || value === undefined ? undefined : String(value),
-    }));
+function toSqlParameters(
+  parameters?: RedshiftQueryParameters | SqlParameter[],
+): SqlParameter[] | undefined {
+  if (!parameters) return undefined;
+  if (Array.isArray(parameters)) return parameters;
+  return Object.entries(parameters).map(([name, value]) => ({
+    name,
+    value: value === null || value === undefined ? undefined : String(value),
+  }));
 }
 
 @Injectable()
 export class RedshiftDataService {
-    constructor(
-        private redshiftDataClient: RedshiftDataClient,
-        private redshiftServerlessClient: RedshiftServerlessClient,
-    ) { }
+  constructor(
+    private redshiftDataClient: RedshiftDataClient,
+    private redshiftServerlessClient: RedshiftServerlessClient,
+  ) {}
 
-    async waitForStatement(statementId: string, maxAttempts = 10, delay = 1000) {
-        let attempts = 0;
+  async waitForStatement(statementId: string, maxAttempts = 10, delay = 1000) {
+    let attempts = 0;
 
-        while (attempts < maxAttempts) {
-            const describeStatementCommand = new DescribeStatementCommand({
-                Id: statementId
-            });
+    while (attempts < maxAttempts) {
+      const describeStatementCommand = new DescribeStatementCommand({
+        Id: statementId,
+      });
 
-            const status = await this.redshiftDataClient.send(describeStatementCommand);
+      const status = await this.redshiftDataClient.send(
+        describeStatementCommand,
+      );
 
-            if (status.Status === 'FINISHED') {
-                return status.ResultRows;
-            }
+      if (status.Status === 'FINISHED') {
+        return status.ResultRows;
+      }
 
-            if (status.Status === 'FAILED') {
-                throw new Error(`SQL statement failed: ${status.Error}`);
-            }
+      if (status.Status === 'FAILED') {
+        throw new Error(`SQL statement failed: ${status.Error}`);
+      }
 
-            attempts++;
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
+      if (status.Status === 'ABORTED') {
+        throw new Error(status.Error || 'SQL statement was aborted');
+      }
 
-        throw new Error('Timeout waiting for SQL statement to complete');
+      attempts++;
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
-    async verifyEndpointAccess(workgroupName: string) {
-        const workgroupResponse = await this.redshiftServerlessClient.send(
-            new GetWorkgroupCommand({ workgroupName })
-        );
+    throw new Error('Timeout waiting for SQL statement to complete');
+  }
 
-        if (!workgroupResponse?.workgroup?.endpoint?.address) {
-            console.error(`Could not retrieve endpoint for workgroupName "${workgroupName}"`);
+  async verifyEndpointAccess(workgroupName: string) {
+    const workgroupResponse = await this.redshiftServerlessClient.send(
+      new GetWorkgroupCommand({ workgroupName }),
+    );
 
-            return;
-        }
+    if (!workgroupResponse?.workgroup?.endpoint?.address) {
+      console.error(
+        `Could not retrieve endpoint for workgroupName "${workgroupName}"`,
+      );
 
-        return workgroupResponse;
+      return;
     }
 
-    async addIamUserToDatabaseGroup(_: { database: string, workgroupName: string, user: string, group: string }) {
+    return workgroupResponse;
+  }
+
+  async addIamUserToDatabaseGroup(_: {
+    database: string;
+    workgroupName: string;
+    user: string;
+    group: string;
+  }) {
+    try {
+      const groupResult = await this.redshiftDataClient.send(
+        new ExecuteStatementCommand({
+          Database: _.database,
+          Sql: `ALTER GROUP ${_.group} ADD USER "${_.user}";`,
+          WorkgroupName: _.workgroupName,
+        }),
+      );
+
+      await this.waitForStatement(groupResult.Id!);
+
+      console.log(`Added user "${_.user}" to group "${_.group}`);
+    } catch (error: any) {
+      console.warn({ detail: `Warning adding ${_.user} to group:`, error });
+    }
+  }
+
+  async createDatabaseUser(_: {
+    database: string;
+    workgroupName: string;
+    user: string;
+  }): Promise<string> {
+    try {
+      const checkResult = await this.redshiftDataClient.send(
+        new ExecuteStatementCommand({
+          Database: _.database,
+          Sql: `SELECT u.usename as username FROM pg_user u WHERE u.usename = :user;`,
+          WorkgroupName: _.workgroupName,
+          Parameters: [{ name: 'user', value: _.user }],
+        }),
+      );
+
+      await this.waitForStatement(checkResult.Id!);
+
+      const describeCommand = new DescribeStatementCommand({
+        Id: checkResult.Id,
+      });
+      const checkStatus = await this.redshiftDataClient.send(describeCommand);
+
+      if (!checkStatus.ResultRows) {
+        const placeholderPassword = `IAM_${randomUUID().replace(/-/g, '_')}`;
+
+        const createUserCommand = new ExecuteStatementCommand({
+          Database: _.database,
+          Sql: `CREATE USER ${_.user} PASSWORD '${placeholderPassword}';`,
+          WorkgroupName: _.workgroupName,
+        });
+
+        const createResult =
+          await this.redshiftDataClient.send(createUserCommand);
+
+        await this.waitForStatement(createResult.Id!);
+
+        console.log(`Created user: ${_.user}`);
+
+        return placeholderPassword;
+      } else {
+        console.log(`User "${_.user} already exists`);
+
+        return '';
+      }
+    } catch (error: any) {
+      console.warn({ detail: `Warning creating user ${_.user}`, error });
+      throw error;
+    }
+  }
+
+  async grantUsageOnSchema(_: {
+    database: string;
+    workgroupName: string;
+    schema: string;
+    group: string;
+  }) {
+    try {
+      const setupStatements = [
+        `GRANT USAGE ON SCHEMA ${_.schema} TO GROUP ${_.group};`,
+        `GRANT SELECT ON ALL TABLES IN SCHEMA ${_.schema} TO GROUP ${_.group};`,
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA ${_.schema} GRANT SELECT ON TABLES TO GROUP ${_.group};`,
+      ];
+
+      for (const Sql of setupStatements) {
+        const executeStatementCommand = new ExecuteStatementCommand({
+          Database: _.database,
+          Sql,
+          WorkgroupName: _.workgroupName,
+        });
+
         try {
-            const groupResult = await this.redshiftDataClient.send(new ExecuteStatementCommand({
-                Database: _.database,
-                Sql: `ALTER GROUP ${_.group} ADD USER "${_.user}";`,
-                WorkgroupName: _.workgroupName
-            }));
-
-            await this.waitForStatement(groupResult.Id!);
-
-            console.log(`Added user "${_.user}" to group "${_.group}`);
+          const result = await this.redshiftDataClient.send(
+            executeStatementCommand,
+          );
+          await this.waitForStatement(result.Id!);
         } catch (error: any) {
-            console.warn({ detail: `Warning adding ${_.user} to group:`, error });
+          console.warn({ Sql, error });
         }
+      }
+    } catch (error) {
+      console.error({ error });
+      throw error;
     }
+  }
 
-    async createDatabaseUser(_: { database: string, workgroupName: string, user: string }): Promise<string> {
-        try {
+  async createDbGroupFromIamGroupIfNotExists(_: {
+    iamGroup: string;
+    database: string;
+    workgroupName: string;
+  }): Promise<any> {
+    try {
+      const checkResult = await this.redshiftDataClient.send(
+        new ExecuteStatementCommand({
+          Database: _.database,
+          Sql: `SELECT 1 FROM pg_group WHERE groname = '${_.iamGroup}';`,
+          WorkgroupName: _.workgroupName,
+        }),
+      );
 
-            const checkResult = await this.redshiftDataClient.send(new ExecuteStatementCommand({
-                Database: _.database,
-                Sql: `SELECT u.usename as username FROM pg_user u;`,
-                WorkgroupName: _.workgroupName
-            }));
+      await this.waitForStatement(checkResult.Id!);
 
-            await this.waitForStatement(checkResult.Id!);
+      const describeCommand = new DescribeStatementCommand({
+        Id: checkResult.Id,
+      });
+      const checkStatus = await this.redshiftDataClient.send(describeCommand);
 
-            const describeCommand = new DescribeStatementCommand({ Id: checkResult.Id });
-            const checkStatus = await this.redshiftDataClient.send(describeCommand);
+      if (!checkStatus.ResultRows) {
+        const createGroupCommand = new ExecuteStatementCommand({
+          Database: _.database,
+          Sql: `CREATE GROUP ${_.iamGroup};`,
+          WorkgroupName: _.workgroupName,
+        });
 
-            if (!checkStatus.ResultRows) {
-                const placeholderPassword = `IAM_${randomUUID().replace(/-/g, '_')}`;
+        const createResult =
+          await this.redshiftDataClient.send(createGroupCommand);
+        await this.waitForStatement(createResult.Id!);
+        console.log(`Created "${_.iamGroup}" group`);
+      } else {
+        console.log(`"${_.iamGroup}" group already exists`);
+      }
+    } catch (error: any) {
+      console.error({ error });
+      throw error;
+    }
+  }
 
-                const createUserCommand = new ExecuteStatementCommand({
-                    Database: _.database,
-                    Sql: `CREATE USER ${_.user} PASSWORD '${placeholderPassword}';`,
-                    WorkgroupName: _.workgroupName
-                });
+  async queryV1(
+    _: { database: string; workgroupName: string },
+    Sql: string,
+    parameters?: RedshiftQueryParameters | SqlParameter[],
+  ) {
+    const result = await this.redshiftDataClient.send(
+      new ExecuteStatementCommand({
+        Database: _.database,
+        Sql,
+        WorkgroupName: _.workgroupName,
+        Parameters: toSqlParameters(parameters),
+      }),
+    );
 
-                const createResult = await this.redshiftDataClient.send(createUserCommand);
+    return await this.waitForStatement(result.Id!);
+  }
 
-                await this.waitForStatement(createResult.Id!);
+  async query(
+    _: { database: string; workgroupName: string },
+    Sql: string,
+    parameters?: RedshiftQueryParameters | SqlParameter[],
+  ) {
+    try {
+      const executeCommand = new ExecuteStatementCommand({
+        Database: _.database,
+        Sql,
+        WorkgroupName: _.workgroupName,
+        Parameters: toSqlParameters(parameters),
+      });
 
-                console.log(`Created user: ${_.user}`);
+      const { Id } = await this.redshiftDataClient.send(executeCommand);
 
-                return placeholderPassword;
-            } else {
-                console.log(`User "${_.user} already exists`);
+      if (!Id) {
+        throw new Error('Failed to get statement ID');
+      }
 
-                return '';
-            }
+      let status = '';
 
-        } catch (error: any) {
-            console.warn({ detail: `Warning creating user ${_.user}`, error });
-            throw error;
+      do {
+        const describeCommand = new DescribeStatementCommand({ Id });
+        const { Status, Error: err } =
+          await this.redshiftDataClient.send(describeCommand);
+        status = Status || '';
+
+        if (status === 'FAILED') {
+          throw new Error(err);
         }
-    }
 
-    async grantUsageOnSchema(_: { database: string, workgroupName: string, schema: string, group: string }) {
-
-        try {
-            const setupStatements = [
-                `GRANT USAGE ON SCHEMA ${_.schema} TO GROUP ${_.group};`,
-                `GRANT SELECT ON ALL TABLES IN SCHEMA ${_.schema} TO GROUP ${_.group};`,
-                `ALTER DEFAULT PRIVILEGES IN SCHEMA ${_.schema} GRANT SELECT ON TABLES TO GROUP ${_.group};`,
-            ];
-
-            for (const Sql of setupStatements) {
-                const executeStatementCommand = new ExecuteStatementCommand({
-                    Database: _.database,
-                    Sql,
-                    WorkgroupName: _.workgroupName
-                });
-
-                try {
-                    const result = await this.redshiftDataClient.send(executeStatementCommand);
-                    await this.waitForStatement(result.Id!);
-                } catch (error: any) {
-                    console.warn({ Sql, error });
-                }
-            }
-
-        } catch (error) {
-            console.error({ error });
-            throw error;
+        if (status === 'ABORTED') {
+          throw new Error(err || 'SQL statement was aborted');
         }
-    }
 
-    async createDbGroupFromIamGroupIfNotExists(_: { iamGroup: string, database: string, workgroupName: string }): Promise<any> {
-
-        try {
-            const checkResult = await this.redshiftDataClient.send(new ExecuteStatementCommand({
-                Database: _.database,
-                Sql: `SELECT 1 FROM pg_group WHERE groname = '${_.iamGroup}';`,
-                WorkgroupName: _.workgroupName
-            }));
-
-            await this.waitForStatement(checkResult.Id!);
-
-            const describeCommand = new DescribeStatementCommand({ Id: checkResult.Id });
-            const checkStatus = await this.redshiftDataClient.send(describeCommand);
-
-            if (!checkStatus.ResultRows) {
-                const createGroupCommand = new ExecuteStatementCommand({
-                    Database: _.database,
-                    Sql: `CREATE GROUP ${_.iamGroup};`,
-                    WorkgroupName: _.workgroupName
-                });
-
-                const createResult = await this.redshiftDataClient.send(createGroupCommand);
-                await this.waitForStatement(createResult.Id!);
-                console.log(`Created "${_.iamGroup}" group`);
-            } else {
-                console.log(`"${_.iamGroup}" group already exists`);
-            }
-        } catch (error: any) {
-            console.error({ error });
-            throw error;
+        if (status !== 'FINISHED') {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
+      } while (status !== 'FINISHED');
+
+      try {
+        const records: Field[][] = [];
+        let NextToken: string | undefined;
+
+        do {
+          const getResultsCommand = new GetStatementResultCommand({
+            Id,
+            NextToken,
+          });
+          const results = await this.redshiftDataClient.send(getResultsCommand);
+
+          records.push(...(results.Records || []));
+          NextToken = results.NextToken;
+        } while (NextToken);
+
+        return records.map((record) => {
+          return record.map(
+            (field) =>
+              field.stringValue ??
+              field.longValue ??
+              field.doubleValue ??
+              field.booleanValue,
+          );
+        });
+      } catch (error) {
+        return [];
+      }
+    } catch (error) {
+      console.error({ detail: 'Error executing query:', error });
+      throw error;
     }
+  }
 
-    async queryV1(_: { database: string, workgroupName: string }, Sql: string, parameters?: RedshiftQueryParameters | SqlParameter[]) {
-        const result = await this.redshiftDataClient.send(new ExecuteStatementCommand({
-            Database: _.database,
-            Sql,
-            WorkgroupName: _.workgroupName,
-            Parameters: toSqlParameters(parameters),
-        }));
-
-        return await this.waitForStatement(result.Id!);
-    }
-
-
-    async query(_: { database: string, workgroupName: string }, Sql: string, parameters?: RedshiftQueryParameters | SqlParameter[]) {
-        try {
-            const executeCommand = new ExecuteStatementCommand({
-                Database: _.database,
-                Sql,
-                WorkgroupName: _.workgroupName,
-                Parameters: toSqlParameters(parameters),
-            });
-
-            const { Id } = await this.redshiftDataClient.send(executeCommand);
-
-            if (!Id) {
-                throw new Error("Failed to get statement ID");
-            }
-
-            let status = "";
-
-            do {
-                const describeCommand = new DescribeStatementCommand({ Id });
-                const { Status, Error: err } = await this.redshiftDataClient.send(describeCommand);
-                status = Status || "";
-
-                if (status === "FAILED") {
-                    throw new Error(err);
-                }
-
-                if (status !== "FINISHED") {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-            } while (status !== "FINISHED");
-
-            try {
-                const getResultsCommand = new GetStatementResultCommand({ Id });
-                const results = await this.redshiftDataClient.send(getResultsCommand);
-
-                const records = results.Records || [];
-                return records.map(record => {
-                    return record.map(field => field.stringValue || field.longValue || field.doubleValue);
-                });
-            } catch (error) {
-                return [];
-            }
-        } catch (error) {
-            console.error({ detail: "Error executing query:", error });
-            throw error;
-        }
-    }
-
-    async getAssociatedIAmRolesByWorkgroup(_: { database: string, workgroupName: string }) {
-        try {
-            const query = `
+  async getAssociatedIAmRolesByWorkgroup(_: {
+    database: string;
+    workgroupName: string;
+  }) {
+    try {
+      const query = `
             SELECT
               g.groname as role_name,
               u.usename as member_name,
@@ -252,55 +337,53 @@ export class RedshiftDataService {
               CASE WHEN pg_has_role(u.usename, g.groname, 'MEMBER') THEN true ELSE false END as is_member
             FROM pg_group g
             LEFT JOIN pg_user u ON u.usesysid = ANY(g.grolist)
-            WHERE EXISTS (
-              SELECT 1
-              FROM svv_redshift_databases d
-              WHERE d.database_name = current_database()
-              AND d.workgroup_name = $1
-            )
             ORDER BY g.groname, u.usename;
           `;
 
-            return await this.query(_, query)
-        } catch (error) {
-            if (error instanceof Error) {
-                console.error(`Error getting workgroup roles: ${error.message}`);
-                throw error;
-            }
-            throw new Error('An unknown error occurred');
-        }
+      return await this.query(_, query);
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error(`Error getting workgroup roles: ${error.message}`);
+        throw error;
+      }
+      throw new Error('An unknown error occurred');
     }
+  }
 
-    private async upsert<TValue>(_: { database: string, workgroupName: string }, value: TValue, tableQualifiers: { schema: string, table: string }) {
-        const { table, schema } = tableQualifiers;
-        // TODO: dynamically build out the select/insert clauses dynamically
-        //         try {
-        //             const upsertQuery = `
-        // WITH ${table}_x AS (SELECT '${value.user_id}' as user_id, '${value.profile_id}' as profile_id, '${value.email}' as email, '${value.date}' as date, '${value.weight}' as weight, '${value.source}' as source, '${value.created_at}' as created_at)
-        // UPDATE ${schema}.${table}
-        // SET
-        //   patient = a.patient,
-        //   data = a.data
-        // FROM ${table}_x AS a
-        // WHERE ${schema}.${table}.id = a.id;
+  private async upsert<TValue>(
+    _: { database: string; workgroupName: string },
+    value: TValue,
+    tableQualifiers: { schema: string; table: string },
+  ) {
+    const { table, schema } = tableQualifiers;
+    // TODO: dynamically build out the select/insert clauses dynamically
+    //         try {
+    //             const upsertQuery = `
+    // WITH ${table}_x AS (SELECT '${value.user_id}' as user_id, '${value.profile_id}' as profile_id, '${value.email}' as email, '${value.date}' as date, '${value.weight}' as weight, '${value.source}' as source, '${value.created_at}' as created_at)
+    // UPDATE ${schema}.${table}
+    // SET
+    //   patient = a.patient,
+    //   data = a.data
+    // FROM ${table}_x AS a
+    // WHERE ${schema}.${table}.id = a.id;
 
-        // INSERT INTO ${schema}.${table} (
-        //   id,
-        //   patient,
-        //   data
-        // )
-        // SELECT
-        //   a.id,
-        //   a.patient,
-        //   a.data
-        // FROM ${table}_x AS a
-        // LEFT JOIN ${schema}.${table} AS b
-        //   ON a.id = b.id
-        // WHERE b.id IS NULL;`;
+    // INSERT INTO ${schema}.${table} (
+    //   id,
+    //   patient,
+    //   data
+    // )
+    // SELECT
+    //   a.id,
+    //   a.patient,
+    //   a.data
+    // FROM ${table}_x AS a
+    // LEFT JOIN ${schema}.${table} AS b
+    //   ON a.id = b.id
+    // WHERE b.id IS NULL;`;
 
-        //             return await this.query(_, upsertQuery);
-        //         } catch (error: any) {
-        //             console.error({ error, detail: `"${schema}.${table}" upsert failed` });
-        //         }
-    }
+    //             return await this.query(_, upsertQuery);
+    //         } catch (error: any) {
+    //             console.error({ error, detail: `"${schema}.${table}" upsert failed` });
+    //         }
+  }
 }

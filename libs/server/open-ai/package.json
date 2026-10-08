@@ -10,6 +10,7 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
+    "@onivoro/server-common": "24.39.0",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
@@ -17,7 +18,8 @@
     "@nestjs/common": "*",
     "any-text": "*",
     "compute-cosine-similarity": "*",
-    "openai": "*"
+    "openai": "*",
+    "pdf-parse": "*"
   },
   "files": [
     "**/*.js",

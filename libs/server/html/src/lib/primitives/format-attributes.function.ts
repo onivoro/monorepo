@@ -1,11 +1,12 @@
-import { escapeHtmlAttr } from "./escape-html-attr.function";
+import { escapeHtmlAttr } from './escape-html-attr.function';
 
 export function formatAttributes(attributes?: Record<string, any>) {
-    if(!attributes) {
-        return '';
-    }
+  if (!attributes) {
+    return '';
+  }
 
-    return Object.entries(attributes)
-        .map(([k, v]) => `${k}="${escapeHtmlAttr(v)}"`)
-        .join(' ');
+  return Object.entries(attributes)
+    .filter(([, v]) => v != null)
+    .map(([k, v]) => `${k}="${escapeHtmlAttr(v)}"`)
+    .join(' ');
 }

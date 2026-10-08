@@ -5,8 +5,10 @@ A Node.js process execution library providing Promise and RxJS interfaces for ru
 ## Installation
 
 ```bash
-npm install @onivoro/server-process
+npm install @onivoro/server-process rxjs
 ```
+
+`rxjs` is a peer dependency.
 
 ## Features
 
@@ -15,7 +17,7 @@ npm install @onivoro/server-process
 - **Line-by-line streaming**: `execRxAsLines` with stateful line splitting across chunk boundaries
 - **JSON output parsing**: `execRxAsJson` buffers and parses complete JSON output
 - **Reactive I/O**: `listen` turns any readable stream (or stdin) into an Observable
-- **Docker container support**: Run any command inside a Docker container with `{ container: 'name' }`
+- **Docker container support**: Run any command inside a Docker container with `{ container: 'name' }`. For `execPromise` and the `execRx` family the command becomes the shell string `docker exec <container> <cmd>`, so pipes, redirects and `&&` in `cmd` run on the host, not in the container (wrap them in `sh -c '...'` to run them inside). `spawnPromise` runs `docker` with `['exec', container, program, ...args]`.
 - **AbortSignal support**: Cancel running processes with `AbortController`
 - **Automatic teardown**: Unsubscribing from an Observable kills the child process
 
@@ -38,6 +40,7 @@ const { stdout: status } = await execPromise('git status', { cwd: '/path/to/repo
 ```
 
 **Parameters:**
+
 - `cmd: string` - Shell command to execute
 - `options?: ExecPromiseOptions` - Node.js `ExecOptions` plus:
   - `container?: string` - Docker container name (runs via `docker exec`)
@@ -62,16 +65,17 @@ const output = await spawnPromise('npm', ['install'], { signal: ac.signal });
 ```
 
 **Parameters:**
+
 - `program: string` - Program to spawn
 - `args?: string[]` - Command arguments
 - `options?: SpawnPromiseOptions` - Node.js `SpawnOptions` plus:
   - `container?: string` - Docker container name (runs via `docker exec`)
 
-**Returns:** `Promise<string>` - Collected stdout (rejects with `Error` containing stderr on non-zero exit)
+**Returns:** `Promise<string>` - Collected stdout. On a non-zero exit it rejects with an `Error` whose message is the collected stderr (the exit code is not included). No shell is used, so `program` and `args` are passed to the OS as-is.
 
 ### `execRx(cmd, options?)`
 
-Execute a command reactively with true streaming. Each `data` chunk from the child process is emitted as it arrives.
+Execute a command reactively with true streaming. The command runs through `spawn` with `shell: true` (overridable via options) when the Observable is subscribed, and each `data` chunk from the child process is emitted as it arrives. If `options.signal` is already aborted, it completes without spawning.
 
 ```typescript
 import { execRx } from '@onivoro/server-process';
@@ -80,7 +84,7 @@ import { execRx } from '@onivoro/server-process';
 execRx('tail -f /var/log/app.log').subscribe({
   next: (chunk) => console.log(chunk),
   error: (err) => console.error(err),
-  complete: () => console.log('Done')
+  complete: () => console.log('Done'),
 });
 
 // Unsubscribing kills the child process
@@ -93,12 +97,13 @@ execRx('cat /var/log/app.log', { container: 'my-app' }).subscribe(console.log);
 // With AbortSignal — completes cleanly, does not error
 const ac = new AbortController();
 execRx('sleep 60', { signal: ac.signal }).subscribe({
-  complete: () => console.log('Cancelled')
+  complete: () => console.log('Cancelled'),
 });
 ac.abort();
 ```
 
 **Parameters:**
+
 - `cmd: string` - Shell command to execute
 - `options?: ExecRxOptions` - Options object:
   - `emitStdErr?: boolean` - Include stderr chunks in output (default: `true`)
@@ -116,7 +121,7 @@ import { execRxAsLines } from '@onivoro/server-process';
 
 execRxAsLines('cat large-file.txt').subscribe({
   next: (line) => console.log('Line:', line),
-  complete: () => console.log('Done')
+  complete: () => console.log('Done'),
 });
 ```
 
@@ -137,15 +142,17 @@ interface ContainerInfo {
   State: { Status: string };
 }
 
-execRxAsJson<ContainerInfo[]>('docker inspect my-container').subscribe({
+// stderr is emitted by default and would be concatenated into the JSON text,
+// so turn it off for commands that may write to stderr
+execRxAsJson<ContainerInfo[]>('docker inspect my-container', { emitStdErr: false }).subscribe({
   next: (containers) => console.log(containers[0].State.Status),
-  error: (err) => console.error('Failed:', err)
+  error: (err) => console.error('Failed:', err),
 });
 ```
 
 **Parameters:** Same as `execRx`
 
-**Returns:** `Observable<T>` - Single emission of parsed JSON
+**Returns:** `Observable<T>` - Single emission of parsed JSON (errors if the output is not valid JSON)
 
 ### `listen(options?)`
 
@@ -174,6 +181,7 @@ listen({ input: createReadStream('/var/log/app.log') }).subscribe(console.log);
 ```
 
 **Parameters:**
+
 - `options?: ListenOptions` - Options object:
   - `lines?: boolean` - Split into lines (default: `true`)
   - `input?: NodeJS.ReadableStream` - Stream to read from (default: `process.stdin`)
@@ -182,7 +190,7 @@ listen({ input: createReadStream('/var/log/app.log') }).subscribe(console.log);
 
 ### `splitLines(source$)`
 
-RxJS operator that splits a stream of string chunks into individual lines. Buffers incomplete lines across chunk boundaries and emits the final fragment on completion.
+Takes an Observable of string chunks and returns a new Observable of individual lines. It is a plain function, not a pipeable operator, so call it directly rather than inside `.pipe()`. Splits on `\n` only (a `\r` before it is kept), buffers incomplete lines across chunk boundaries, and emits the final fragment on completion.
 
 ```typescript
 import { splitLines, execRx } from '@onivoro/server-process';
@@ -191,6 +199,7 @@ splitLines(execRx('some-command')).subscribe(console.log);
 ```
 
 **Parameters:**
+
 - `source$: Observable<string>` - Source observable of string chunks
 
 **Returns:** `Observable<string>` - Stream of individual lines (empty lines filtered out)
@@ -211,6 +220,7 @@ if (fatalError) {
 ```
 
 **Parameters:**
+
 - `code: number` - Exit code
 
 **Returns:** `() => never`
@@ -219,7 +229,7 @@ if (fatalError) {
 
 - **Promise functions** reject with the error from `exec`/`spawn`
 - **Reactive functions** emit errors through the Observable error channel
-- **Non-zero exit codes** produce an `Error` with the exit code in the message
+- **Non-zero exit codes**: `execRx` (and `execRxAsLines` / `execRxAsJson`) errors with `Error('Process exited with code <code>')`; `execPromise` rejects with Node's `exec` error (message `Command failed: ...`, with `code`, `stdout` and `stderr` properties); `spawnPromise` rejects with an `Error` whose message is the stderr output
 - **AbortSignal** in reactive functions (`execRx`, `execRxAsLines`, `execRxAsJson`) completes cleanly — cancellation is not an error. In Promise functions (`execPromise`, `spawnPromise`), abort rejects the promise
 
 ```typescript
@@ -229,12 +239,12 @@ import { execPromise, execRx } from '@onivoro/server-process';
 try {
   await execPromise('nonexistent-command');
 } catch (error) {
-  console.error('Failed:', error.message);
+  console.error('Failed:', (error as Error).message);
 }
 
 // Reactive
 execRx('invalid-command').subscribe({
-  error: (error) => console.error('Failed:', error.message)
+  error: (error) => console.error('Failed:', error.message),
 });
 ```
 

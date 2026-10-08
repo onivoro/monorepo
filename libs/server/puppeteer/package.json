@@ -16,12 +16,9 @@
   },
   "peerDependencies": {
     "@nestjs/common": "*",
-    "puppeteer-core": "*",
+    "puppeteer": "*",
     "puppeteer-extra": "*",
     "puppeteer-extra-plugin-stealth": "*"
-  },
-  "devDependencies": {
-    "puppeteer": "^24.10.1"
   },
   "files": [
     "**/*.js",

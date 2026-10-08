@@ -14,8 +14,14 @@ describe('tryJsonStringify', () => {
       [true, 'true'],
       ['true', '"true"'],
       ['', '""'],
-      [{ test: arbitraryNumber }, expect.stringMatching(new RegExp(`"test".*${arbitraryNumber}`))],
-      [{ test: arbitraryNumber.toString() }, expect.stringMatching(new RegExp(`"test".*"${arbitraryNumber}"`))],
+      [
+        { test: arbitraryNumber },
+        expect.stringMatching(new RegExp(`"test".*${arbitraryNumber}`)),
+      ],
+      [
+        { test: arbitraryNumber.toString() },
+        expect.stringMatching(new RegExp(`"test".*"${arbitraryNumber}"`)),
+      ],
       ['randommmm', expect.any(String)],
       ['so random', expect.any(String)],
     ])('WHEN input is: %j', (input, expectedOutput) => {
@@ -40,5 +46,25 @@ describe('tryJsonStringify', () => {
         // expect(tryJsonStringify(circularObject)).toEqual(null);
       });
     });
+  });
+});
+
+describe('tryJsonStringify extra cases', () => {
+  it('returns null for undefined', () => {
+    expect(tryJsonStringify(undefined)).toBeNull();
+  });
+
+  it('stringifies null', () => {
+    expect(tryJsonStringify(null)).toBe('null');
+  });
+
+  it('returns null for circular structures', () => {
+    const circular: any = {};
+    circular.self = circular;
+    expect(tryJsonStringify(circular)).toBeNull();
+  });
+
+  it('honours the replacer and spacing arguments', () => {
+    expect(tryJsonStringify({ a: 1, b: 2 }, ['a'], 2)).toBe('{\n  "a": 1\n}');
   });
 });

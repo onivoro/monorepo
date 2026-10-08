@@ -5,34 +5,38 @@ import { IJsonataFunctions } from '../interfaces/jsonata-fn-config.interface';
 export async function executeJsonata<TContext>(
   expression: string | null | undefined,
   context: TContext,
-  functions?: IJsonataFunctions
+  functions?: IJsonataFunctions,
 ) {
-
   if (!expression) {
     return undefined;
   }
 
   let header: string = '';
 
-  const existingFnsWithOverridesApplied = (functions?.headerFunctions || [])
-    .map((existing) => {
-      const overridden = (functions?.auxilaryHeaderFunctions || [])
-        .find(({ name }) => name === existing.name);
+  const existingFnsWithOverridesApplied = (
+    functions?.headerFunctions || []
+  ).map((existing) => {
+    const overridden = (functions?.auxilaryHeaderFunctions || []).find(
+      ({ name }) => name === existing.name,
+    );
 
-      if (overridden) {
-        return overridden;
-      }
+    if (overridden) {
+      return overridden;
+    }
 
-      return existing;
-    })
+    return existing;
+  });
 
-  const novelFns: IJsonataFn[] = (functions?.auxilaryHeaderFunctions || [])
-    .filter(({ name }) => !existingFnsWithOverridesApplied.find(existing => existing.name === name));
+  const novelFns: IJsonataFn[] = (
+    functions?.auxilaryHeaderFunctions || []
+  ).filter(
+    ({ name }) =>
+      !existingFnsWithOverridesApplied.find(
+        (existing) => existing.name === name,
+      ),
+  );
 
-  [
-    ...existingFnsWithOverridesApplied,
-    ...novelFns
-  ]
+  [...existingFnsWithOverridesApplied, ...novelFns]
     .map(({ name, body }) => {
       return '$' + `${name} := ${body.split('\n').join(' ')};\n`;
     })
@@ -40,14 +44,15 @@ export async function executeJsonata<TContext>(
       header += body;
     });
 
-  const expressionWithHeader = expression.replace('(', `(${header}\n`);
+  const expressionWithHeader = header
+    ? `(${header}\n${expression}\n)`
+    : expression;
 
   const compiled = jsonata(expressionWithHeader);
 
-  (functions?.registerFunctions || [])
-    .forEach(({ name, fn }) => {
-      compiled.registerFunction(name, fn as any);
-    });
+  (functions?.registerFunctions || []).forEach(({ name, fn }) => {
+    compiled.registerFunction(name, fn as any);
+  });
 
   return await compiled.evaluate(context);
 }

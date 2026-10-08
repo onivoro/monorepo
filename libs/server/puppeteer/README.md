@@ -1,25 +1,28 @@
 # @onivoro/server-puppeteer
 
-A NestJS module providing Puppeteer integration with stealth plugin support for browser automation.
+A NestJS module providing Puppeteer integration with the `puppeteer-extra` stealth plugin for browser automation.
 
 ## Installation
 
 ```bash
-npm install @onivoro/server-puppeteer
+npm install @onivoro/server-puppeteer puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
 ```
+
+Peer dependencies: `@nestjs/common`, `puppeteer`, `puppeteer-extra` and `puppeteer-extra-plugin-stealth`. The compiled module and service `require('puppeteer')` at runtime because the `Browser` class is the injection token.
 
 ## Overview
 
 This library provides:
-- NestJS module for Puppeteer integration
-- Stealth plugin enabled by default to avoid detection
-- Singleton browser instance management
-- Convenient page usage patterns
-- Mock module for testing
+
+- A NestJS module that launches one browser per process and provides `PuppeteerService` and the `Browser`
+- The `puppeteer-extra` stealth plugin, registered once per process on the first launch
+- `usePage`, which opens a page, optionally navigates, runs your callback, and always closes the page
+- A mock module for testing
 
 ## Module Setup
 
 ```typescript
+import { Module } from '@nestjs/common';
 import { ServerPuppeteerModule, ServerPuppeteerConfig } from '@onivoro/server-puppeteer';
 
 const config = new ServerPuppeteerConfig();
@@ -27,34 +30,33 @@ config.headless = true;
 config.executablePath = '/path/to/chrome'; // optional
 
 @Module({
-  imports: [
-    ServerPuppeteerModule.configure(config)
-  ]
+  imports: [ServerPuppeteerModule.configure(config)],
 })
 export class AppModule {}
 ```
 
+`ServerPuppeteerModule.configure(config)` provides:
+
+- `ServerPuppeteerConfig` - the config you passed
+- `Browser` (the class from `puppeteer`) - created with `launchBrowser(config)`. The instance is cached in a module-level variable, so every `configure` call in the process shares the first browser launched.
+- `PuppeteerService`
+
 ## Configuration
 
-The `ServerPuppeteerConfig` class accepts standard Puppeteer launch options:
+`ServerPuppeteerConfig` is passed to `puppeteer.launch` as-is. Its fields use the types of Puppeteer's `LaunchOptions`:
 
 ```typescript
-export class ServerPuppeteerConfig {
-  executablePath?: string;    // Path to Chrome/Chromium executable
-  headless?: boolean;         // Run in headless mode
-  devtools?: boolean;         // Open DevTools automatically
-  defaultViewport?: {         // Default viewport size
-    width: number;
-    height: number;
-  };
+class ServerPuppeteerConfig {
+  executablePath: LaunchOptions['executablePath']; // string | undefined; path to Chrome/Chromium
+  headless?: LaunchOptions['headless']; // boolean | 'shell'
+  devtools?: LaunchOptions['devtools']; // boolean
+  defaultViewport?: LaunchOptions['defaultViewport']; // Viewport | null
 }
 ```
 
 ## Usage
 
 ### PuppeteerService
-
-The main service provides methods for browser automation:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -66,10 +68,9 @@ export class WebScraperService {
 
   async scrapeData(url: string) {
     return this.puppeteerService.usePage(async (page) => {
-      // Your automation logic here
       await page.waitForSelector('.data-element');
-      const data = await page.$eval('.data-element', el => el.textContent);
-      return data;
+      const data = await page.$eval('.data-element', (el) => el.textContent);
+      return data ?? '';
     }, url);
   }
 }
@@ -79,12 +80,14 @@ export class WebScraperService {
 
 ### PuppeteerService
 
+`constructor(public browser: Browser)` - the browser is available as `puppeteerService.browser`.
+
 #### `usePage(fn, url?)`
 
-Execute a function with a new page, automatically closing it afterwards:
+Opens a new page, navigates to `url` when given, awaits `fn(page)`, closes the page and returns the result. The page is closed in a `finally`, so it is also closed when navigation or `fn` throws; the error then propagates.
 
 ```typescript
-const result = await puppeteerService.usePage(async (page) => {
+const title = await puppeteerService.usePage(async (page) => {
   await page.click('#submit-button');
   await page.waitForNavigation();
   return await page.title();
@@ -92,38 +95,38 @@ const result = await puppeteerService.usePage(async (page) => {
 ```
 
 Parameters:
-- `fn: (page: Page) => Promise<string>` - Function to execute with the page
-- `url?: string` - Optional URL to navigate to before executing the function
 
-Returns: `Promise<string>` - The result from the function
+- `fn: (page: Page) => Promise<string>` - function to execute with the page; it must resolve to a string
+- `url?: string` - URL to navigate to before calling `fn`
+
+Returns: `Promise<string>`
 
 #### Protected Methods
 
-These methods are available when extending PuppeteerService:
+These are available when extending `PuppeteerService`:
 
-##### `extractPageBody(url)`
-
-Extract the text content of a page's body:
-
-```typescript
-const bodyText = await this.extractPageBody('https://example.com');
-```
-
-##### `extractPageBodyAsObject<T>(url)`
-
-Extract and parse JSON from a page's body:
+- `extractPageBody(url): Promise<string>` - opens `url`, waits a random 2 to 11 seconds, and returns `document.body.textContent` (`''` if it is `null`)
+- `extractPageBodyAsObject<TBody>(url): Promise<TBody>` - `JSON.parse` of `extractPageBody(url)`
 
 ```typescript
+import { Injectable } from '@nestjs/common';
+import { PuppeteerService } from '@onivoro/server-puppeteer';
+
 interface ApiResponse {
   data: string[];
 }
 
-const response = await this.extractPageBodyAsObject<ApiResponse>('https://api.example.com/data');
+@Injectable()
+export class ApiPageService extends PuppeteerService {
+  fetchData() {
+    return this.extractPageBodyAsObject<ApiResponse>('https://api.example.com/data');
+  }
+}
 ```
 
 ### Browser Instance
 
-The module provides a singleton Browser instance that can be injected:
+The module provides the shared `Browser`, injectable by the `Browser` class from `puppeteer`:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -139,29 +142,33 @@ export class CustomService {
 }
 ```
 
-### launchBrowser Function
+### launchBrowser
 
-Low-level function to launch a browser with stealth plugin:
+`launchBrowser(options: ServerPuppeteerConfig)` registers the stealth plugin on `puppeteer-extra` and returns `puppeteer.launch(options)`. The plugin is registered only on the first call in the process; later calls just launch.
 
 ```typescript
 import { launchBrowser } from '@onivoro/server-puppeteer';
 
 const browser = await launchBrowser({
   headless: true,
-  executablePath: '/usr/bin/google-chrome'
+  executablePath: '/usr/bin/google-chrome',
 });
 ```
 
 ## Testing
 
-Use the mock module for testing:
+`ServerPuppeteerMockModule.configure()` provides a `PuppeteerService` stand-in whose `browser` is `{}` and whose `usePage` resolves to `'This is not implemented yet'` without calling your callback or launching a browser:
 
 ```typescript
-import { ServerPuppeteerMockModule } from '@onivoro/server-puppeteer';
+import { Test } from '@nestjs/testing';
+import { PuppeteerService, ServerPuppeteerMockModule } from '@onivoro/server-puppeteer';
 
-const module = await Test.createTestingModule({
-  imports: [ServerPuppeteerMockModule]
+const moduleRef = await Test.createTestingModule({
+  imports: [ServerPuppeteerMockModule.configure()],
 }).compile();
+
+const service = moduleRef.get(PuppeteerService);
+await service.usePage(async () => 'unused'); // 'This is not implemented yet'
 ```
 
 ## Complete Example
@@ -170,63 +177,55 @@ const module = await Test.createTestingModule({
 import { Injectable } from '@nestjs/common';
 import { PuppeteerService } from '@onivoro/server-puppeteer';
 
+type FormData = { name: string; email: string; country: string };
+
 @Injectable()
 export class FormAutomationService {
   constructor(private puppeteerService: PuppeteerService) {}
 
-  async submitForm(formData: any) {
+  async submitForm(formData: FormData) {
     return this.puppeteerService.usePage(async (page) => {
-      // Set viewport
       await page.setViewport({ width: 1920, height: 1080 });
-      
-      // Fill form
+
       await page.type('#name', formData.name);
       await page.type('#email', formData.email);
       await page.select('#country', formData.country);
-      
-      // Submit
+
       await page.click('#submit');
-      
-      // Wait for confirmation
+
       await page.waitForSelector('.success-message');
-      const message = await page.$eval('.success-message', el => el.textContent);
-      
-      // Take screenshot
+      const message = await page.$eval('.success-message', (el) => el.textContent);
+
       await page.screenshot({ path: 'confirmation.png' });
-      
-      return message;
+
+      return message ?? '';
     }, 'https://example.com/form');
   }
 
   async scrapeProductData(productUrl: string) {
-    return this.puppeteerService.usePage(async (page) => {
-      // Wait for content to load
+    const json = await this.puppeteerService.usePage(async (page) => {
       await page.waitForSelector('.product-info');
-      
-      // Extract data
-      const productData = await page.evaluate(() => {
-        return {
-          title: document.querySelector('.product-title')?.textContent?.trim(),
-          price: document.querySelector('.product-price')?.textContent?.trim(),
-          description: document.querySelector('.product-description')?.textContent?.trim(),
-          images: Array.from(document.querySelectorAll('.product-image img'))
-            .map(img => img.getAttribute('src'))
-        };
-      });
-      
-      return JSON.stringify(productData);
+
+      const productData = await page.evaluate(() => ({
+        title: document.querySelector('.product-title')?.textContent?.trim(),
+        price: document.querySelector('.product-price')?.textContent?.trim(),
+        images: Array.from(document.querySelectorAll('.product-image img')).map((img) => img.getAttribute('src')),
+      }));
+
+      return JSON.stringify(productData); // usePage callbacks must return a string
     }, productUrl);
+
+    return JSON.parse(json);
   }
 }
 ```
 
 ## Important Notes
 
-1. The browser instance is singleton - only one browser is launched per application
-2. Pages are automatically closed after use with `usePage()` method
-3. Stealth plugin is automatically applied to avoid detection
-4. The `extractPageBody` method includes a random delay (2-12 seconds) before extraction
-5. Always handle errors appropriately as page operations can fail
+1. One browser is launched per process and shared by every `ServerPuppeteerModule` import
+2. `usePage` closes the page whether the callback succeeds or throws
+3. The stealth plugin is registered once per process, on the first `launchBrowser` call
+4. `extractPageBody` waits a random 2 to 11 seconds before reading the body
 
 ## License
 

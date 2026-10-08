@@ -1,6 +1,9 @@
 import * as AWSXRay from 'aws-xray-sdk-core';
+import * as http from 'node:http';
+import * as https from 'node:https';
 import {
   bootstrapAwsObservability,
+  captureAwsV3Client,
   resetAwsObservabilityBootstrapForTests,
 } from './bootstrap-aws-observability.function';
 
@@ -11,6 +14,9 @@ jest.mock('aws-xray-sdk-core', () => ({
   captureAWS: jest.fn(),
   captureAWSv3Client: jest.fn((client: unknown) => client),
 }));
+
+const mockAwsSdkV2 = { config: {} };
+jest.mock('aws-sdk', () => mockAwsSdkV2, { virtual: true });
 
 describe('bootstrapAwsObservability', () => {
   beforeEach(() => {
@@ -63,5 +69,53 @@ describe('bootstrapAwsObservability', () => {
     bootstrapAwsObservability();
 
     expect(AWSXRay.capturePromise).toHaveBeenCalledTimes(1);
+  });
+
+  it('captures the global http and https modules', () => {
+    bootstrapAwsObservability();
+
+    expect(AWSXRay.captureHTTPsGlobal).toHaveBeenCalledWith(http, false);
+    expect(AWSXRay.captureHTTPsGlobal).toHaveBeenCalledWith(https, false);
+  });
+
+  it('can capture https without http', () => {
+    bootstrapAwsObservability({ captureHttp: false });
+
+    expect(AWSXRay.captureHTTPsGlobal).toHaveBeenCalledTimes(1);
+    expect(AWSXRay.captureHTTPsGlobal).toHaveBeenCalledWith(https, false);
+  });
+
+  it('does not touch the v2 SDK unless asked', () => {
+    bootstrapAwsObservability();
+
+    expect(AWSXRay.captureAWS).not.toHaveBeenCalled();
+  });
+
+  it('captures the v2 SDK when asked', () => {
+    bootstrapAwsObservability({ captureAwsSdkV2: true });
+
+    expect(AWSXRay.captureAWS).toHaveBeenCalledWith(mockAwsSdkV2);
+  });
+
+  it('bootstraps again after a reset', () => {
+    bootstrapAwsObservability();
+    resetAwsObservabilityBootstrapForTests();
+    bootstrapAwsObservability();
+
+    expect(AWSXRay.capturePromise).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('captureAwsV3Client', () => {
+  it('returns the client captured by X-Ray', () => {
+    const client = {
+      middlewareStack: { remove: jest.fn(), use: jest.fn() },
+      config: {},
+    };
+    const captured = { ...client, captured: true };
+    (AWSXRay.captureAWSv3Client as jest.Mock).mockReturnValueOnce(captured);
+
+    expect(captureAwsV3Client(client)).toBe(captured);
+    expect(AWSXRay.captureAWSv3Client).toHaveBeenCalledWith(client);
   });
 });
