@@ -22,10 +22,10 @@ All libraries release together at one version. Run on a clean `main`; see `readm
 
 ```bash
 npm run release:minor    # or release:patch / release:major: version, commit, tag, build
-npm run release:push     # push main and the release tag; .github/workflows/publish.yml builds, then publishes once approved
+npm run release:push     # push main and the release tag; the tag makes .github/workflows/publish.yml publish
 ```
 
-Publishing uses npm trusted publishing from the `npm-publish` environment. Keep `publish.yml`'s split intact: `build` installs with `--ignore-scripts` and has no `id-token`; `publish` installs nothing. Pin actions to full commit SHAs.
+Publishing uses npm trusted publishing from the `npm-publish` environment, which only `v*` tags (admin-only) can use. Keep `publish.yml`'s split intact: `build` installs with `--ignore-scripts` and has no `id-token`; `publish` installs nothing. Pin actions to full commit SHAs.
 
 `nx release version` commits and tags on its own (`release.version.git` in `nx.json`), so never commit or tag a release by hand.
 

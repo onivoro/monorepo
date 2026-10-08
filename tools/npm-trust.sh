@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Makes every @onivoro/* package trust .github/workflows/publish.yml in onivoro/monorepo, run in the
 # npm-publish environment, so GitHub Actions can publish it with provenance and no npm token.
-# Requiring the environment means a run from any other branch, or from an edited workflow on one, is rejected.
+# Requiring the environment means only runs for v* release tags can publish.
 # Run once after `npm login`, and again whenever a new library is added; packages already set up are skipped.
 # Extra arguments go to `npm trust github`, e.g. --dry-run or --otp=<code>.
 set -euo pipefail
