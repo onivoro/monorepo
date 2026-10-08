@@ -20,7 +20,7 @@ npm run release:minor                     # or release:patch / release:major
 npm run release:push
 ```
 
-1. `release:minor` checks the branch and working tree, then runs `nx release version`. That bumps every package, updates the internal `@onivoro/*` dependency versions, commits `chore(release): v<version>` and tags `v<version>`. It then builds every package locally, so a broken build fails before anything is pushed.
+1. `release:minor` checks that you're on `main` with a clean working tree that matches `origin/main`. It lists every commit since the last release tag, and every change to build, release and dependency files, and asks you to confirm, because the release publishes all of it. It then runs `nx release version`. That bumps every package, updates the internal `@onivoro/*` dependency versions, commits `chore(release): v<version>` and tags `v<version>`. It then builds every package locally, so a broken build fails before anything is pushed.
 2. `release:push` pushes `main` and the new release tag together: if either is rejected, neither is pushed. The tag starts `publish.yml`, which builds and publishes every package.
 
 If a publish fails partway, rerun the failed job from the Actions tab. Versions already on npm are skipped.
@@ -34,20 +34,24 @@ npm login
 npm run release:trust                     # pass -- --dry-run to preview
 ```
 
-`release:trust` runs `npm trust github` for every package that doesn't trust the workflow yet. npm asks for a one-time password for each package it changes.
+`release:trust` runs `npm trust github` for every package that doesn't trust the workflow yet. It then sets every package to "Require two-factor authentication and disallow tokens" (`npm access set mfa=publish`), so a leaked npm token can't publish it; trusted publishing still works. Finally it lists the npm org's members and your npm tokens for you to review. npm asks for a one-time password for each change.
 
 A brand-new package has to be published once by hand: `npm run release:publish -- --otp=<code>` publishes whatever isn't on npm yet.
 
-Once a package trusts the workflow, set its npm publishing access to "Require two-factor authentication and disallow tokens", so a leaked npm token can't publish it. Trusted publishing still works.
-
 ## Repository settings
 
-`publish.yml` relies on these GitHub settings for `onivoro/monorepo`:
+`publish.yml` relies on these GitHub settings for `onivoro/monorepo`. `npm run release:github-settings` applies them (as a repo admin with `gh` logged in) and can be run again at any time:
 
 - **`npm-publish` environment**: deployments limited to `v*` tags.
 - **`release tags` ruleset**: only repository admins can create, move or delete `v*` tags.
-- **`main` ruleset**: blocks deleting and force-pushing `main`. Direct pushes, which `release:push` needs, still work.
-- **Actions**: only GitHub-owned actions are allowed, they must be pinned to full commit SHAs, and the default `GITHUB_TOKEN` is read-only. To update an action, replace both the SHA and the version comment beside it.
+- **`main` ruleset**: blocks deleting and force-pushing `main`, and requires a pull request with one approval, plus code owner review for the build and release files in `.github/CODEOWNERS`. Admins can bypass it, which `release:push` needs.
+- **Actions**: only GitHub-owned actions are allowed, they must be pinned to full commit SHAs, and the default `GITHUB_TOKEN` is read-only. Dependabot (`.github/dependabot.yml`) opens a weekly pull request that updates the pinned SHAs and their version comments.
+- **Security**: secret scanning with push protection, Dependabot alerts and security updates, and private vulnerability reporting (see `SECURITY.md`).
+
+Two settings the script can't apply:
+
+- **Org 2FA**: require two-factor authentication at https://github.com/organizations/onivoro/settings/security.
+- **Admins**: every repository admin can create release tags, so every admin can publish. Keep everyone else at write access or lower.
 
 ## Previewing
 

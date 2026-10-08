@@ -1,0 +1,10 @@
+# Files that decide what gets built and published to npm. Changes need the release owner's review
+# (enforced by the main ruleset, see tools/github-settings.sh).
+/.github/ @ICEDLEE337
+/tools/ @ICEDLEE337
+/package.json @ICEDLEE337
+/package-lock.json @ICEDLEE337
+/nx.json @ICEDLEE337
+/tsconfig*.json @ICEDLEE337
+/libs/*/*/package.json @ICEDLEE337
+/libs/*/*/project.json @ICEDLEE337
