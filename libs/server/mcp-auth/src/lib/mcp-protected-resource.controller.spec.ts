@@ -6,9 +6,14 @@ import type { McpAuthConfig } from './mcp-auth-config';
 
 describe('McpProtectedResourceController', () => {
   function createController(config: McpAuthConfig, scopes: string[] = []) {
-    const mockScopeRegistry = { getScopesArray: jest.fn().mockReturnValue(scopes) };
+    const mockScopeRegistry = {
+      getScopesArray: jest.fn().mockReturnValue(scopes),
+    };
 
-    const controller = new McpProtectedResourceController(config, mockScopeRegistry as any);
+    const controller = new McpProtectedResourceController(
+      config,
+      mockScopeRegistry as any,
+    );
     return { controller, mockScopeRegistry };
   }
 
@@ -56,7 +61,10 @@ describe('McpProtectedResourceController', () => {
 
   it('should include scopes from the scope registry', () => {
     const { controller } = createController(
-      { jwksUri: 'https://example.com/jwks', resourceServerUrl: 'https://api.example.com' },
+      {
+        jwksUri: 'https://example.com/jwks',
+        resourceServerUrl: 'https://api.example.com',
+      },
       ['admin', 'execute'],
     );
 
@@ -72,7 +80,9 @@ describe('McpProtectedResourceController', () => {
     });
 
     const result = controller.getRootProtectedResourceMetadata();
-    expect(result['authorization_servers']).toEqual(['https://auth.example.com']);
+    expect(result['authorization_servers']).toEqual([
+      'https://auth.example.com',
+    ]);
   });
 
   it('should throw NotFoundException when serveProtectedResourceMetadata is false', () => {
@@ -82,7 +92,9 @@ describe('McpProtectedResourceController', () => {
       serveProtectedResourceMetadata: false,
     });
 
-    expect(() => controller.getRootProtectedResourceMetadata()).toThrow('Not Found');
+    expect(() => controller.getRootProtectedResourceMetadata()).toThrow(
+      'Not Found',
+    );
   });
 
   it('should serve path-derived metadata for the configured resource path', () => {
@@ -96,6 +108,17 @@ describe('McpProtectedResourceController', () => {
     expect(result['resource']).toBe('https://api.example.com/api/mcp');
   });
 
+  it('should accept the path as the segment array Nest 11 yields', () => {
+    const { controller } = createController({
+      jwksUri: 'https://example.com/jwks',
+      issuer: 'https://auth.example.com',
+      resourceServerUrl: 'https://api.example.com/api/mcp',
+    });
+
+    const result = controller.getPathProtectedResourceMetadata(['api', 'mcp']);
+    expect(result['resource']).toBe('https://api.example.com/api/mcp');
+  });
+
   it('should reject path-derived metadata requests for a different resource path', () => {
     const { controller } = createController({
       jwksUri: 'https://example.com/jwks',
@@ -103,7 +126,9 @@ describe('McpProtectedResourceController', () => {
       resourceServerUrl: 'https://api.example.com/api/mcp',
     });
 
-    expect(() => controller.getPathProtectedResourceMetadata('mcp')).toThrow('Not Found');
+    expect(() => controller.getPathProtectedResourceMetadata('mcp')).toThrow(
+      'Not Found',
+    );
   });
 
   it('should honor root-only metadata mode', () => {
@@ -114,8 +139,12 @@ describe('McpProtectedResourceController', () => {
       protectedResourceMetadataMode: 'root',
     });
 
-    expect(controller.getRootProtectedResourceMetadata()['resource']).toBe('https://api.example.com/api/mcp');
-    expect(() => controller.getPathProtectedResourceMetadata('api/mcp')).toThrow('Not Found');
+    expect(controller.getRootProtectedResourceMetadata()['resource']).toBe(
+      'https://api.example.com/api/mcp',
+    );
+    expect(() =>
+      controller.getPathProtectedResourceMetadata('api/mcp'),
+    ).toThrow('Not Found');
   });
 
   it('should honor path-only metadata mode', () => {
@@ -126,8 +155,12 @@ describe('McpProtectedResourceController', () => {
       protectedResourceMetadataMode: 'path',
     });
 
-    expect(() => controller.getRootProtectedResourceMetadata()).toThrow('Not Found');
-    expect(controller.getPathProtectedResourceMetadata('api/mcp')['resource']).toBe('https://api.example.com/api/mcp');
+    expect(() => controller.getRootProtectedResourceMetadata()).toThrow(
+      'Not Found',
+    );
+    expect(
+      controller.getPathProtectedResourceMetadata('api/mcp')['resource'],
+    ).toBe('https://api.example.com/api/mcp');
   });
 
   it('should resolve via NestJS DI', async () => {

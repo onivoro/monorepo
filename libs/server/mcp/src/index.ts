@@ -30,7 +30,10 @@ export { MCP_CORS_CONFIG } from './lib/mcp-cors-config';
 
 // Config interfaces
 export { McpModuleConfig, McpHttpSessionConfig } from './lib/mcp-module-config';
-export { McpModuleAsyncOptions, McpAsyncModuleConfig } from './lib/mcp-module-async-options';
+export {
+  McpModuleAsyncOptions,
+  McpAsyncModuleConfig,
+} from './lib/mcp-module-async-options';
 export { McpServerMetadata } from './lib/mcp-server-metadata';
 export { McpStdioConfig } from './lib/mcp-stdio-config';
 export { McpStdioAsyncOptions } from './lib/mcp-stdio-async-options';
@@ -81,6 +84,12 @@ export { McpCompletionStrategy } from './lib/mcp-completion-strategy';
 // Schema utilities
 export { mcpSchemaToJsonSchema } from './lib/mcp-schema-converters';
 
+// Route utilities
+export {
+  protectedResourceWildcardRoute,
+  wildcardParamToPath,
+} from './lib/protected-resource-wildcard-route';
+
 // Wiring utilities
 export { wireRegistryToServer } from './lib/wire-registry-to-server';
 export { buildCapabilities } from './lib/build-capabilities';
@@ -88,4 +97,8 @@ export { wrapResourceResult } from './lib/wrap-resource-result';
 export { wrapPromptResult } from './lib/wrap-prompt-result';
 
 // Re-exported SDK types
-export type { EventStore, StreamId, EventId } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+export type {
+  EventStore,
+  StreamId,
+  EventId,
+} from '@modelcontextprotocol/sdk/server/streamableHttp.js';

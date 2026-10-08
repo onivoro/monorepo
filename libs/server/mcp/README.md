@@ -1218,6 +1218,31 @@ Route examples:
 | `app.setGlobalPrefix('api')` | omitted or `'mcp'` | `/api/mcp`          | `/api/.well-known/oauth-protected-resource/api/mcp`          |
 | `app.setGlobalPrefix('api')` | `'internal/mcp'`   | `/api/internal/mcp` | `/api/.well-known/oauth-protected-resource/api/internal/mcp` |
 
+### Serving the path-derived PRM route yourself
+
+`@onivoro/server-mcp-auth` serves these routes for you. If you write your own controller for them, use the two route helpers. Nest 10 and Nest 11 need different wildcard syntax: Nest 11's path-to-regexp v8 rejects `:param(*)`, and Nest 10 misreads `*param`. No single route string works on both.
+
+- `protectedResourceWildcardRoute(nestVersion)` returns `'*resourcePath'` when the major version of `nestVersion` is 11 or higher, and `':resourcePath(*)'` otherwise. The parameter is always named `resourcePath`.
+- `wildcardParamToPath(value)` turns the matched parameter into a path. Nest 10 passes a string and Nest 11 an array of segments, which are joined with `/`. `undefined` becomes `''`.
+
+```typescript
+import { Controller, Get, Param } from '@nestjs/common';
+import { protectedResourceWildcardRoute, wildcardParamToPath } from '@onivoro/server-mcp';
+
+const WILDCARD = protectedResourceWildcardRoute(require('@nestjs/core/package.json').version);
+
+@Controller('.well-known')
+export class MyProtectedResourceController {
+  @Get(`oauth-protected-resource/${WILDCARD}`)
+  getMetadata(@Param('resourcePath') resourcePath: string | string[]) {
+    const path = wildcardParamToPath(resourcePath); // e.g. 'api/mcp'
+    // ...
+  }
+}
+```
+
+Compute the route when the module loads, before the decorator runs, and pass the version of the `@nestjs/core` that the app actually uses.
+
 ### Auth strategy (centralized auth enrichment)
 
 The `authStrategy` config option uses a centralized auth strategy that runs before guards on every tool execution. It receives the raw `authInfo` from the transport and can validate tokens, decode JWTs, hydrate user context, or reject unauthenticated requests in one place, with full access to NestJS DI.
@@ -1555,6 +1580,10 @@ wireRegistryToServer; // Register all entries onto McpServer + subscribe to futu
 buildCapabilities; // Build MCP capabilities object from current registry state
 wrapResourceResult; // Auto-wrap raw handler return → McpResourceResult
 wrapPromptResult; // Auto-wrap raw handler return → McpPromptResult
+
+// Route utilities
+protectedResourceWildcardRoute; // (nestVersion) => '*resourcePath' (Nest 11+) or ':resourcePath(*)' (Nest 10)
+wildcardParamToPath; // (string | string[] | undefined) => path string; joins Nest 11 segments with '/'
 
 // SDK re-exports (types)
 EventStore; // Interface for SSE resumability event storage
