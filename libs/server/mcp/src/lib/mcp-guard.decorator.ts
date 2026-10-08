@@ -7,7 +7,7 @@ import type { McpGuardMetadata } from './mcp-guard-metadata';
  * Decorator that attaches a guard to an @McpTool method.
  * Guards run before hooks and the handler — if canActivate returns false, the call is rejected.
  *
- * Stackable: apply multiple @McpGuard decorators to run guards in order (top-down).
+ * Stackable: apply multiple @McpGuard decorators to run guards bottom-up (the decorator closest to the method runs first).
  *
  * @example
  * // Built-in scope check
@@ -26,11 +26,7 @@ export const McpGuard = (
   guardClass: new (...args: any[]) => McpCanActivate,
   config?: Record<string, unknown>,
 ) => {
-  return (
-    target: any,
-    propertyKey: string,
-    descriptor: PropertyDescriptor,
-  ) => {
+  return (target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
     const existing: McpGuardMetadata[] =
       Reflect.getMetadata(MCP_GUARD_METADATA, descriptor.value) || [];
     Reflect.defineMetadata(

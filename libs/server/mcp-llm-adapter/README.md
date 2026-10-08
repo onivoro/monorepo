@@ -48,7 +48,7 @@ The same principle applies outside Bedrock — pick the config that matches the 
 
 ## Usage
 
-Import `McpLlmAdapterModule` alongside whichever MCP module provides the tool registry:
+`McpLlmAdapterModule.forProvider()` (and every `for*()` shortcut) imports `McpRegistryModule.registerOnly()` itself and injects that module's `McpToolRegistry`. Listing `McpRegistryModule.registerOnly()` in your own imports as well, as below, resolves to the same module:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -63,6 +63,8 @@ import { ChatService } from './services/chat.service';
 })
 export class AppModule {}
 ```
+
+If the same app also imports `McpHttpModule` or `McpStdioModule`, those modules have their own `McpToolRegistry` instance. Tools are discovered into both, but an `authStrategy` or interceptors registered on the transport's registry do not apply to calls made through the adapter.
 
 Then inject `McpLlmToolAdapter` wherever you need provider-specific functionality:
 
@@ -113,7 +115,7 @@ for (const r of results) {
 }
 ```
 
-Each tool call goes through the full `@onivoro/server-mcp` execution pipeline independently (guards, validation, interceptors, handler) via `registry.executeToolRaw()`. The core MCP library is unchanged — the batch coordination lives entirely in the adapter.
+Each tool call goes through the full `@onivoro/server-mcp` execution pipeline independently (auth strategy, guards, validation, interceptors, handler) via `registry.executeToolRaw()`. Non-string results are `JSON.stringify`-ed. An unknown provider name or a thrown error becomes `{ success: false, error: message }` for that call only. The core MCP library is unchanged — the batch coordination lives entirely in the adapter.
 
 ## Output schemas
 
@@ -180,18 +182,48 @@ McpLlmAdapterModule.forProvider(MY_CONFIG);
 
 ## McpLlmToolAdapter API
 
-| Method                                                    | Description                                                                                                                  |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `toProviderTools()`                                       | Returns `T[]` — tool definitions in the provider's format                                                                    |
-| `getOutputSchemas()`                                      | Returns `Map<string, Record<string, unknown>>` — provider tool names to output JSON Schemas (only tools with `outputSchema`) |
-| `resolveProviderToolName(providerName)`                   | Maps a provider-specific tool name back to the MCP tool name, or `undefined`                                                 |
-| `executeToolForProvider(providerName, params, authInfo?)` | Resolves name, executes tool, returns stringified result                                                                     |
-| `executeToolCallForProvider(toolCall, authInfo?)`         | Executes a single `ProviderToolCall`, returns `ProviderToolCallResult` with id passthrough                                   |
-| `executeToolsForProvider(toolCalls, authInfo?)`           | Executes multiple tool calls in parallel. Returns `ProviderToolCallResult[]` with per-call success/error                     |
+| Method                                                            | Description                                                                                                                  |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `toProviderTools()`                                               | Returns `T[]` — tool definitions in the provider's format                                                                    |
+| `getOutputSchemas()`                                              | Returns `Map<string, Record<string, unknown>>` — provider tool names to output JSON Schemas (only tools with `outputSchema`) |
+| `resolveProviderToolName(providerName)`                           | Maps a provider-specific tool name back to the MCP tool name, or `undefined`                                                 |
+| `executeToolForProvider(providerName, params, authInfo?, extra?)` | Resolves name, executes tool, returns stringified result. Throws if the name is unknown or the tool throws                   |
+| `executeToolCallForProvider(toolCall, authInfo?, extra?)`         | Executes a single `ProviderToolCall`, returns `ProviderToolCallResult` with id passthrough (never throws)                    |
+| `executeToolsForProvider(toolCalls, authInfo?, extra?)`           | Executes multiple tool calls in parallel. Returns `ProviderToolCallResult[]` with per-call success/error                     |
+
+The provider-name map is cached and rebuilt when the registry reports a registration change.
+
+### Execution context (`extra`)
+
+Every execute method takes an optional `McpToolExecutionExtra`, forwarded to the tool as part of its `McpToolContext`:
+
+```typescript
+import type { McpToolExecutionExtra } from '@onivoro/server-mcp-llm-adapter';
+
+const controller = new AbortController();
+const extra: McpToolExecutionExtra = {
+  sessionId: conversationId,
+  signal: controller.signal, // the tool sees context.signal and can stop when the turn is cancelled
+  sendProgress: async (progress, total, message) => emitProgress({ progress, total, message }),
+  sendLog: async (level, data) => logger.log({ level, data }),
+};
+
+const results = await this.adapter.executeToolsForProvider(calls, authInfo, extra);
+```
 
 ## Name handling
 
-Each config has an `aliasKey` (e.g., `'bedrock'`, `'bedrock-mantle'`, `'bedrock-openai'`, `'openai'`) used to look up per-provider name overrides from the `@McpTool` decorator's `aliases` parameter.
+Each config has an `aliasKey` used to look up per-provider name overrides from the `@McpTool` decorator's `aliases` parameter:
+
+| Config                    | `aliasKey`           | Sanitizer                           |
+| ------------------------- | -------------------- | ----------------------------------- |
+| `BEDROCK_CONVERSE_CONFIG` | `'bedrock-converse'` | non `[a-zA-Z0-9_]` characters → `_` |
+| `BEDROCK_MANTLE_CONFIG`   | `'bedrock-mantle'`   | none                                |
+| `BEDROCK_OPENAI_CONFIG`   | `'bedrock-openai'`   | none                                |
+| `OPENAI_CONFIG`           | `'openai'`           | none                                |
+| `CLAUDE_CONFIG`           | `'claude'`           | none                                |
+| `GEMINI_CONFIG`           | `'gemini'`           | non `[a-zA-Z0-9_]` characters → `_` |
+| `MISTRAL_CONFIG`          | `'mistral'`          | none                                |
 
 Resolution order:
 
@@ -201,13 +233,21 @@ Resolution order:
 
 ```typescript
 // Explicit alias for Bedrock Converse
-@McpTool({ name: 'insert-emojis', description: 'Insert emojis', schema, aliases: { bedrock: 'insertEmojis' } })
+@McpTool({ name: 'insert-emojis', description: 'Insert emojis', schema, aliases: { 'bedrock-converse': 'insertEmojis' } })
 
 // No alias needed for OpenAI (hyphens are valid)
 @McpTool({ name: 'insert-emojis', description: 'Insert emojis', schema })
 ```
 
-Providers that require name sanitization (Bedrock Converse, Gemini) apply it automatically — hyphens are replaced with underscores.
+Providers that require name sanitization (Bedrock Converse, Gemini) apply it automatically — every character outside `[a-zA-Z0-9_]` (hyphens, dots, and so on) becomes an underscore. An alias is used as-is, without sanitizing.
+
+`resolveProviderName(metadata, config)` applies this same resolution and is exported for custom code:
+
+```typescript
+import { resolveProviderName, GEMINI_CONFIG } from '@onivoro/server-mcp-llm-adapter';
+
+resolveProviderName({ name: 'insert-emojis', description: 'Insert emojis' }, GEMINI_CONFIG); // 'insert_emojis'
+```
 
 ## Exports
 
@@ -219,6 +259,7 @@ McpLlmAdapterModule; // NestJS module — forProvider(), forBedrockConverse(), f
 McpLlmToolAdapter; // Injectable — toProviderTools(), getOutputSchemas(), resolveProviderToolName(), executeToolForProvider(), executeToolCallForProvider(), executeToolsForProvider()
 ProviderToolCall; // Input type for single/batch execution — { providerName, params, id? }
 ProviderToolCallResult; // Output type for single/batch execution — { providerName, id?, result?, error?, success }
+McpToolExecutionExtra; // Optional execution context — { sessionId?, signal?, sendProgress?, sendLog? }
 
 // Config
 LlmAdapterConfig; // Interface for custom provider configs

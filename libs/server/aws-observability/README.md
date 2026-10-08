@@ -44,6 +44,18 @@ async function bootstrap() {
 bootstrap();
 ```
 
+`bootstrapAwsObservability` runs once per process; later calls are no-ops. Options (all optional):
+
+| Option                         | Default       | Effect                                                                                                 |
+| ------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------ |
+| `contextMissingStrategy`       | `'LOG_ERROR'` | `'RUNTIME_ERROR'`, `'LOG_ERROR'`, or `'IGNORE_ERROR'`. Ignored when `AWS_XRAY_CONTEXT_MISSING` is set. |
+| `capturePromise`               | `true`        | Calls `AWSXRay.capturePromise()` so trace context follows promise chains.                              |
+| `captureHttp` / `captureHttps` | `true`        | Captures outbound calls on the global `http` / `https` modules.                                        |
+| `downstreamXrayEnabled`        | `false`       | See [Outbound HTTP](#outbound-http).                                                                   |
+| `captureAwsSdkV2`              | `false`       | Captures the global AWS SDK v2 (`aws-sdk`).                                                            |
+
+The `/bootstrap` entry point also exports the `AwsObservabilityBootstrapOptions`, `XrayContextMissingStrategy`, and `AwsV3ClientLike` types.
+
 The Nest module alone is not enough for outbound HTTP, AWS SDK, or database auto-instrumentation because those libraries may already be loaded by the time Nest constructs modules.
 
 ## Nest Module
@@ -73,9 +85,26 @@ import { ServerAwsObservabilityModule } from '@onivoro/server-aws-observability'
 export class AppModule {}
 ```
 
+`ServerAwsObservabilityConfig`:
+
+| Field                           | Required | Notes                                                                                                       |
+| ------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
+| `serviceName`                   | yes      | `Service` metric dimension; default X-Ray segment name.                                                     |
+| `metricsNamespace`              | yes      | CloudWatch metrics namespace.                                                                               |
+| `environment`                   | no       | Adds an `Environment` dimension when set.                                                                   |
+| `defaultDimensions`             | no       | Extra dimensions added to every metric.                                                                     |
+| `xray.enabled`                  | no       | X-Ray is **on unless set to `false`**. `false` skips both the tracing middleware and the error interceptor. |
+| `xray.segmentName`              | no       | Segment name override.                                                                                      |
+| `xray.excludePaths`             | no       | A path is excluded if it equals an entry or starts with the entry followed by `/`.                          |
+| `httpMetrics.enabled`           | no       | Default `false`.                                                                                            |
+| `httpMetrics.includeRoute`      | no       | Default `true`. Adds the `Route` dimension.                                                                 |
+| `httpMetrics.includeStatusCode` | no       | Default `true`. Adds the `StatusCodeClass` dimension.                                                       |
+
+The module applies its middleware to all routes and exports `MetricsService` and the `SERVER_AWS_OBSERVABILITY_CONFIG` injection token (which holds the config object). The defaults for `httpMetrics` are exported as `DEFAULT_HTTP_METRICS_CONFIG`.
+
 The segment name defaults to `xray.segmentName`, then `serviceName`. If `AWS_XRAY_TRACING_NAME` is set when the X-Ray SDK loads, it overrides both.
 
-Handled client errors (`HttpException` with a 4xx status) are not recorded as X-Ray faults; X-Ray flags them as errors from the response status.
+When X-Ray is enabled the module registers `XrayErrorInterceptor` as a global (`APP_INTERCEPTOR`) interceptor that adds thrown errors to the active segment. Handled client errors (`HttpException` with a status below 500) are not recorded as X-Ray faults; X-Ray flags them as errors from the response status.
 
 ## HTTP Metrics
 
@@ -86,7 +115,7 @@ With `httpMetrics.enabled`, a middleware records one EMF record per request when
 
 Because it runs as middleware, it also records requests rejected by guards, pipes, or other middleware, using the final response status. Streamed responses are counted once and timed to the end of the stream. Requests that match no handler use the route `unmatched`.
 
-Dimensions are `Service`, `Environment`, any `defaultDimensions`, `Method`, `Route` (the route template, such as `/api/work/:id`), and `StatusCodeClass` (`2xx`, `4xx`, ...). CloudWatch bills each unique dimension combination as a separate custom metric, so a service with 40 routes can produce several hundred metrics. Set `includeRoute: false` if that cost is not worth the per-route breakdown.
+Dimensions are `Service`, `Environment`, any `defaultDimensions`, `Method`, `Route` (the route template, such as `/api/work/:id`), and `StatusCodeClass` (`2xx`, `4xx`, ...). CloudWatch bills each unique dimension combination as a separate custom metric, so a service with 40 routes can produce several hundred metrics. Set `includeRoute: false` (or `includeStatusCode: false`) if that cost is not worth the breakdown.
 
 ## AWS SDK v3 Clients
 
@@ -137,11 +166,35 @@ export class WorkerService {
 }
 ```
 
+`MetricsService` (implements the exported `MetricsServiceLike` interface):
+
+| Method                                    | Unit                                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `count(name, value = 1, dimensions?)`     | `Count`                                                                                     |
+| `gauge(name, value, dimensions?)`         | `None`                                                                                      |
+| `duration(name, durationMs, dimensions?)` | `Milliseconds`                                                                              |
+| `putMetric(name, value, unit, options?)`  | any `Unit` from `aws-embedded-metrics`                                                      |
+| `putMetrics(metrics, options?)`           | several `MetricDatum` (`{ name, value, unit }`) in one EMF record sharing one dimension set |
+
+Every record gets the `Service`, `Environment` (when configured), and `defaultDimensions` dimensions; per-call dimensions are merged on top. Dimension values are converted to strings, and `undefined`/`null` values are dropped. `PutMetricOptions.properties` adds non-dimension properties to the log record (searchable in CloudWatch Logs, not billed as metrics).
+
+```ts
+import { Unit } from 'aws-embedded-metrics';
+
+await this.metrics.putMetrics(
+  [
+    { name: 'BatchSize', value: items.length, unit: Unit.Count },
+    { name: 'BatchBytes', value: bytes, unit: Unit.Bytes },
+  ],
+  { dimensions: { Queue: 'default' }, properties: { batchId } },
+);
+```
+
 Avoid high-cardinality dimensions such as user IDs, request IDs, raw URLs, query strings, and customer-specific identifiers unless you have explicitly accepted the CloudWatch cost and cardinality impact.
 
 ## Log Correlation
 
-For Pino, use the mixin helper:
+`xrayLogFields()` returns the fields for the active segment (or `{}`), for use with any logger. For Pino, use the mixin helper:
 
 ```ts
 import { pinoXrayMixin } from '@onivoro/server-aws-observability';
@@ -153,8 +206,17 @@ pino({
 
 When a segment is active, log records receive the fields below. Outside a trace (startup, background jobs, excluded paths) the mixin returns nothing and does not trigger X-Ray's context-missing logging.
 
-- `xray_trace_id`
+- `xray_trace_id` (omitted if the active entity is a subsegment that has not been serialized yet, since the SDK only copies the trace ID onto subsegments then)
 - `xray_segment_id`
+
+## Other Exports
+
+- `XrayMiddleware`: Nest middleware wrapping `aws-xray-sdk-express`'s `openSegment`, honoring `xray.enabled` and `excludePaths`.
+- `XrayErrorInterceptor`: the interceptor described above.
+- `HttpMetricsMiddleware`: the middleware described in [HTTP Metrics](#http-metrics).
+- Types: `ServerAwsObservabilityConfig`, `ServerAwsObservabilityXrayConfig`, `ServerAwsObservabilityHttpMetricsConfig`, `MetricDimensions`, `PutMetricOptions`, `MetricDatum`, `MetricsServiceLike`.
+
+These are wired up by `ServerAwsObservabilityModule.configure`; use them directly only if you assemble the providers yourself (they inject `SERVER_AWS_OBSERVABILITY_CONFIG`, and `HttpMetricsMiddleware` also needs `MetricsService`).
 
 ## AWS Runtime Requirements
 

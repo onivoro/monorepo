@@ -39,7 +39,7 @@ export class JsonataExpressionService {
   }
 
   addBracesToInterpolations(interpolations: string[]) {
-    return interpolations.map(this.addBracesToInterpolation);
+    return interpolations.map((_) => this.addBracesToInterpolation(_));
   }
 
   removeBracesFromInterpolation(interpolation: string) {
@@ -57,19 +57,24 @@ export class JsonataExpressionService {
     normalizedInterpolations: string[],
     existingJsonataExpressions: IJsonataExpression[],
   ) {
-    const uniqueNormalizedInterpolations = toUniqueArray(normalizedInterpolations);
-    const existingInterpolations = this.removeBracesFromInterpolations(existingJsonataExpressions.map(({ expression }) => expression));
+    const uniqueNormalizedInterpolations = toUniqueArray(
+      normalizedInterpolations,
+    );
+    const existingInterpolations = this.removeBracesFromInterpolations(
+      existingJsonataExpressions.map(({ expression }) => expression),
+    );
 
-    const novelInterpolations = uniqueNormalizedInterpolations.filter((_) => !existingInterpolations.includes(this.removeBracesFromInterpolation(_)));
+    const novelInterpolations = uniqueNormalizedInterpolations.filter(
+      (_) =>
+        !existingInterpolations.includes(this.removeBracesFromInterpolation(_)),
+    );
 
     return { novelInterpolations, uniqueNormalizedInterpolations };
   }
 
   private normalizeInterpolation(m: any) {
     const withoutBracesOrSurroundingSpaces = this.removeBracesFromInterpolation(
-      m
-        .replace(REG_MULTISPACE, ' ')
-        .toUpperCase()
+      m.replace(REG_MULTISPACE, ' ').toUpperCase(),
     );
 
     return this.addBracesToInterpolation(withoutBracesOrSurroundingSpaces);

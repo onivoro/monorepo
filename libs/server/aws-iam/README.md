@@ -1,18 +1,18 @@
 # @onivoro/server-aws-iam
 
-AWS IAM integration for NestJS applications with basic IAM operations.
+AWS IAM integration for NestJS applications with basic group and policy operations.
 
 ## Installation
 
 ```bash
-npm install @onivoro/server-aws-iam
+npm install @onivoro/server-aws-iam @aws-sdk/client-iam @nestjs/common
 ```
 
-## Overview
-
-This library provides a simple AWS IAM integration for NestJS applications, offering basic IAM operations for groups and policies.
+`@aws-sdk/client-iam` and `@nestjs/common` are peer dependencies.
 
 ## Module Setup
+
+`ServerAwsIamModule.configure(config)` takes the configuration object directly; the module does not read environment variables itself.
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -20,230 +20,108 @@ import { ServerAwsIamModule } from '@onivoro/server-aws-iam';
 
 @Module({
   imports: [
-    ServerAwsIamModule.configure()
-  ]
+    ServerAwsIamModule.configure({
+      AWS_REGION: process.env.AWS_REGION!,
+      AWS_PROFILE: process.env.AWS_PROFILE, // optional
+    }),
+  ],
 })
 export class AppModule {}
 ```
 
-## Configuration
+The module is not global. It provides and exports `IamService`, `ServerAwsIamConfig`, an `IAMClient` instance, and the `AwsCredentials` provider from `@onivoro/server-aws-credential-providers`.
 
-The module uses environment-based configuration:
+## Configuration
 
 ```typescript
 export class ServerAwsIamConfig {
+  AWS_PROFILE?: string; // optional named profile from ~/.aws
   AWS_REGION: string;
-  AWS_PROFILE?: string;  // Optional AWS profile
 }
 ```
 
-## Service
+### AWS Credentials
 
-### IamService
+Credentials are resolved by [`@onivoro/server-aws-credential-providers`](../aws-credential-providers/):
 
-The main service provides three IAM operations:
+- If `AWS_PROFILE` is set, credentials are loaded from that profile in the shared credentials file. If that fails, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (or their lowercase forms) from the environment are used.
+- If `AWS_PROFILE` is not set, the client uses the AWS SDK's default credential provider chain.
+
+## IamService
+
+| Method                                                   | Returns                                                                                           | Errors                                       |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `getGroup(GroupName: string)`                            | `GetGroupCommandOutput` (group plus the first page of its users)                                  | SDK errors are thrown                        |
+| `createPolicy(createPolicyCommand: CreatePolicyCommand)` | `CreatePolicyCommandOutput`, or `undefined` (with a logged error) if the response has no `Policy` | SDK errors are thrown                        |
+| `attachPolicyToGroup({ PolicyArn, GroupName })`          | `AttachGroupPolicyCommandOutput`, or `undefined` on failure                                       | SDK errors are caught and logged, not thrown |
+
+The underlying client is public as `iamService.iamClient`.
 
 ```typescript
 import { Injectable } from '@nestjs/common';
+import { CreatePolicyCommand } from '@aws-sdk/client-iam';
 import { IamService } from '@onivoro/server-aws-iam';
 
 @Injectable()
-export class IAMManagementService {
+export class BucketAccessService {
   constructor(private readonly iamService: IamService) {}
 
-  // Get IAM group details
-  async getGroupInfo(groupName: string) {
-    const group = await this.iamService.getGroup(groupName);
-    return {
-      group: group.Group,
-      users: group.Users,
-      isTruncated: group.IsTruncated
-    };
-  }
-
-  // Create a new IAM policy
-  async createAccessPolicy(policyName: string, policyDocument: any) {
-    const policy = await this.iamService.createPolicy(
-      policyName,
-      policyDocument
+  async grantBucketAccess(groupName: string, bucketName: string) {
+    const created = await this.iamService.createPolicy(
+      new CreatePolicyCommand({
+        PolicyName: `${groupName}-${bucketName}-access`,
+        PolicyDocument: JSON.stringify({
+          Version: '2012-10-17',
+          Statement: [
+            {
+              Effect: 'Allow',
+              Action: ['s3:GetObject', 's3:PutObject'],
+              Resource: `arn:aws:s3:::${bucketName}/*`,
+            },
+          ],
+        }),
+      }),
     );
-    return policy;
-  }
 
-  // Attach policy to a group
-  async grantGroupAccess(groupName: string, policyArn: string) {
-    await this.iamService.attachPolicyToGroup(groupName, policyArn);
+    const policyArn = created?.Policy?.Arn;
+    if (!policyArn) {
+      throw new Error('Policy was not created');
+    }
+
+    await this.iamService.attachPolicyToGroup({ PolicyArn: policyArn, GroupName: groupName });
+
+    const { Group, Users } = await this.iamService.getGroup(groupName);
+    return { policyArn, group: Group, users: Users };
   }
 }
 ```
+
+Because `attachPolicyToGroup` swallows errors, check for an `undefined` result if you need to know whether the attachment succeeded.
 
 ## Direct Client Access
 
-The service exposes the underlying IAM client for advanced operations:
-
 ```typescript
-import { 
-  ListUsersCommand,
-  CreateUserCommand,
-  DeleteUserCommand,
-  ListRolesCommand,
-  CreateRoleCommand,
-  ListPoliciesCommand
-} from '@aws-sdk/client-iam';
+import { Injectable } from '@nestjs/common';
+import { ListRolesCommand } from '@aws-sdk/client-iam';
+import { IamService } from '@onivoro/server-aws-iam';
 
 @Injectable()
-export class AdvancedIAMService {
+export class RoleLookupService {
   constructor(private readonly iamService: IamService) {}
 
-  // List all users
-  async listUsers() {
-    const command = new ListUsersCommand({});
-    return await this.iamService.iamClient.send(command);
-  }
-
-  // Create a new user
-  async createUser(userName: string) {
-    const command = new CreateUserCommand({
-      UserName: userName
-    });
-    return await this.iamService.iamClient.send(command);
-  }
-
-  // List all roles
-  async listRoles() {
-    const command = new ListRolesCommand({});
-    return await this.iamService.iamClient.send(command);
-  }
-
-  // Create a new role
-  async createRole(roleName: string, assumeRolePolicyDocument: string) {
-    const command = new CreateRoleCommand({
-      RoleName: roleName,
-      AssumeRolePolicyDocument: assumeRolePolicyDocument
-    });
-    return await this.iamService.iamClient.send(command);
+  listRoles() {
+    return this.iamService.iamClient.send(new ListRolesCommand({}));
   }
 }
 ```
 
-## Complete Example
+You can also inject `IAMClient` directly, since the module exports it.
 
-```typescript
-import { Module, Injectable } from '@nestjs/common';
-import { ServerAwsIamModule, IamService } from '@onivoro/server-aws-iam';
+## Exports
 
-@Module({
-  imports: [ServerAwsIamModule.configure()],
-  providers: [PolicyManagementService],
-  exports: [PolicyManagementService]
-})
-export class PolicyModule {}
-
-@Injectable()
-export class PolicyManagementService {
-  constructor(private readonly iamService: IamService) {}
-
-  async setupS3AccessForGroup(groupName: string, bucketName: string) {
-    // Define policy document
-    const policyDocument = {
-      Version: '2012-10-17',
-      Statement: [
-        {
-          Effect: 'Allow',
-          Action: [
-            's3:GetObject',
-            's3:PutObject',
-            's3:DeleteObject'
-          ],
-          Resource: `arn:aws:s3:::${bucketName}/*`
-        },
-        {
-          Effect: 'Allow',
-          Action: 's3:ListBucket',
-          Resource: `arn:aws:s3:::${bucketName}`
-        }
-      ]
-    };
-
-    try {
-      // Create the policy
-      const policyName = `${groupName}-${bucketName}-access`;
-      const policy = await this.iamService.createPolicy(
-        policyName,
-        policyDocument
-      );
-
-      // Attach policy to group
-      await this.iamService.attachPolicyToGroup(
-        groupName,
-        policy.Policy.Arn
-      );
-
-      // Verify attachment
-      const groupInfo = await this.iamService.getGroup(groupName);
-
-      return {
-        policy: policy.Policy,
-        group: groupInfo.Group,
-        users: groupInfo.Users
-      };
-    } catch (error) {
-      console.error('Failed to setup S3 access:', error);
-      throw error;
-    }
-  }
-}
-```
-
-## Available Methods
-
-The IamService provides three methods:
-
-1. **getGroup(groupName: string)** - Retrieves information about an IAM group including its users
-2. **createPolicy(policyName: string, policyDocument: any)** - Creates a new IAM policy
-3. **attachPolicyToGroup(groupName: string, policyArn: string)** - Attaches a policy to a group
-
-## Environment Variables
-
-```bash
-# Required: AWS region
-AWS_REGION=us-east-1
-
-# Optional: AWS profile
-AWS_PROFILE=my-profile
-```
-
-## AWS Credentials
-
-The module uses the standard AWS SDK credential chain:
-1. Environment variables
-2. Shared credentials file
-3. IAM roles (for EC2/ECS/Lambda)
-
-## Error Handling
-
-```typescript
-try {
-  await iamService.getGroup('non-existent-group');
-} catch (error) {
-  if (error.name === 'NoSuchEntityException') {
-    console.error('Group does not exist');
-  }
-}
-```
-
-## Limitations
-
-- This library only provides three basic IAM operations
-- For more comprehensive IAM functionality, use the exposed `iamClient` directly
-- No built-in support for user management, role management, or access key operations
-
-## Security Best Practices
-
-1. **Least Privilege**: Grant only the minimum permissions required
-2. **Policy Validation**: Always validate policy documents before creation
-3. **Audit Trail**: Monitor IAM operations through CloudTrail
-4. **Regular Reviews**: Periodically review group memberships and policies
+- `ServerAwsIamModule` - dynamic module with `configure(config)`
+- `ServerAwsIamConfig` - configuration class (also injectable)
+- `IamService` - `getGroup`, `createPolicy`, `attachPolicyToGroup`, and the public `iamClient`
 
 ## License
 

@@ -85,4 +85,98 @@ describe('MetricsService', () => {
 
     expect(metricsLogger.putDimensions).not.toHaveBeenCalled();
   });
+
+  describe('convenience helpers', () => {
+    const service = new MetricsService({
+      serviceName: 'api',
+      metricsNamespace: 'Onivoro/API',
+    });
+
+    it('count defaults to 1 with Count unit', async () => {
+      await service.count('Jobs');
+
+      expect(metricsLogger.putMetric).toHaveBeenCalledWith(
+        'Jobs',
+        1,
+        Unit.Count,
+      );
+      expect(metricsLogger.putDimensions).toHaveBeenCalledWith({
+        Service: 'api',
+      });
+    });
+
+    it('count accepts a value and dimensions', async () => {
+      await service.count('Jobs', 4, { Queue: 'q', Shard: 2 });
+
+      expect(metricsLogger.putMetric).toHaveBeenCalledWith(
+        'Jobs',
+        4,
+        Unit.Count,
+      );
+      expect(metricsLogger.putDimensions).toHaveBeenCalledWith({
+        Service: 'api',
+        Queue: 'q',
+        Shard: '2',
+      });
+    });
+
+    it('gauge uses the None unit', async () => {
+      await service.gauge('QueueDepth', 12, { Queue: 'q' });
+
+      expect(metricsLogger.putMetric).toHaveBeenCalledWith(
+        'QueueDepth',
+        12,
+        Unit.None,
+      );
+      expect(metricsLogger.putDimensions).toHaveBeenCalledWith({
+        Service: 'api',
+        Queue: 'q',
+      });
+    });
+
+    it('duration uses the Milliseconds unit', async () => {
+      await service.duration('Latency', 250);
+
+      expect(metricsLogger.putMetric).toHaveBeenCalledWith(
+        'Latency',
+        250,
+        Unit.Milliseconds,
+      );
+    });
+  });
+
+  it('lets call dimensions override service and default dimensions', async () => {
+    const service = new MetricsService({
+      serviceName: 'api',
+      metricsNamespace: 'Onivoro/API',
+      defaultDimensions: { Team: 'platform' },
+    });
+
+    await service.putMetric('X', 1, Unit.Count, {
+      dimensions: { Team: 'payments', Service: 'worker' },
+    });
+
+    expect(metricsLogger.putDimensions).toHaveBeenCalledWith({
+      Service: 'worker',
+      Team: 'payments',
+    });
+    expect(metricsLogger.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('keeps falsy property values other than null and undefined', async () => {
+    const service = new MetricsService({
+      serviceName: 'api',
+      metricsNamespace: 'Onivoro/API',
+    });
+
+    await service.putMetric('X', 1, Unit.Count, {
+      properties: { zero: 0, no: false, empty: '', gone: undefined },
+    });
+
+    expect(metricsLogger.setProperty.mock.calls).toEqual([
+      ['zero', 0],
+      ['no', false],
+      ['empty', ''],
+    ]);
+  });
 });

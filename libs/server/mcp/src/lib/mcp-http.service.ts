@@ -17,6 +17,7 @@ interface SessionEntry {
   transport: StreamableHTTPServerTransport;
   lastActivity: number;
   unsubscribeRegistry: () => void;
+  sessionId?: string;
 }
 
 @Injectable()
@@ -60,22 +61,29 @@ export class McpHttpService implements OnModuleDestroy {
       sessionIdGenerator: this.getSessionIdGenerator(),
       enableJsonResponse: this.config.enableJsonResponse ?? true,
       onsessioninitialized: (sessionId: string) => {
+        entry.sessionId = sessionId;
         this.sessions.set(sessionId, entry as SessionEntry);
         this.logger.log(`Session initialized: ${sessionId}`);
       },
-      ...(this.config.session?.eventStore && { eventStore: this.config.session.eventStore }),
+      ...(this.config.session?.eventStore && {
+        eventStore: this.config.session.eventStore,
+      }),
     });
 
     const server = new McpServer(
       {
         name: this.config.metadata.name,
         version: this.config.metadata.version,
-        ...(this.config.metadata.description && { description: this.config.metadata.description }),
+        ...(this.config.metadata.description && {
+          description: this.config.metadata.description,
+        }),
       },
       {
         ...this.config.serverOptions,
         capabilities: buildCapabilities(this.registry),
-        ...(this.config.metadata.instructions && { instructions: this.config.metadata.instructions }),
+        ...(this.config.metadata.instructions && {
+          instructions: this.config.metadata.instructions,
+        }),
       },
     );
 
@@ -90,11 +98,12 @@ export class McpHttpService implements OnModuleDestroy {
 
   private isInitializeRequestBody(body: unknown): boolean {
     const messages = Array.isArray(body) ? body : [body];
-    return messages.some((message) =>
-      !!message &&
-      typeof message === 'object' &&
-      'method' in message &&
-      (message as { method?: unknown }).method === 'initialize',
+    return messages.some(
+      (message) =>
+        !!message &&
+        typeof message === 'object' &&
+        'method' in message &&
+        (message as { method?: unknown }).method === 'initialize',
     );
   }
 
@@ -102,18 +111,21 @@ export class McpHttpService implements OnModuleDestroy {
     const forwardedProto = req.headers['x-forwarded-proto'];
     const proto = Array.isArray(forwardedProto)
       ? forwardedProto[0]
-      : forwardedProto ?? ((req.socket as any)?.encrypted ? 'https' : 'http');
+      : (forwardedProto ?? ((req.socket as any)?.encrypted ? 'https' : 'http'));
 
     const forwardedHost = req.headers['x-forwarded-host'];
     const host = Array.isArray(forwardedHost)
       ? forwardedHost[0]
-      : forwardedHost ?? req.headers.host;
+      : (forwardedHost ?? req.headers.host);
 
     if (!host) return undefined;
     return `${proto}://${host}`;
   }
 
-  private async authenticateRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
+  private async authenticateRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<boolean> {
     if (!this.bearerTokenVerifier) return true;
 
     const resourceMetadataUrl = this.getResourceMetadataUrl(req);
@@ -132,7 +144,9 @@ export class McpHttpService implements OnModuleDestroy {
     return nextCalled;
   }
 
-  private getResourceMetadataUrl(req: http.IncomingMessage): string | undefined {
+  private getResourceMetadataUrl(
+    req: http.IncomingMessage,
+  ): string | undefined {
     const configuredUrl = this.bearerAuthResourceMetadataUrl;
     if (configuredUrl) {
       if (/^https?:\/\//i.test(configuredUrl)) {
@@ -156,17 +170,14 @@ export class McpHttpService implements OnModuleDestroy {
       ...this.splitPath(requestPath || route),
     ];
 
-    return new URL(
-      `/${metadataSegments.join('/')}`,
-      origin,
-    ).href;
+    return new URL(`/${metadataSegments.join('/')}`, origin).href;
   }
 
   private getRequestPath(req: http.IncomingMessage): string {
     const rawUrl =
       typeof (req as any).originalUrl === 'string'
         ? (req as any).originalUrl
-        : req.url ?? '';
+        : (req.url ?? '');
 
     return normalizePath(rawUrl);
   }
@@ -192,11 +203,16 @@ export class McpHttpService implements OnModuleDestroy {
       const origin = req.headers['origin'];
       if (origin && !this.config.allowedOrigins.includes(origin)) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          jsonrpc: '2.0',
-          error: { code: -32600, message: `Origin "${origin}" is not allowed` },
-          id: null,
-        }));
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: {
+              code: -32600,
+              message: `Origin "${origin}" is not allowed`,
+            },
+            id: null,
+          }),
+        );
         return;
       }
     }
@@ -211,25 +227,31 @@ export class McpHttpService implements OnModuleDestroy {
 
       if (!req.headers.accept) {
         req.headers.accept =
-          req.method === 'GET' ? 'text/event-stream' : 'application/json, text/event-stream';
+          req.method === 'GET'
+            ? 'text/event-stream'
+            : 'application/json, text/event-stream';
       }
 
       const parsedBody = (req as any).body;
-      const isInitializeRequest = req.method === 'POST' && this.isInitializeRequestBody(parsedBody);
+      const isInitializeRequest =
+        req.method === 'POST' && this.isInitializeRequestBody(parsedBody);
 
       if (req.method === 'POST' && !sessionId) {
         const session = this.createSession();
+        this.closeIfNotStoredWhenResponseCloses(session, res);
         await session.transport.handleRequest(req, res, parsedBody);
         return;
       }
 
       if (!sessionId) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          jsonrpc: '2.0',
-          error: { code: -32600, message: 'Missing Mcp-Session-Id header' },
-          id: null,
-        }));
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32600, message: 'Missing Mcp-Session-Id header' },
+            id: null,
+          }),
+        );
         return;
       }
 
@@ -237,16 +259,19 @@ export class McpHttpService implements OnModuleDestroy {
       if (!session) {
         if (isInitializeRequest) {
           const newSession = this.createSession();
+          this.closeIfNotStoredWhenResponseCloses(newSession, res);
           await newSession.transport.handleRequest(req, res, parsedBody);
           return;
         }
 
         res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          jsonrpc: '2.0',
-          error: { code: -32600, message: 'Invalid session ID' },
-          id: null,
-        }));
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32600, message: 'Invalid session ID' },
+            id: null,
+          }),
+        );
         return;
       }
 
@@ -267,13 +292,36 @@ export class McpHttpService implements OnModuleDestroy {
       this.logger.error('MCP request handling error:', error);
       if (!res.headersSent) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal error' },
-          id: null,
-        }));
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32603, message: 'Internal error' },
+            id: null,
+          }),
+        );
       }
     }
+  }
+
+  /**
+   * A server created for a request that doesn't become a stored session (stateless mode,
+   * or a stateful request that never initialized) lives only as long as its response.
+   * Unwire it from the registry and close it then, so listeners don't pile up.
+   */
+  private closeIfNotStoredWhenResponseCloses(
+    session: SessionEntry,
+    res: http.ServerResponse,
+  ) {
+    res.once('close', () => {
+      if (session.sessionId) return;
+      session.unsubscribeRegistry();
+      session.transport
+        .close()
+        .catch((error) => this.logger.error('Error closing transport:', error));
+      session.server
+        .close()
+        .catch((error) => this.logger.error('Error closing server:', error));
+    });
   }
 
   private sweepStaleSessions() {
@@ -293,12 +341,18 @@ export class McpHttpService implements OnModuleDestroy {
     try {
       await session.transport.close();
     } catch (error) {
-      this.logger.error(`Error closing transport for session ${sessionId}:`, error);
+      this.logger.error(
+        `Error closing transport for session ${sessionId}:`,
+        error,
+      );
     }
     try {
       await session.server.close();
     } catch (error) {
-      this.logger.error(`Error closing server for session ${sessionId}:`, error);
+      this.logger.error(
+        `Error closing server for session ${sessionId}:`,
+        error,
+      );
     }
     this.logger.log(`Session closed: ${sessionId}`);
   }

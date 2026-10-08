@@ -16,28 +16,41 @@ import { TKeysOf } from '@onivoro/isomorphic-common';
 import { TTableMeta } from '../types/table-meta.type';
 import { buildWhereExpression as buildWhereExpressionFn } from '../functions/build-where-expression.function';
 
-type TMetaSnapshot = { table: string; schema: string; columns: Record<string, TTableMeta> };
+type TMetaSnapshot = {
+  table: string;
+  schema: string;
+  columns: Record<string, TTableMeta>;
+};
 
-type TGroupByOptions<TEntity extends ObjectLiteral, TReturn extends ObjectLiteral> = {
+type TGroupByOptions<
+  TEntity extends ObjectLiteral,
+  TReturn extends ObjectLiteral,
+> = {
   select: Record<keyof TReturn, string>;
   where?: FindOptionsWhere<TEntity>;
   order?: Record<keyof TReturn, 'ASC' | 'DESC'>;
   groupBy: (keyof TEntity)[];
-}
+};
 
-export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntityProvider<
-  TEntity,
-  FindOneOptions<TEntity>,
-  FindManyOptions<TEntity>,
-  FindOptionsWhere<TEntity>,
-  QueryDeepPartialEntity<TEntity>
-> {
+export class TypeOrmRepository<TEntity extends ObjectLiteral>
+  implements
+    IEntityProvider<
+      TEntity,
+      FindOneOptions<TEntity>,
+      FindManyOptions<TEntity>,
+      FindOptionsWhere<TEntity>,
+      QueryDeepPartialEntity<TEntity>
+    >
+{
   debug = false;
 
   private static readonly _metaCache = new WeakMap<Function, TMetaSnapshot>();
   private _meta?: TMetaSnapshot;
 
-  constructor(public entityType: EntityTarget<TEntity>, public entityManager: EntityManager) { }
+  constructor(
+    public entityType: EntityTarget<TEntity>,
+    public entityManager: EntityManager,
+  ) {}
 
   get columns(): TKeysOf<TEntity, TTableMeta> {
     return this._ensureMeta().columns as TKeysOf<TEntity, TTableMeta>;
@@ -75,14 +88,22 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
   }
 
   forTransaction(entityManager: EntityManager): TypeOrmRepository<TEntity> {
-    return new (this.constructor as typeof TypeOrmRepository<TEntity>)(this.entityType, entityManager);
+    // Clone without calling the constructor so subclasses with any constructor signature work.
+    const forked: TypeOrmRepository<TEntity> = Object.assign(
+      Object.create(Object.getPrototypeOf(this)),
+      this,
+    );
+    forked.entityManager = entityManager;
+    return forked;
   }
 
   async getMany(options: FindManyOptions<TEntity>): Promise<TEntity[]> {
     return await (this.repo.find as any)(options);
   }
 
-  async getManyAndCount(options: FindManyOptions<TEntity>): Promise<[TEntity[], number]> {
+  async getManyAndCount(
+    options: FindManyOptions<TEntity>,
+  ): Promise<[TEntity[], number]> {
     return await (this.repo.findAndCount as any)(options);
   }
 
@@ -90,7 +111,9 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     const results = await this.getMany(options);
 
     if (results?.length > 1) {
-      throw new Error(`${TypeOrmRepository.prototype.getOne.name} expects only 1 result but found ${results.length} results of entity type "${this.entityType}" for criteria ${JSON.stringify(options, null, 2)}`);
+      throw new Error(
+        `${TypeOrmRepository.prototype.getOne.name} expects only 1 result but found ${results.length} results of entity type "${this.entityType}" for criteria ${JSON.stringify(options, null, 2)}`,
+      );
     }
 
     return results[0];
@@ -112,23 +135,46 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     await this.repo.softDelete(options);
   }
 
-  put<T extends DeepPartial<TEntity>>(entities: T[], options: SaveOptions & { reload: false }): Promise<T[]>;
-  put<T extends DeepPartial<TEntity>>(entities: T[], options?: SaveOptions): Promise<(T & TEntity)[]>;
-  put<T extends DeepPartial<TEntity>>(entity: T, options: SaveOptions & { reload: false }): Promise<T>;
-  put<T extends DeepPartial<TEntity>>(entity: T, options?: SaveOptions): Promise<T & TEntity>;
-  async put<T extends DeepPartial<TEntity>>(entityOrEntities: T | T[], options?: SaveOptions): Promise<T | T[] | (T & TEntity) | (T & TEntity)[]> {
+  put<T extends DeepPartial<TEntity>>(
+    entities: T[],
+    options: SaveOptions & { reload: false },
+  ): Promise<T[]>;
+  put<T extends DeepPartial<TEntity>>(
+    entities: T[],
+    options?: SaveOptions,
+  ): Promise<(T & TEntity)[]>;
+  put<T extends DeepPartial<TEntity>>(
+    entity: T,
+    options: SaveOptions & { reload: false },
+  ): Promise<T>;
+  put<T extends DeepPartial<TEntity>>(
+    entity: T,
+    options?: SaveOptions,
+  ): Promise<T & TEntity>;
+  async put<T extends DeepPartial<TEntity>>(
+    entityOrEntities: T | T[],
+    options?: SaveOptions,
+  ): Promise<T | T[] | (T & TEntity) | (T & TEntity)[]> {
     return await this.repo.save(entityOrEntities as any, options);
   }
 
-  async patch(options: FindOptionsWhere<TEntity>, body: QueryDeepPartialEntity<TEntity>) {
+  async patch(
+    options: FindOptionsWhere<TEntity>,
+    body: QueryDeepPartialEntity<TEntity>,
+  ) {
     await this.repo.update(options, body);
   }
 
-  async head(options: FindOptionsWhere<TEntity>, withDeleted = true): Promise<boolean> {
+  async head(
+    options: FindOptionsWhere<TEntity>,
+    withDeleted = true,
+  ): Promise<boolean> {
     return await this.repo.exists({ where: options, withDeleted });
   }
 
-  async getManyGroupedBy<TReturn extends ObjectLiteral>(options: TGroupByOptions<TEntity, TReturn>): Promise<TReturn[]> {
+  async getManyGroupedBy<TReturn extends ObjectLiteral>(
+    options: TGroupByOptions<TEntity, TReturn>,
+  ): Promise<TReturn[]> {
     const queryBuilder = await this.repo.createQueryBuilder();
     const selectEntries = Object.entries(options.select);
     for (let index = 0; index < selectEntries.length; index++) {
@@ -147,10 +193,10 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
         queryBuilder.addOrderBy(orderKey, orderValue);
       }
     }
-    options.groupBy.forEach(group => {
+    options.groupBy.forEach((group) => {
       queryBuilder.addGroupBy(group as string);
     });
-    return await queryBuilder.getRawMany() as TReturn[];
+    return (await queryBuilder.getRawMany()) as TReturn[];
   }
 
   get repo() {
@@ -161,7 +207,9 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     return (await this.insertAndReturnMany([entityToInsert]))[0];
   }
 
-  protected async insertAndReturnMany(entitiesToInsert: TEntity[]): Promise<TEntity[]> {
+  protected async insertAndReturnMany(
+    entitiesToInsert: TEntity[],
+  ): Promise<TEntity[]> {
     const insertionResult = await this.repo
       .createQueryBuilder()
       .insert()
@@ -184,14 +232,24 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     return `${schemaPrefix}"${this.table}"`;
   }
 
-  protected buildSelectStatement(options: FindManyOptions<TEntity>): { query: string; queryParams: any[]; } {
-    const { whereClause, queryParams } = this.buildWhereExpression(options.where as FindOptionsWhere<TEntity>);
+  protected buildSelectStatement(options: FindManyOptions<TEntity>): {
+    query: string;
+    queryParams: any[];
+  } {
+    const { whereClause, queryParams } = this.buildWhereExpression(
+      options.where as FindOptionsWhere<TEntity>,
+    );
     const query = `SELECT * FROM ${this.getTableNameExpression()}${whereClause};`;
     return { query, queryParams };
   }
 
-  protected buildDeleteStatement(where: FindManyOptions<TEntity>): { query: string; queryParams: any[]; } {
-    const { whereClause, queryParams } = this.buildWhereExpression(where as FindOptionsWhere<TEntity>);
+  protected buildDeleteStatement(where: FindManyOptions<TEntity>): {
+    query: string;
+    queryParams: any[];
+  } {
+    const { whereClause, queryParams } = this.buildWhereExpression(
+      where as FindOptionsWhere<TEntity>,
+    );
     const query = `DELETE FROM ${this.getTableNameExpression()}${whereClause};`;
     return { query, queryParams };
   }
@@ -200,41 +258,60 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     return buildWhereExpressionFn(where as any, this.columns as any);
   }
 
-  protected buildInsertQuery(entity: Partial<TEntity>): { insertQuery: string, values: any[] } {
+  protected buildInsertQuery(entity: Partial<TEntity>): {
+    insertQuery: string;
+    values: any[];
+  } {
     const keys: Array<keyof TEntity> = Object.keys(entity) as any;
     const values = Object.values(entity);
 
-    const columnNames = keys.map(key => this.columns[key].databasePath).join(', ');
-    const paramPlaceholders = keys.map((key, index) => this.mapPlaceholderExpression(0, index, key as string)).join(', ');
+    const columnNames = keys
+      .map((key) => this.columns[key].databasePath)
+      .join(', ');
+    const paramPlaceholders = keys
+      .map((key, index) =>
+        this.mapPlaceholderExpression(0, index, key as string),
+      )
+      .join(', ');
 
     const insertQuery = `INSERT INTO ${this.getTableNameExpression()} (${columnNames}) VALUES (${paramPlaceholders})`;
 
     return { insertQuery, values };
   }
 
-  protected buildInsertManyQuery(entities: Partial<TEntity>[]): { insertQuery: string, values: any[] } {
+  protected buildInsertManyQuery(entities: Partial<TEntity>[]): {
+    insertQuery: string;
+    values: any[];
+  } {
     const keyMap: Record<keyof TEntity, boolean> = {} as any;
 
-    entities.forEach(entity => {
-      (Object.keys(entity) as Array<keyof TEntity>)
-        .forEach(key => {
-          keyMap[key] = true;
-        });
+    entities.forEach((entity) => {
+      (Object.keys(entity) as Array<keyof TEntity>).forEach((key) => {
+        keyMap[key] = true;
+      });
     });
 
-    const columnNames = (Object.keys(keyMap) as Array<keyof TEntity>).map(key => this.columns[key].databasePath).join(', ');
+    const columnNames = (Object.keys(keyMap) as Array<keyof TEntity>)
+      .map((key) => this.columns[key].databasePath)
+      .join(', ');
 
     const valuesExpressions: string[] = [];
     const values: any[] = [];
 
-    entities.forEach(entity => {
+    entities.forEach((entity) => {
       const length = values.length;
 
       (Object.keys(keyMap) as Array<keyof TEntity>).forEach((key) => {
-        values.push((typeof entity[key] === 'undefined') ? this.columns[key].default : entity[key]);
+        values.push(
+          typeof entity[key] === 'undefined'
+            ? this.columns[key].default
+            : entity[key],
+        );
       });
 
-      const paramPlaceholders = Object.keys(keyMap).map((_, index) => this.mapPlaceholderExpression(length, index, _)).join(', ');
+      const paramPlaceholders = Object.keys(keyMap)
+        .map((_, index) => this.mapPlaceholderExpression(length, index, _))
+        .join(', ');
 
       valuesExpressions.push(`(${paramPlaceholders})`);
     });
@@ -244,36 +321,53 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     return { insertQuery, values };
   }
 
-  protected mapPlaceholderExpression(length: number, index: number, column: string) {
+  protected mapPlaceholderExpression(
+    length: number,
+    index: number,
+    column: string,
+  ) {
     const exp = `$${length + index + 1}`;
 
     const meta: TTableMeta = this.columns[column as keyof TEntity];
     return meta.type === 'jsonb' ? exp : exp; // TODO: figure out how to handle this for postgres... $1::jsonb equivalent
   }
 
-  protected buildSelectManyQuery(entities: Partial<TEntity>[]): { selectQuery: string, values: any[] } {
+  protected buildSelectManyQuery(entities: Partial<TEntity>[]): {
+    selectQuery: string;
+    values: any[];
+  } {
     const keyMap: any = {};
 
-    entities.forEach(entity => {
-      Object.keys(entity)
-        .forEach(key => {
-          keyMap[key] = true;
-        });
+    entities.forEach((entity) => {
+      Object.keys(entity).forEach((key) => {
+        keyMap[key] = true;
+      });
     });
 
     const selectExpressions: string[] = [];
     const values: any[] = [];
 
-    entities.forEach(entity => {
+    entities.forEach((entity) => {
       const length = values.length;
 
-      (Object.keys(keyMap) as Array<keyof Partial<TEntity>>).forEach(key => {
-        values.push((typeof entity[key] === 'undefined') ? this.columns[key].default : entity[key]);
+      (Object.keys(keyMap) as Array<keyof Partial<TEntity>>).forEach((key) => {
+        values.push(
+          typeof entity[key] === 'undefined'
+            ? this.columns[key].default
+            : entity[key],
+        );
       });
 
-      const whereExpression = Object.keys(keyMap).map((_, index) => `(${(this.columns as any)[_].databasePath} = $${length + index + 1})`).join(' AND ');
+      const whereExpression = Object.keys(keyMap)
+        .map(
+          (_, index) =>
+            `(${(this.columns as any)[_].databasePath} = $${length + index + 1})`,
+        )
+        .join(' AND ');
 
-      selectExpressions.push(`(select * from ${this.getTableNameExpression()} where (${whereExpression}))`);
+      selectExpressions.push(
+        `(select * from ${this.getTableNameExpression()} where (${whereExpression}))`,
+      );
     });
 
     const selectQuery = selectExpressions.join(' UNION ');
@@ -282,24 +376,37 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
   }
 
   map(raw: any): TEntity {
-    const mapped = (Object.values(this.columns) as TTableMeta[])
-      .reduce((entity: any, { propertyPath, databasePath }: TTableMeta) => {
+    const mapped = (Object.values(this.columns) as TTableMeta[]).reduce(
+      (entity: any, { propertyPath, databasePath }: TTableMeta) => {
         entity[propertyPath] = raw[databasePath];
         return entity;
-      }, {} as any) as TEntity;
+      },
+      {} as any,
+    ) as TEntity;
 
     return mapped;
   }
 
   async query(query: string, parameters: any[]) {
     if (this.debug) {
-      console.log({ schema: this.schema, table: this.table, query, parameters });
+      console.log({
+        schema: this.schema,
+        table: this.table,
+        query,
+        parameters,
+      });
     }
 
     const result = await this.repo.query(query, parameters);
 
     if (this.debug) {
-      console.log({ schema: this.schema, table: this.table, query, parameters, result });
+      console.log({
+        schema: this.schema,
+        table: this.table,
+        query,
+        parameters,
+        result,
+      });
     }
 
     return result as any[];
@@ -312,19 +419,14 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
   }
 
   buildWhereILike(filters?: Record<string, any>): FindOptionsWhere<TEntity> {
-
-    if(!filters) {
+    if (!filters) {
       return {};
     }
 
-    return Object.entries(filters || {})
-      .reduce(
-        (_, [column, filter]) => (
-          filter
-            ? { ..._, [column]: ILike(`%${filter}%`) }
-            : _
-        ),
-        {}
-      ) as any;
+    return Object.entries(filters || {}).reduce(
+      (_, [column, filter]) =>
+        filter ? { ..._, [column]: ILike(`%${filter}%`) } : _,
+      {},
+    ) as any;
   }
 }

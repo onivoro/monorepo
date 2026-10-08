@@ -11,10 +11,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { EventEmitter } from 'node:events';
+import type { Request, Response } from 'express';
 import { Unit } from 'aws-embedded-metrics';
 import { ServerAwsObservabilityModule } from '../aws-observability.module';
 import { MetricDatum, PutMetricOptions } from './metrics-service.interface';
 import { MetricsService } from './metrics.service';
+import { HttpMetricsMiddleware } from './http-metrics.middleware';
 
 jest.mock('aws-embedded-metrics', () => ({
   Unit: { Count: 'Count', Milliseconds: 'Milliseconds', None: 'None' },
@@ -175,6 +178,139 @@ describe('HttpMetricsMiddleware', () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('sink unavailable'),
     );
+    warn.mockRestore();
+  });
+});
+
+describe('HttpMetricsMiddleware (unit)', () => {
+  const putMetrics = jest.fn().mockResolvedValue(undefined);
+  const metrics = { putMetrics } as unknown as MetricsService;
+  const middlewareRoute = { path: '*' };
+
+  const create = (
+    httpMetrics?: ConstructorParameters<
+      typeof HttpMetricsMiddleware
+    >[0]['httpMetrics'],
+  ) =>
+    new HttpMetricsMiddleware(
+      { serviceName: 'api', metricsNamespace: 'Onivoro/API', httpMetrics },
+      metrics,
+    );
+
+  const exchange = (statusCode = 200) => {
+    const req = {
+      method: 'POST',
+      baseUrl: '/api',
+      route: middlewareRoute,
+    } as unknown as Request & { route: unknown };
+    const res = Object.assign(new EventEmitter(), {
+      statusCode,
+    }) as unknown as Response & EventEmitter;
+    return { req, res };
+  };
+
+  beforeEach(() => putMetrics.mockClear());
+
+  it('only calls next when metrics are disabled', () => {
+    const { req, res } = exchange();
+    const next = jest.fn();
+
+    create().use(req, res, next);
+    res.emit('finish');
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(putMetrics).not.toHaveBeenCalled();
+    expect(res.listenerCount('finish')).toBe(0);
+  });
+
+  it('records once even when both finish and close fire', () => {
+    const { req, res } = exchange(201);
+    const next = jest.fn();
+
+    create({ enabled: true }).use(req, res, next);
+    req.route = { path: '/items' };
+    res.emit('finish');
+    res.emit('close');
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(putMetrics).toHaveBeenCalledTimes(1);
+    expect(putMetrics.mock.calls[0][1]).toEqual({
+      dimensions: {
+        Method: 'POST',
+        Route: '/api/items',
+        StatusCodeClass: '2xx',
+      },
+    });
+  });
+
+  it('records on close when the client disconnects before finish', () => {
+    const { req, res } = exchange(500);
+
+    create({ enabled: true }).use(req, res, jest.fn());
+    res.emit('close');
+
+    expect(putMetrics).toHaveBeenCalledTimes(1);
+    expect(putMetrics.mock.calls[0][1].dimensions).toMatchObject({
+      Route: 'unmatched',
+      StatusCodeClass: '5xx',
+    });
+  });
+
+  it('measures the duration between the request and the response', () => {
+    jest.useFakeTimers();
+    try {
+      const { req, res } = exchange();
+
+      create({ enabled: true }).use(req, res, jest.fn());
+      jest.advanceTimersByTime(42);
+      res.emit('finish');
+
+      expect(putMetrics.mock.calls[0][0]).toContainEqual({
+        name: 'HttpRequestDurationMs',
+        value: 42,
+        unit: Unit.Milliseconds,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('can omit the route and status code dimensions', () => {
+    const { req, res } = exchange(404);
+
+    create({
+      enabled: true,
+      includeRoute: false,
+      includeStatusCode: false,
+    }).use(req, res, jest.fn());
+    res.emit('finish');
+
+    expect(putMetrics.mock.calls[0][1]).toEqual({
+      dimensions: { Method: 'POST' },
+    });
+  });
+
+  it('uses the route path alone when there is no baseUrl', () => {
+    const { req, res } = exchange();
+    (req as { baseUrl: unknown }).baseUrl = undefined;
+
+    create({ enabled: true }).use(req, res, jest.fn());
+    req.route = { path: '/health' };
+    res.emit('finish');
+
+    expect(putMetrics.mock.calls[0][1].dimensions.Route).toBe('/health');
+  });
+
+  it('logs non-Error emit failures', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    putMetrics.mockRejectedValueOnce('nope');
+    const { req, res } = exchange();
+
+    create({ enabled: true }).use(req, res, jest.fn());
+    res.emit('finish');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(warn).toHaveBeenCalledWith('Failed to emit HTTP metrics: nope');
     warn.mockRestore();
   });
 });

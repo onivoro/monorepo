@@ -1,18 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import { DeleteMessageBatchCommand, GetQueueAttributesCommand, ReceiveMessageCommand, SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import {
+  DeleteMessageBatchCommand,
+  GetQueueAttributesCommand,
+  ReceiveMessageCommand,
+  SQSClient,
+  SendMessageCommand,
+} from '@aws-sdk/client-sqs';
 import { ServerAwsSqsConfig } from '../classes/server-aws-sqs-config.class';
 
 @Injectable()
 export class SqsService {
-  constructor(private sqs: SQSClient, private config: ServerAwsSqsConfig) { }
+  constructor(
+    private sqs: SQSClient,
+    private config: ServerAwsSqsConfig,
+  ) {}
 
   async publish<TData>(event: TData) {
-
     try {
       const command = new SendMessageCommand({
         MessageBody: JSON.stringify(event),
         QueueUrl: this.config.AWS_SQS_URL,
-
       });
 
       await this.sqs.send(command);
@@ -27,7 +34,7 @@ export class SqsService {
     try {
       const command = new GetQueueAttributesCommand({
         QueueUrl,
-        AttributeNames: ['QueueArn']
+        AttributeNames: ['QueueArn'],
       });
       await this.sqs.send(command);
       console.log('Queue verification successful');
@@ -49,56 +56,84 @@ export class SqsService {
       const queueAttrs = await this.sqs.send(
         new GetQueueAttributesCommand({
           QueueUrl: this.config.AWS_SQS_URL,
-          AttributeNames: ['ApproximateNumberOfMessages']
-        })
+          AttributeNames: ['ApproximateNumberOfMessages'],
+        }),
       );
 
       const messageCount = parseInt(
-        queueAttrs.Attributes?.ApproximateNumberOfMessages || '0'
+        queueAttrs.Attributes?.ApproximateNumberOfMessages || '0',
       );
 
       return messageCount;
     } catch (error) {
-      console.error({ error, detail: `Failed to determine ApproximateNumberOfMessages for queue ${this.config.AWS_SQS_URL}:` });
+      console.error({
+        error,
+        detail: `Failed to determine ApproximateNumberOfMessages for queue ${this.config.AWS_SQS_URL}:`,
+      });
       throw error;
     }
   }
 
-  async processMessageBatches(maxIterations: number) {
+  async processMessageBatches<TData = any>(
+    maxIterations: number,
+    handler?: (messages: TData[]) => Promise<void> | void,
+  ) {
     let iteration = 0;
     let messageCount = await this.getApproximateNumberOfMessages();
 
-    while ((iteration < maxIterations) && !!messageCount) {
+    while (iteration < maxIterations && !!messageCount) {
       try {
-
         messageCount = await this.getApproximateNumberOfMessages();
 
-        const response = await this.sqs.send(new ReceiveMessageCommand({
-          QueueUrl: this.config.AWS_SQS_URL,
-          MaxNumberOfMessages: 10,
-          WaitTimeSeconds: 20,
-          VisibilityTimeout: 30
-        }));
+        const response = await this.sqs.send(
+          new ReceiveMessageCommand({
+            QueueUrl: this.config.AWS_SQS_URL,
+            MaxNumberOfMessages: 10,
+            WaitTimeSeconds: 20,
+            VisibilityTimeout: 30,
+          }),
+        );
 
         const messages = response.Messages || [];
 
         console.log(`Received ${messages.length} messages`);
 
-        const parsedMessages: Event[] = messages.map(({ Body }: any) => JSON.parse(Body || '{}'));
+        const parsedMessages: TData[] = messages.map(({ Body }: any) =>
+          JSON.parse(Body || '{}'),
+        );
 
         if (parsedMessages?.length) {
           console.log(`processing messages iteration ${iteration}`);
 
-          const Entries = messages.map((_) => ({ ReceiptHandle: _.ReceiptHandle, Id: _.MessageId }));
+          await handler?.(parsedMessages);
 
-          await this.sqs.send(new DeleteMessageBatchCommand({
-            QueueUrl: this.config.AWS_SQS_URL,
-            Entries
+          const Entries = messages.map((_) => ({
+            ReceiptHandle: _.ReceiptHandle,
+            Id: _.MessageId,
           }));
 
-          console.log('Deleted messages:', Entries);
-        }
+          const { Failed = [] } = await this.sqs.send(
+            new DeleteMessageBatchCommand({
+              QueueUrl: this.config.AWS_SQS_URL,
+              Entries,
+            }),
+          );
 
+          if (Failed.length) {
+            // These messages stay on the queue and reappear after the visibility timeout.
+            console.error(
+              `Failed to delete ${Failed.length} of ${Entries.length} messages:`,
+              Failed,
+            );
+          }
+
+          const failedIds = new Set(Failed.map(({ Id }) => Id));
+          const deleted = Entries.filter(({ Id }) => !failedIds.has(Id));
+
+          if (deleted.length) {
+            console.log('Deleted messages:', deleted);
+          }
+        }
       } catch (error) {
         console.error('Error polling messages:', error);
       }

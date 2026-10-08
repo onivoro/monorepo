@@ -1,22 +1,22 @@
-import { removeAlphaChars } from "./remove-alpha-chars.function";
+import { removeAlphaChars } from './remove-alpha-chars.function';
 
 export function money(rawValue: number | string) {
-    if(!rawValue) {
-        return;
-    }
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return;
+  }
 
-    const scrubbed = removeAlphaChars(rawValue);
+  const scrubbed = removeAlphaChars(String(rawValue));
 
-    const amount = Number(scrubbed);
+  const amount = Number(scrubbed);
 
-    if(!amount && amount !== 0) {
-        return;
-    }
+  if (!amount && amount !== 0) {
+    return;
+  }
 
-    const formatter = new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD'
-    });
+  const formatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  });
 
-    return formatter.format(Number(amount));
+  return formatter.format(Number(amount));
 }

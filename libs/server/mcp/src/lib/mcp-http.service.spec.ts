@@ -2,6 +2,7 @@ import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpModuleConfig } from './mcp-module-config';
 import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
+import { EventEmitter } from 'events';
 
 const mockTransportHandleRequest = jest.fn().mockResolvedValue(undefined);
 const mockTransportClose = jest.fn().mockResolvedValue(undefined);
@@ -86,15 +87,48 @@ describe('McpHttpService', () => {
     }
 
     function mockRes() {
-      return {
+      return Object.assign(new EventEmitter(), {
         writeHead: jest.fn(),
         end: jest.fn(),
         set: jest.fn(),
         status: jest.fn().mockReturnThis(),
         json: jest.fn(),
         headersSent: false,
-      } as any;
+      }) as any;
     }
+
+    const registryListenerCount = () =>
+      (registry as any).changeListeners.length +
+      (registry as any).resourceUpdateListeners.length;
+
+    it('should unwire and close the per-request server in stateless mode when the response closes', async () => {
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
+
+      for (let i = 0; i < 5; i++) {
+        const res = mockRes();
+        await service.handleRequest(mockReq(), res);
+        res.emit('close');
+      }
+      await new Promise((r) => setImmediate(r));
+
+      expect(registryListenerCount()).toBe(0);
+      expect(mockTransportClose).toHaveBeenCalledTimes(5);
+      expect(mockServerClose).toHaveBeenCalledTimes(5);
+    });
+
+    it('should keep an initialized stateful session wired after the response closes', async () => {
+      registry.registerTool({ name: 'test', description: 'test' }, jest.fn());
+
+      const res = mockRes();
+      await service.handleRequest(mockReq(), res);
+      capturedOnSessionInitialized!('kept-session');
+      res.emit('close');
+      await new Promise((r) => setImmediate(r));
+
+      expect((service as any).sessions.has('kept-session')).toBe(true);
+      expect(registryListenerCount()).toBe(2);
+      expect(mockTransportClose).not.toHaveBeenCalled();
+    });
 
     it('should return 400 for non-POST without session ID', async () => {
       const req = mockReq({ method: 'GET' });
@@ -102,7 +136,9 @@ describe('McpHttpService', () => {
 
       await service.handleRequest(req, res);
 
-      expect(res.writeHead).toHaveBeenCalledWith(400, { 'Content-Type': 'application/json' });
+      expect(res.writeHead).toHaveBeenCalledWith(400, {
+        'Content-Type': 'application/json',
+      });
       const body = JSON.parse(res.end.mock.calls[0][0]);
       expect(body.error.message).toContain('Missing Mcp-Session-Id');
     });
@@ -113,7 +149,9 @@ describe('McpHttpService', () => {
 
       await service.handleRequest(req, res);
 
-      expect(res.writeHead).toHaveBeenCalledWith(404, { 'Content-Type': 'application/json' });
+      expect(res.writeHead).toHaveBeenCalledWith(404, {
+        'Content-Type': 'application/json',
+      });
     });
 
     it('should create a session on POST without session ID', async () => {
@@ -137,14 +175,22 @@ describe('McpHttpService', () => {
           jsonrpc: '2.0',
           id: 1,
           method: 'initialize',
-          params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } },
+          params: {
+            protocolVersion: '2025-03-26',
+            capabilities: {},
+            clientInfo: { name: 'test', version: '1.0.0' },
+          },
         },
       });
       const res = mockRes();
 
       await service.handleRequest(req, res);
 
-      expect(mockTransportHandleRequest).toHaveBeenCalledWith(req, res, req.body);
+      expect(mockTransportHandleRequest).toHaveBeenCalledWith(
+        req,
+        res,
+        req.body,
+      );
       expect(mockServerConnect).toHaveBeenCalled();
       expect(res.writeHead).not.toHaveBeenCalled();
     });
@@ -182,7 +228,9 @@ describe('McpHttpService', () => {
 
       // Now make a request with the session ID
       mockTransportHandleRequest.mockClear();
-      const req = mockReq({ headers: { 'mcp-session-id': 'test-session-123' } });
+      const req = mockReq({
+        headers: { 'mcp-session-id': 'test-session-123' },
+      });
       const res = mockRes();
 
       await service.handleRequest(req, res);
@@ -200,9 +248,14 @@ describe('McpHttpService', () => {
       capturedOnSessionInitialized!('delete-session');
 
       // Make DELETE throw from transport
-      mockTransportHandleRequest.mockRejectedValueOnce(new Error('transport error'));
+      mockTransportHandleRequest.mockRejectedValueOnce(
+        new Error('transport error'),
+      );
 
-      const req = mockReq({ method: 'DELETE', headers: { 'mcp-session-id': 'delete-session' } });
+      const req = mockReq({
+        method: 'DELETE',
+        headers: { 'mcp-session-id': 'delete-session' },
+      });
       const res = mockRes();
 
       // The outer catch should handle the error
@@ -228,7 +281,9 @@ describe('McpHttpService', () => {
       capturedOnSessionInitialized!('activity-session');
 
       // Make a request — should not error (lastActivity gets updated internally)
-      const req = mockReq({ headers: { 'mcp-session-id': 'activity-session' } });
+      const req = mockReq({
+        headers: { 'mcp-session-id': 'activity-session' },
+      });
       const res = mockRes();
       await service.handleRequest(req, res);
 
@@ -247,7 +302,9 @@ describe('McpHttpService', () => {
 
       await service.handleRequest(req, res);
 
-      expect(res.writeHead).toHaveBeenCalledWith(500, { 'Content-Type': 'application/json' });
+      expect(res.writeHead).toHaveBeenCalledWith(500, {
+        'Content-Type': 'application/json',
+      });
       const body = JSON.parse(res.end.mock.calls[0][0]);
       expect(body.error.code).toBe(-32603);
     });
@@ -265,12 +322,16 @@ describe('McpHttpService', () => {
 
       expect(res.set).toHaveBeenCalledWith(
         'WWW-Authenticate',
-        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource/mcp"'),
+        expect.stringContaining(
+          'resource_metadata="http://api.example.com/.well-known/oauth-protected-resource/mcp"',
+        ),
       );
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: 'invalid_token',
-      }));
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'invalid_token',
+        }),
+      );
       expect(mockTransportHandleRequest).not.toHaveBeenCalled();
     });
 
@@ -278,7 +339,10 @@ describe('McpHttpService', () => {
       const verifier: OAuthTokenVerifier = {
         verifyAccessToken: jest.fn(),
       };
-      service = new McpHttpService({ ...config, route: 'internal/mcp' } as any, registry);
+      service = new McpHttpService(
+        { ...config, route: 'internal/mcp' } as any,
+        registry,
+      );
       service.setBearerAuthVerifier(verifier);
 
       const req = mockReq({
@@ -291,7 +355,9 @@ describe('McpHttpService', () => {
 
       expect(res.set).toHaveBeenCalledWith(
         'WWW-Authenticate',
-        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource/internal/mcp"'),
+        expect.stringContaining(
+          'resource_metadata="http://api.example.com/.well-known/oauth-protected-resource/internal/mcp"',
+        ),
       );
     });
 
@@ -299,7 +365,10 @@ describe('McpHttpService', () => {
       const verifier: OAuthTokenVerifier = {
         verifyAccessToken: jest.fn(),
       };
-      service = new McpHttpService({ ...config, route: 'internal/mcp' } as any, registry);
+      service = new McpHttpService(
+        { ...config, route: 'internal/mcp' } as any,
+        registry,
+      );
       service.setBearerAuthVerifier(verifier);
 
       const req = mockReq({
@@ -312,7 +381,9 @@ describe('McpHttpService', () => {
 
       expect(res.set).toHaveBeenCalledWith(
         'WWW-Authenticate',
-        expect.stringContaining('resource_metadata="http://api.example.com/api/.well-known/oauth-protected-resource/api/internal/mcp"'),
+        expect.stringContaining(
+          'resource_metadata="http://api.example.com/api/.well-known/oauth-protected-resource/api/internal/mcp"',
+        ),
       );
     });
 
@@ -331,7 +402,9 @@ describe('McpHttpService', () => {
 
       expect(res.set).toHaveBeenCalledWith(
         'WWW-Authenticate',
-        expect.stringContaining('resource_metadata="https://metadata.example.com/prm"'),
+        expect.stringContaining(
+          'resource_metadata="https://metadata.example.com/prm"',
+        ),
       );
     });
 
@@ -350,7 +423,9 @@ describe('McpHttpService', () => {
 
       expect(res.set).toHaveBeenCalledWith(
         'WWW-Authenticate',
-        expect.stringContaining('resource_metadata="http://api.example.com/.well-known/oauth-protected-resource"'),
+        expect.stringContaining(
+          'resource_metadata="http://api.example.com/.well-known/oauth-protected-resource"',
+        ),
       );
     });
 
@@ -376,10 +451,12 @@ describe('McpHttpService', () => {
 
       expect(verifier.verifyAccessToken).toHaveBeenCalledWith('valid-token');
       expect(mockTransportHandleRequest).toHaveBeenCalledWith(req, res, {});
-      expect((req as any).auth).toEqual(expect.objectContaining({
-        token: 'valid-token',
-        clientId: 'client-1',
-      }));
+      expect((req as any).auth).toEqual(
+        expect.objectContaining({
+          token: 'valid-token',
+          clientId: 'client-1',
+        }),
+      );
     });
   });
 
@@ -388,7 +465,10 @@ describe('McpHttpService', () => {
 
     beforeEach(() => {
       protectedService = new McpHttpService(
-        { ...config, allowedOrigins: ['http://localhost:3000', 'https://app.example.com'] } as any,
+        {
+          ...config,
+          allowedOrigins: ['http://localhost:3000', 'https://app.example.com'],
+        } as any,
         registry,
       );
     });
@@ -403,7 +483,9 @@ describe('McpHttpService', () => {
 
       await protectedService.handleRequest(req, res);
 
-      expect(res.writeHead).toHaveBeenCalledWith(403, { 'Content-Type': 'application/json' });
+      expect(res.writeHead).toHaveBeenCalledWith(403, {
+        'Content-Type': 'application/json',
+      });
       const body = JSON.parse(res.end.mock.calls[0][0]);
       expect(body.error.message).toContain('not allowed');
     });
@@ -498,8 +580,12 @@ describe('McpHttpService', () => {
 
       await customService.handleRequest(mockReq(), mockRes());
 
-      expect(capturedTransportOptions.sessionIdGenerator).toBeInstanceOf(Function);
-      expect(typeof capturedTransportOptions.sessionIdGenerator()).toBe('string');
+      expect(capturedTransportOptions.sessionIdGenerator).toBeInstanceOf(
+        Function,
+      );
+      expect(typeof capturedTransportOptions.sessionIdGenerator()).toBe(
+        'string',
+      );
       await customService.onModuleDestroy();
     });
 
@@ -575,7 +661,9 @@ describe('McpHttpService', () => {
 
       // Simulate a subscription for this session
       registry.subscribeResource('app://config', 'sub-session');
-      expect(registry.getResourceSubscribers('app://config').has('sub-session')).toBe(true);
+      expect(
+        registry.getResourceSubscribers('app://config').has('sub-session'),
+      ).toBe(true);
 
       await service.onModuleDestroy();
 
@@ -584,7 +672,13 @@ describe('McpHttpService', () => {
     });
   });
 
-  function mockReq(overrides: Partial<{ method: string; headers: Record<string, string>; body: any }> = {}) {
+  function mockReq(
+    overrides: Partial<{
+      method: string;
+      headers: Record<string, string>;
+      body: any;
+    }> = {},
+  ) {
     return {
       method: overrides.method ?? 'POST',
       headers: overrides.headers ?? {},
@@ -593,10 +687,10 @@ describe('McpHttpService', () => {
   }
 
   function mockRes() {
-    return {
+    return Object.assign(new EventEmitter(), {
       writeHead: jest.fn(),
       end: jest.fn(),
       headersSent: false,
-    } as any;
+    }) as any;
   }
 });

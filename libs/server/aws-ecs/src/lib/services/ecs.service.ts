@@ -1,14 +1,34 @@
-import { Injectable } from "@nestjs/common";
-import { ECS, KeyValuePair, RunTaskCommand, RunTaskCommandInput, RunTaskCommandOutput } from '@aws-sdk/client-ecs';
-import { parseCsvString } from "../functions/parse-csv-string.function";
+import { Injectable } from '@nestjs/common';
+import {
+  ECS,
+  KeyValuePair,
+  RunTaskCommand,
+  RunTaskCommandInput,
+  RunTaskCommandOutput,
+} from '@aws-sdk/client-ecs';
+import { parseCsvString } from '../functions/parse-csv-string.function';
 
 @Injectable()
 export class EcsService {
+  constructor(private ecsClient: ECS) {}
 
-  constructor(private ecsClient: ECS) { }
-
-  runTasks(_: { taskDefinition: string, subnets: string, securityGroups: string, taskCount: number, cluster: string } & Pick<RunTaskCommandInput, 'overrides'>): Promise<Array<RunTaskCommandOutput>> {
-    const { taskDefinition, subnets, securityGroups, taskCount, cluster, overrides } = _;
+  async runTasks(
+    _: {
+      taskDefinition: string;
+      subnets: string;
+      securityGroups: string;
+      taskCount: number;
+      cluster: string;
+    } & Pick<RunTaskCommandInput, 'overrides'>,
+  ): Promise<Array<RunTaskCommandOutput>> {
+    const {
+      taskDefinition,
+      subnets,
+      securityGroups,
+      taskCount,
+      cluster,
+      overrides,
+    } = _;
     try {
       const params: RunTaskCommandInput = {
         cluster,
@@ -19,23 +39,27 @@ export class EcsService {
             assignPublicIp: 'DISABLED',
             subnets: parseCsvString(subnets),
             securityGroups: parseCsvString(securityGroups),
-          }
+          },
         },
-        overrides
+        overrides,
       };
 
       const taskPromises = new Array(taskCount)
         .fill(undefined)
         .map(() => this.ecsClient.send(new RunTaskCommand(params)));
 
-      return Promise.all(taskPromises);
+      return await Promise.all(taskPromises);
     } catch (error) {
       console.error('Failed to run ECS task:', error);
       throw error;
     }
   }
 
-  static mapObjectToEcsEnvironmentArray (_: Record<string, any> | null | undefined): KeyValuePair[] {
-    return Object.entries(_ || {} as Record<string, any>).reduce((__, [Name, Value]) => [...__, {Name, Value}], [] as any);
+  static mapObjectToEcsEnvironmentArray(
+    _: Record<string, any> | null | undefined,
+  ): KeyValuePair[] {
+    return Object.entries(_ || ({} as Record<string, any>)).map(
+      ([name, value]) => ({ name, value: String(value) }),
+    );
   }
 }

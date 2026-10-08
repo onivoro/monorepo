@@ -3,10 +3,18 @@ import { destroyDataSources } from './destroy-data-sources.function';
 
 type FakeDataSource = { isInitialized: boolean; destroy: jest.Mock };
 
-function fake(isInitialized: boolean, destroyImpl?: () => Promise<void>): FakeDataSource {
+function fake(
+  isInitialized: boolean,
+  destroyImpl?: () => Promise<void>,
+): FakeDataSource {
   return {
     isInitialized,
-    destroy: jest.fn(destroyImpl ?? (async () => { /* noop */ })),
+    destroy: jest.fn(
+      destroyImpl ??
+        (async () => {
+          /* noop */
+        }),
+    ),
   };
 }
 
@@ -15,8 +23,12 @@ describe(destroyDataSources.name, () => {
   let errorSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    logSpy = jest.spyOn(console, 'log').mockImplementation(() => { /* silence */ });
-    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => { /* silence */ });
+    logSpy = jest.spyOn(console, 'log').mockImplementation(() => {
+      /* silence */
+    });
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {
+      /* silence */
+    });
   });
 
   afterEach(() => {
@@ -52,7 +64,9 @@ describe(destroyDataSources.name, () => {
   });
 
   it('swallows destroy errors, logs them, and still removes the entry', async () => {
-    const boom = fake(true, async () => { throw new Error('pool already closed'); });
+    const boom = fake(true, async () => {
+      throw new Error('pool already closed');
+    });
     const ok = fake(true);
     const map = new Map<string, DataSource>([
       ['broken', boom as unknown as DataSource],
@@ -75,5 +89,42 @@ describe(destroyDataSources.name, () => {
     expect(map.size).toBe(0);
     expect(logSpy).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+  it('logs the name of each data source it destroys', async () => {
+    const map = new Map<string, DataSource>([
+      ['reporting', fake(true) as unknown as DataSource],
+    ]);
+
+    await destroyDataSources(map);
+
+    expect(logSpy).toHaveBeenCalledWith('destroying connection reporting');
+  });
+
+  it('removes null/undefined entries without throwing', async () => {
+    const map = new Map<string, DataSource>([
+      ['missing', undefined as unknown as DataSource],
+      ['nil', null as unknown as DataSource],
+    ]);
+
+    await expect(destroyDataSources(map)).resolves.toBeUndefined();
+
+    expect(map.size).toBe(0);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('logs non-Error rejections as-is', async () => {
+    const map = new Map<string, DataSource>([
+      [
+        'weird',
+        fake(true, () =>
+          Promise.reject('plain string'),
+        ) as unknown as DataSource,
+      ],
+    ]);
+
+    await destroyDataSources(map);
+
+    expect(errorSpy).toHaveBeenCalledWith('plain string');
+    expect(map.size).toBe(0);
   });
 });

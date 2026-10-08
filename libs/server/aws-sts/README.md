@@ -5,7 +5,7 @@ AWS STS integration for NestJS applications.
 ## Installation
 
 ```bash
-npm install @onivoro/server-aws-sts
+npm install @onivoro/server-aws-sts @aws-sdk/client-sts
 ```
 
 ## Overview
@@ -20,22 +20,29 @@ import { ServerAwsStsModule } from '@onivoro/server-aws-sts';
 
 @Module({
   imports: [
-    ServerAwsStsModule.configure()
-  ]
+    ServerAwsStsModule.configure({
+      AWS_REGION: process.env.AWS_REGION!,
+      AWS_PROFILE: process.env.AWS_PROFILE, // optional
+    }),
+  ],
 })
 export class AppModule {}
 ```
 
 ## Configuration
 
-The module uses environment-based configuration:
+`configure()` takes the config object directly; the module does not read environment variables itself.
 
 ```typescript
 export class ServerAwsStsConfig {
+  AWS_PROFILE?: string;
   AWS_REGION: string;
-  AWS_PROFILE?: string;  // Optional AWS profile
 }
 ```
+
+Credentials come from [`@onivoro/server-aws-credential-providers`](../aws-credential-providers/): when `AWS_PROFILE` is set the named profile is used, otherwise the AWS SDK default credential chain applies.
+
+The module provides and exports `StsService`, an `STSClient`, and `ServerAwsStsConfig`.
 
 ## Service
 
@@ -61,20 +68,16 @@ export class AccountService {
 
 ## Available Method
 
-- **getAccountId()** - Retrieves the AWS account ID for the current credentials
+- **`getAccountId(): Promise<string | undefined>`**: calls `GetCallerIdentityCommand` and returns `Account`.
 
 ## Direct Client Access
 
-The service exposes the underlying STS client for advanced operations:
+The service exposes the underlying client as the public `stsClient` property (you can also inject `STSClient` directly):
 
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { StsService } from '@onivoro/server-aws-sts';
-import { 
-  AssumeRoleCommand,
-  GetSessionTokenCommand,
-  GetAccessKeyInfoCommand
-} from '@aws-sdk/client-sts';
+import { AssumeRoleCommand, GetSessionTokenCommand, GetAccessKeyInfoCommand, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 
 @Injectable()
 export class AdvancedStsService {
@@ -85,9 +88,9 @@ export class AdvancedStsService {
     const command = new AssumeRoleCommand({
       RoleArn: roleArn,
       RoleSessionName: sessionName,
-      DurationSeconds: 3600 // 1 hour
+      DurationSeconds: 3600, // 1 hour
     });
-    
+
     const response = await this.stsService.stsClient.send(command);
     return response.Credentials;
   }
@@ -95,9 +98,9 @@ export class AdvancedStsService {
   // Get temporary session token
   async getSessionToken(durationSeconds: number = 3600) {
     const command = new GetSessionTokenCommand({
-      DurationSeconds: durationSeconds
+      DurationSeconds: durationSeconds,
     });
-    
+
     const response = await this.stsService.stsClient.send(command);
     return response.Credentials;
   }
@@ -105,9 +108,9 @@ export class AdvancedStsService {
   // Get access key info
   async getAccessKeyInfo(accessKeyId: string) {
     const command = new GetAccessKeyInfoCommand({
-      AccessKeyId: accessKeyId
+      AccessKeyId: accessKeyId,
     });
-    
+
     return await this.stsService.stsClient.send(command);
   }
 
@@ -115,120 +118,20 @@ export class AdvancedStsService {
   async getCallerIdentity() {
     const command = new GetCallerIdentityCommand({});
     const response = await this.stsService.stsClient.send(command);
-    
+
     return {
       accountId: response.Account,
       arn: response.Arn,
-      userId: response.UserId
+      userId: response.UserId,
     };
   }
 }
 ```
 
-## Complete Example
-
-```typescript
-import { Module, Injectable, Controller, Get, Post, Body } from '@nestjs/common';
-import { ServerAwsStsModule, StsService } from '@onivoro/server-aws-sts';
-import { AssumeRoleCommand } from '@aws-sdk/client-sts';
-
-@Module({
-  imports: [ServerAwsStsModule.configure()],
-  controllers: [SecurityController],
-  providers: [SecurityService]
-})
-export class SecurityModule {}
-
-@Injectable()
-export class SecurityService {
-  constructor(private readonly stsService: StsService) {}
-
-  async getCrossAccountCredentials(targetAccountId: string, roleName: string) {
-    const currentAccountId = await this.stsService.getAccountId();
-    const roleArn = `arn:aws:iam::${targetAccountId}:role/${roleName}`;
-    const sessionName = `cross-account-${currentAccountId}-${Date.now()}`;
-
-    const command = new AssumeRoleCommand({
-      RoleArn: roleArn,
-      RoleSessionName: sessionName,
-      DurationSeconds: 3600,
-      ExternalId: process.env.EXTERNAL_ID // If required by trust policy
-    });
-
-    try {
-      const response = await this.stsService.stsClient.send(command);
-      return {
-        accessKeyId: response.Credentials.AccessKeyId,
-        secretAccessKey: response.Credentials.SecretAccessKey,
-        sessionToken: response.Credentials.SessionToken,
-        expiration: response.Credentials.Expiration
-      };
-    } catch (error) {
-      console.error('Failed to assume role:', error);
-      throw error;
-    }
-  }
-
-  async validateCurrentCredentials() {
-    try {
-      const accountId = await this.stsService.getAccountId();
-      return {
-        valid: true,
-        accountId
-      };
-    } catch (error) {
-      return {
-        valid: false,
-        error: error.message
-      };
-    }
-  }
-}
-
-@Controller('security')
-export class SecurityController {
-  constructor(private readonly securityService: SecurityService) {}
-
-  @Get('account')
-  async getAccountInfo() {
-    const accountId = await this.securityService.stsService.getAccountId();
-    return { accountId };
-  }
-
-  @Get('validate')
-  async validateCredentials() {
-    return await this.securityService.validateCurrentCredentials();
-  }
-
-  @Post('assume-role')
-  async assumeRole(@Body() body: {
-    targetAccountId: string;
-    roleName: string;
-  }) {
-    return await this.securityService.getCrossAccountCredentials(
-      body.targetAccountId,
-      body.roleName
-    );
-  }
-}
-```
-
-## Environment Variables
-
-```bash
-# Required
-AWS_REGION=us-east-1
-
-# Optional
-AWS_PROFILE=my-profile
-
-# For cross-account access
-EXTERNAL_ID=unique-external-id  # If required by role trust policy
-```
-
 ## Common Use Cases
 
 ### 1. Account Verification
+
 ```typescript
 const accountId = await stsService.getAccountId();
 if (accountId !== expectedAccountId) {
@@ -237,19 +140,23 @@ if (accountId !== expectedAccountId) {
 ```
 
 ### 2. Dynamic Resource ARN Construction
+
 ```typescript
 const accountId = await stsService.getAccountId();
 const bucketArn = `arn:aws:s3:::my-bucket-${accountId}`;
 ```
 
 ### 3. Cross-Account Access Setup
+
 ```typescript
+import { AssumeRoleCommand } from '@aws-sdk/client-sts';
+
 // Use the exposed stsClient for assume role operations
 const assumeRoleCommand = new AssumeRoleCommand({
   RoleArn: `arn:aws:iam::${targetAccount}:role/${roleName}`,
-  RoleSessionName: 'my-session'
+  RoleSessionName: 'my-session',
 });
-const credentials = await stsService.stsClient.send(assumeRoleCommand);
+const { Credentials } = await stsService.stsClient.send(assumeRoleCommand);
 ```
 
 ## Limitations

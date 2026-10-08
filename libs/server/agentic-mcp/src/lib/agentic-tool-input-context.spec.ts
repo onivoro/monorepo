@@ -194,4 +194,37 @@ describe('normalizeAgenticToolInputFromContext', () => {
       }),
     ).toEqual({ a: 1 });
   });
+
+  it('does not fill a declared alias when the canonical key is also declared', () => {
+    expect(
+      normalizeAgenticToolInputFromContext(
+        {},
+        { accountId: 77 },
+        schema('customerId', 'accountId'),
+        { contextKeys: ['customerId'], aliases: { customerId: ['accountId'] } },
+      ),
+    ).toEqual({ customerId: 77 });
+  });
+
+  it('fills a canonical key from an alias the model supplied in the input', () => {
+    expect(
+      normalizeAgenticToolInputFromContext(
+        { accountId: 5 },
+        {},
+        schema('customerId', 'accountId'),
+        { contextKeys: ['other'], aliases: { customerId: ['accountId'] } },
+      ),
+    ).toEqual({ accountId: 5, customerId: 5 });
+  });
+
+  it('ignores a schema without object properties', () => {
+    expect(
+      normalizeAgenticToolInputFromContext(
+        { a: 1 },
+        { invoiceId: 1 },
+        { type: 'object', properties: ['invoiceId'] },
+        { contextKeys: ['invoiceId'] },
+      ),
+    ).toEqual({ a: 1 });
+  });
 });

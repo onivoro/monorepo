@@ -1,18 +1,18 @@
 # @onivoro/server-aws-lambda
 
-Type-safe AWS Lambda invocation for NestJS applications.
+AWS Lambda invocation for NestJS applications, plus TypeScript interfaces for common Lambda event shapes.
 
 ## Installation
 
 ```bash
-npm install @onivoro/server-aws-lambda
+npm install @onivoro/server-aws-lambda @aws-sdk/client-lambda @nestjs/common
 ```
 
-## Overview
-
-This library provides a simple AWS Lambda integration for NestJS applications, offering type-safe Lambda function invocation with automatic response parsing.
+`@aws-sdk/client-lambda` and `@nestjs/common` are peer dependencies.
 
 ## Module Setup
+
+`ServerAwsLambdaModule.configure(config)` takes the configuration object directly; the module does not read environment variables itself.
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -20,284 +20,130 @@ import { ServerAwsLambdaModule } from '@onivoro/server-aws-lambda';
 
 @Module({
   imports: [
-    ServerAwsLambdaModule.configure()
-  ]
+    ServerAwsLambdaModule.configure({
+      AWS_REGION: process.env.AWS_REGION!,
+      AWS_PROFILE: process.env.AWS_PROFILE, // optional
+    }),
+  ],
 })
 export class AppModule {}
 ```
 
-## Configuration
+The module is not global. It provides and exports `LambdaService`, `ServerAwsLambdaConfig`, a `LambdaClient` instance, and the `AwsCredentials` provider from `@onivoro/server-aws-credential-providers`.
 
-The module uses environment-based configuration:
+## Configuration
 
 ```typescript
 export class ServerAwsLambdaConfig {
-  AWS_REGION: string;
-  AWS_PROFILE?: string;  // Optional AWS profile
+  constructor(public AWS_REGION: string) {}
+  AWS_PROFILE?: string; // optional named profile from ~/.aws
 }
 ```
 
-## Service
+Pass either an object literal (as above) or `new ServerAwsLambdaConfig('us-east-1')`.
 
-### LambdaService
+### AWS Credentials
 
-The main service for invoking Lambda functions:
+Credentials are resolved by [`@onivoro/server-aws-credential-providers`](../aws-credential-providers/):
+
+- If `AWS_PROFILE` is set, credentials are loaded from that profile in the shared credentials file. If that fails, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (or their lowercase forms) from the environment are used.
+- If `AWS_PROFILE` is not set, the client uses the AWS SDK's default credential provider chain.
+
+## LambdaService
+
+### `invoke<TEvent>(event: TEvent, lambdaName: string, invocationType: InvocationType = InvocationType.RequestResponse)`
+
+Sends an `InvokeCommand` with `FunctionName: lambdaName`, `InvocationType: invocationType`, and `Payload: JSON.stringify(event, null, 2)`.
+
+- The type parameter describes the **event** you send, not the response. The return type is `Promise<any>`.
+- The response is expected to be API Gateway-shaped (`{ statusCode, body }` where `body` is a JSON string). `invoke` decodes the payload bytes as UTF-8, parses them, then parses and returns `body`.
+- If parsing fails (no payload, no `body`, or non-JSON), it returns `null`. `Event` and `DryRun` invocations return no payload, so they resolve to `null`.
+- Errors from the AWS call itself (for example `ResourceNotFoundException`) are thrown. A function error (`FunctionError` set on the response) is not thrown: its payload has no `body`, so `invoke` returns `null`. Use `LambdaClient` directly (below) when you need error details or a response that is not API Gateway-shaped.
 
 ```typescript
 import { Injectable } from '@nestjs/common';
+import { InvocationType } from '@aws-sdk/client-lambda';
 import { LambdaService } from '@onivoro/server-aws-lambda';
 
+interface ResizeImageEvent {
+  bucket: string;
+  key: string;
+  width: number;
+}
+
 @Injectable()
-export class FunctionInvokerService {
+export class ThumbnailService {
   constructor(private readonly lambdaService: LambdaService) {}
 
-  async invokeDataProcessor(data: any) {
-    const result = await this.lambdaService.invoke<ProcessorResponse>({
-      functionName: 'data-processor-function',
-      body: {
-        action: 'process',
-        data: data
-      }
-    });
-    
+  async createThumbnail(bucket: string, key: string) {
+    // Synchronous (RequestResponse) invocation; resolves with the parsed `body` when the function finishes.
+    return this.lambdaService.invoke<ResizeImageEvent>({ bucket, key, width: 256 }, 'resize-image');
+  }
+
+  async createThumbnailInBackground(bucket: string, key: string) {
+    // Asynchronous invocation; resolves (to null) once Lambda has queued the event.
+    await this.lambdaService.invoke<ResizeImageEvent>({ bucket, key, width: 256 }, 'resize-image', InvocationType.Event);
+  }
+}
+```
+
+### Reading responses with `LambdaClient`
+
+The module exports the `LambdaClient` provider, so it can be injected directly:
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
+
+@Injectable()
+export class UserLookupService {
+  constructor(private readonly lambda: LambdaClient) {}
+
+  async getUser(userId: string) {
+    const { Payload, FunctionError } = await this.lambda.send(new InvokeCommand({ FunctionName: 'get-user', Payload: JSON.stringify({ userId }) }));
+
+    const result = JSON.parse(Payload?.transformToString() || '{}');
+    if (FunctionError) {
+      throw new Error(result.errorMessage ?? FunctionError);
+    }
     return result;
   }
-
-  async invokeWithoutPayload(functionName: string) {
-    return await this.lambdaService.invoke({
-      functionName
-    });
-  }
 }
 ```
 
-## Method Details
+## Event Interfaces
 
-### invoke<T>(params)
+Type helpers for writing Lambda handlers.
 
-The `invoke` method accepts an object with the following properties:
-
-- **functionName** (string, required): The name or ARN of the Lambda function
-- **body** (any, optional): The payload to send to the function (will be JSON stringified)
-
-The method returns the parsed response of type `T` (if specified).
-
-## Response Parsing
-
-The service automatically handles response parsing with the following logic:
-
-1. If the Lambda returns a response with `statusCode` and `body` (API Gateway format), it parses the nested body
-2. Otherwise, it returns the Lambda response payload directly
-3. All responses are automatically JSON parsed
-
-## Type Safety
-
-Use TypeScript generics for type-safe responses:
+| Export                                                   | Shape                                                                                                                                                                                         |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IEvent<TBody, TPathParameters, TQueryStringParameters>` | Optional `body`, `pathParameters`, `queryStringParameters`, `headers` (`Authorization` / `authorization`), `requestContext.authorizer.userRoles`, `methodArn`, `Records: any[]`, `userPoolId` |
+| `IEventWithBody<TBody>`                                  | `IEvent` with a required `body: TBody`                                                                                                                                                        |
+| `IEventWithPathParams<TPathParameters>`                  | `IEvent` with required `pathParameters`                                                                                                                                                       |
+| `IEventWithQueryParams<TQueryStringParameters>`          | `IEvent` with required `queryStringParameters`                                                                                                                                                |
+| `IPreTokenGenerationEvent`                               | Cognito pre-token-generation trigger: `userName`, `request`, `response.claimsOverrideDetails.claimsToAddOrOverride`                                                                           |
+| `ICallback<TReturnValue>`                                | Node-style handler callback `(error: Error \| null, returnValue: TReturnValue) => void`                                                                                                       |
 
 ```typescript
-interface UserData {
-  id: string;
-  name: string;
-  email: string;
-}
+import { ICallback, IEventWithPathParams, IPreTokenGenerationEvent } from '@onivoro/server-aws-lambda';
 
-const userData = await lambdaService.invoke<UserData>({
-  functionName: 'get-user-function',
-  body: { userId: '123' }
-});
+export const getOrder = async (event: IEventWithPathParams<{ orderId: string }>) => {
+  const { orderId } = event.pathParameters;
+  return { statusCode: 200, body: JSON.stringify({ orderId }) };
+};
 
-// userData is typed as UserData
-console.log(userData.email);
+export const preTokenGeneration = (event: IPreTokenGenerationEvent, _context: unknown, callback: ICallback<IPreTokenGenerationEvent>) => {
+  event.response.claimsOverrideDetails.claimsToAddOrOverride = { tenant: 'acme' };
+  callback(null, event);
+};
 ```
 
-## Direct Client Access
+## Exports
 
-The service exposes the underlying Lambda client for advanced operations:
-
-```typescript
-import { 
-  ListFunctionsCommand,
-  GetFunctionCommand,
-  UpdateFunctionCodeCommand,
-  CreateFunctionCommand
-} from '@aws-sdk/client-lambda';
-
-@Injectable()
-export class AdvancedLambdaService {
-  constructor(private readonly lambdaService: LambdaService) {}
-
-  // List all Lambda functions
-  async listFunctions() {
-    const command = new ListFunctionsCommand({});
-    return await this.lambdaService.lambdaClient.send(command);
-  }
-
-  // Get function configuration
-  async getFunctionInfo(functionName: string) {
-    const command = new GetFunctionCommand({
-      FunctionName: functionName
-    });
-    return await this.lambdaService.lambdaClient.send(command);
-  }
-
-  // Invoke with specific invocation type
-  async invokeAsync(functionName: string, payload: any) {
-    const command = new InvokeCommand({
-      FunctionName: functionName,
-      InvocationType: 'Event', // Async invocation
-      Payload: Buffer.from(JSON.stringify(payload))
-    });
-    return await this.lambdaService.lambdaClient.send(command);
-  }
-}
-```
-
-## Complete Example
-
-```typescript
-import { Module, Injectable } from '@nestjs/common';
-import { ServerAwsLambdaModule, LambdaService } from '@onivoro/server-aws-lambda';
-
-// Types for Lambda responses
-interface CalculationResult {
-  result: number;
-  operation: string;
-  timestamp: string;
-}
-
-interface ValidationResult {
-  isValid: boolean;
-  errors?: string[];
-}
-
-@Module({
-  imports: [ServerAwsLambdaModule.configure()],
-  providers: [MicroserviceGateway],
-  exports: [MicroserviceGateway]
-})
-export class GatewayModule {}
-
-@Injectable()
-export class MicroserviceGateway {
-  constructor(private readonly lambdaService: LambdaService) {}
-
-  // Invoke calculation microservice
-  async calculate(operation: string, values: number[]) {
-    try {
-      const result = await this.lambdaService.invoke<CalculationResult>({
-        functionName: 'calculator-service',
-        body: {
-          operation,
-          values
-        }
-      });
-
-      console.log(`Calculation completed: ${result.operation} = ${result.result}`);
-      return result;
-    } catch (error) {
-      console.error('Calculation failed:', error);
-      throw error;
-    }
-  }
-
-  // Invoke validation microservice
-  async validateData(data: any, rules: any) {
-    const result = await this.lambdaService.invoke<ValidationResult>({
-      functionName: 'validator-service',
-      body: {
-        data,
-        rules
-      }
-    });
-
-    if (!result.isValid) {
-      throw new Error(`Validation failed: ${result.errors.join(', ')}`);
-    }
-
-    return result;
-  }
-
-  // Chain multiple Lambda functions
-  async processOrder(order: any) {
-    // Step 1: Validate order
-    await this.validateData(order, {
-      required: ['customerId', 'items', 'paymentMethod']
-    });
-
-    // Step 2: Calculate totals
-    const calculation = await this.calculate('sum', 
-      order.items.map(item => item.price * item.quantity)
-    );
-
-    // Step 3: Process payment
-    const payment = await this.lambdaService.invoke<{transactionId: string}>({
-      functionName: 'payment-processor',
-      body: {
-        amount: calculation.result,
-        paymentMethod: order.paymentMethod,
-        customerId: order.customerId
-      }
-    });
-
-    return {
-      orderId: order.id,
-      total: calculation.result,
-      transactionId: payment.transactionId
-    };
-  }
-}
-```
-
-## Error Handling
-
-```typescript
-try {
-  const result = await lambdaService.invoke({
-    functionName: 'my-function',
-    body: { data: 'test' }
-  });
-} catch (error) {
-  if (error.name === 'ResourceNotFoundException') {
-    console.error('Lambda function not found');
-  } else if (error.name === 'TooManyRequestsException') {
-    console.error('Rate limit exceeded');
-  } else if (error.FunctionError) {
-    console.error('Lambda function error:', error.Payload);
-  }
-}
-```
-
-## Environment Variables
-
-```bash
-# Required: AWS region
-AWS_REGION=us-east-1
-
-# Optional: AWS profile
-AWS_PROFILE=my-profile
-```
-
-## AWS Credentials
-
-The module uses the standard AWS SDK credential chain:
-1. Environment variables
-2. Shared credentials file
-3. IAM roles (for EC2/ECS/Lambda)
-
-## Limitations
-
-- Only supports synchronous invocation (RequestResponse)
-- No built-in retry logic
-- Assumes JSON payloads and responses
-- For advanced invocation options, use the exposed `lambdaClient` directly
-
-## Best Practices
-
-1. **Function Naming**: Use consistent naming conventions for Lambda functions
-2. **Error Handling**: Always handle potential Lambda errors and timeouts
-3. **Payload Size**: Keep payloads under 6 MB (synchronous invocation limit)
-4. **Timeouts**: Set appropriate timeouts for your Lambda functions
-5. **Monitoring**: Use CloudWatch Logs and X-Ray for debugging
+- `ServerAwsLambdaModule` - dynamic module with `configure(config)`
+- `ServerAwsLambdaConfig` - configuration class (also injectable)
+- `LambdaService` - `invoke(event, lambdaName, invocationType?)`
+- `IEvent`, `IEventWithBody`, `IEventWithPathParams`, `IEventWithQueryParams`, `IPreTokenGenerationEvent`, `ICallback` - event and callback interfaces
 
 ## License
 

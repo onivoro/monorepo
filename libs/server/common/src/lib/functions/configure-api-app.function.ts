@@ -7,20 +7,24 @@ import { NestApplicationOptions } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 
 export type TApiAppConfig = {
-  project: string,
-  appRoot: string,
-  corsOptions?: CorsOptions,
-  globalPrefix?: string,
-  title?: string,
-  version?: string,
-  documentBuilder?: (documentBuilder: DocumentBuilder) => DocumentBuilder,
-  enableSecurityHeaders?: boolean,
+  project: string;
+  appRoot: string;
+  corsOptions?: CorsOptions;
+  globalPrefix?: string;
+  title?: string;
+  version?: string;
+  documentBuilder?: (documentBuilder: DocumentBuilder) => DocumentBuilder;
+  enableSecurityHeaders?: boolean;
 };
 
 /**
  * Middleware to set security headers
  */
-function securityHeadersMiddleware(req: Request, res: Response, next: NextFunction) {
+function securityHeadersMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   // Prevent XSS attacks
   res.setHeader('X-XSS-Protection', '1; mode=block');
 
@@ -31,16 +35,25 @@ function securityHeadersMiddleware(req: Request, res: Response, next: NextFuncti
   res.setHeader('X-Frame-Options', 'DENY');
 
   // Force HTTPS in production
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  res.setHeader(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains; preload',
+  );
 
   // Control referrer information
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 
   // Content Security Policy - restrictive but can be customized per application
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;");
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;",
+  );
 
   // Feature policy to control browser features
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader(
+    'Permissions-Policy',
+    'geolocation=(), microphone=(), camera=()',
+  );
 
   next();
 }
@@ -48,9 +61,8 @@ function securityHeadersMiddleware(req: Request, res: Response, next: NextFuncti
 export async function configureApiApp(
   module: { name: string },
   options: TApiAppConfig,
-  nestApplicationOptions?: NestApplicationOptions
+  nestApplicationOptions?: NestApplicationOptions,
 ) {
-
   const {
     project,
     appRoot,
@@ -64,12 +76,12 @@ export async function configureApiApp(
 
   const app = await NestFactory.create(module, nestApplicationOptions);
 
-  // Apply security headers if enabled (default: true)
+  // Apply security headers if enabled (default: false)
   if (enableSecurityHeaders) {
     app.use(securityHeadersMiddleware);
   }
 
-  if(globalPrefix) {
+  if (globalPrefix) {
     app.setGlobalPrefix(globalPrefix);
   }
   app.enableCors(corsOptions);
@@ -77,7 +89,14 @@ export async function configureApiApp(
   app.use(bodyParser.json({ limit: '50mb' }));
   app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-  await initOpenapi(app, title || module.name, project, appRoot, version, documentBuilder);
+  await initOpenapi(
+    app,
+    title || module.name,
+    project,
+    appRoot,
+    version,
+    documentBuilder,
+  );
 
   return app;
 }

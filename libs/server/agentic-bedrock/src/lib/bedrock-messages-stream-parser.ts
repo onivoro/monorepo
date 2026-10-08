@@ -50,6 +50,12 @@ export class BedrockMessagesStreamParser {
     const event = asRecord(chunk);
     const type = asString(event.type);
 
+    if (type === 'message_start') {
+      // Anthropic reports input tokens here, and only here.
+      this.recordUsage(asRecord(event.message).usage);
+      return [];
+    }
+
     if (type === 'content_block_start') {
       return this.onContentBlockStart(event);
     }
@@ -70,7 +76,9 @@ export class BedrockMessagesStreamParser {
       return this.finish();
     }
 
-    if (asArray(event.choices).length) {
+    // An empty `choices` still counts: the final OpenAI-style chunk carries
+    // only `usage`.
+    if (Array.isArray(event.choices)) {
       return this.onOpenAiChatChunk(event);
     }
 
@@ -195,7 +203,9 @@ export class BedrockMessagesStreamParser {
     this.lastFinishReason = normalizeFinishReason(
       asString(delta.stop_reason) ?? asString(delta.stopReason),
     );
-    this.lastUsage = usageFromRaw(event.usage ?? delta.usage);
+    // Anthropic's message_delta usage is cumulative output tokens; input
+    // tokens came with message_start.
+    this.recordUsage(event.usage ?? delta.usage);
     return [];
   }
 
@@ -236,12 +246,17 @@ export class BedrockMessagesStreamParser {
       }
     }
 
-    this.lastUsage = usageFromRaw(
+    this.recordUsage(
       event.usage ??
         event.amazonBedrockInvocationMetrics ??
         event['amazon-bedrock-invocationMetrics'],
     );
     return events;
+  }
+
+  /** Merges a chunk's usage over what earlier chunks reported. */
+  private recordUsage(raw: unknown): void {
+    this.lastUsage = mergeUsage(this.lastUsage, usageFromRaw(raw));
   }
 
   private onOpenAiToolCalls(
@@ -557,6 +572,31 @@ function usageFromRaw(raw: unknown): AgenticUsage | undefined {
     cacheReadInputTokens: asNumber(usage.cache_read_input_tokens),
     cacheWriteInputTokens: asNumber(usage.cache_creation_input_tokens),
     providerMetadata: { bedrock: raw },
+  };
+}
+
+function mergeUsage(
+  previous: AgenticUsage | undefined,
+  next: AgenticUsage | undefined,
+): AgenticUsage | undefined {
+  if (!previous || !next) return next ?? previous;
+
+  const inputTokens = next.inputTokens ?? previous.inputTokens;
+  const outputTokens = next.outputTokens ?? previous.outputTokens;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens:
+      next.totalTokens ??
+      (inputTokens !== undefined && outputTokens !== undefined
+        ? inputTokens + outputTokens
+        : previous.totalTokens),
+    cacheReadInputTokens:
+      next.cacheReadInputTokens ?? previous.cacheReadInputTokens,
+    cacheWriteInputTokens:
+      next.cacheWriteInputTokens ?? previous.cacheWriteInputTokens,
+    providerMetadata: next.providerMetadata,
   };
 }
 

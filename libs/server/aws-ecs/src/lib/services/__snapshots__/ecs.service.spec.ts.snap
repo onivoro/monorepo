@@ -3,8 +3,21 @@
 exports[`EcsService mapObjectToEcsEnvironmentArray given "{"age":337}", lives up to its name 1`] = `
 [
   {
-    "Name": "age",
-    "Value": 337,
+    "name": "age",
+    "value": "337",
+  },
+]
+`;
+
+exports[`EcsService mapObjectToEcsEnvironmentArray given "{"enabled":true,"port":3000}", lives up to its name 1`] = `
+[
+  {
+    "name": "enabled",
+    "value": "true",
+  },
+  {
+    "name": "port",
+    "value": "3000",
   },
 ]
 `;
@@ -12,8 +25,8 @@ exports[`EcsService mapObjectToEcsEnvironmentArray given "{"age":337}", lives up
 exports[`EcsService mapObjectToEcsEnvironmentArray given "{"hot":"sauce"}", lives up to its name 1`] = `
 [
   {
-    "Name": "hot",
-    "Value": "sauce",
+    "name": "hot",
+    "value": "sauce",
   },
 ]
 `;

@@ -111,6 +111,128 @@ describe(AgenticPromptLibraryService.name, () => {
   });
 });
 
+describe(`${AgenticPromptLibraryService.name} validation and ownership`, () => {
+  const owner = { participantId: 'clinician-1' };
+
+  async function seeded() {
+    const prompts = new InMemoryPromptRepository();
+    const service = createService(prompts);
+    const prompt = await service.createPrompt({
+      id: 'fixed-id',
+      metadata: { pinned: true },
+      prompt: 'Hello {{name}}',
+      title: 'Greeting',
+      user: owner,
+    });
+    return { prompts, prompt, service };
+  }
+
+  it('uses a caller-provided id', async () => {
+    const { prompt } = await seeded();
+    expect(prompt.id).toBe('fixed-id');
+  });
+
+  it('lists prompts for the requesting owner with paging options', async () => {
+    const { prompts, service } = await seeded();
+    const list = jest.spyOn(prompts, 'listForOwner');
+
+    await expect(
+      service.listPrompts({ user: owner, limit: 5, search: 'greet' }),
+    ).resolves.toHaveLength(1);
+    expect(list).toHaveBeenCalledWith({
+      limit: 5,
+      ownerParticipantId: 'clinician-1',
+      search: 'greet',
+    });
+    await expect(
+      service.listPrompts({ user: { participantId: 'someone-else' } }),
+    ).resolves.toEqual([]);
+  });
+
+  it.each([
+    [{ title: '   ', prompt: 'x' }, 'Prompt title is required.'],
+    [{ title: 'x', prompt: '  ' }, 'Prompt text is required.'],
+    [
+      { title: 'x', prompt: 'Hi {{name}' },
+      'Prompt template has unbalanced parameter delimiters.',
+    ],
+    [
+      { title: 'x', prompt: 'Hi {{ }}' },
+      'Prompt parameter names cannot be empty.',
+    ],
+  ])('rejects invalid prompt input %j', async (input, message) => {
+    const service = createService(new InMemoryPromptRepository());
+
+    const result = service.createPrompt({ ...input, user: owner });
+
+    await expect(result).rejects.toBeInstanceOf(BadRequestException);
+    await expect(result).rejects.toThrow(message);
+  });
+
+  it('keeps existing fields when an update omits them', async () => {
+    const { prompt, service } = await seeded();
+
+    await expect(
+      service.updatePrompt({ promptId: prompt.id, user: owner }),
+    ).resolves.toMatchObject({
+      title: 'Greeting',
+      prompt: 'Hello {{name}}',
+      metadata: { pinned: true },
+      parameters: [{ name: 'name' }],
+    });
+  });
+
+  it('replaces metadata and validates updated text', async () => {
+    const { prompt, service } = await seeded();
+
+    await expect(
+      service.updatePrompt({
+        promptId: prompt.id,
+        metadata: { pinned: false },
+        user: owner,
+      }),
+    ).resolves.toMatchObject({ metadata: { pinned: false } });
+    await expect(
+      service.updatePrompt({ promptId: prompt.id, title: ' ', user: owner }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses to update prompts owned by someone else', async () => {
+    const { prompt, service } = await seeded();
+
+    await expect(
+      service.updatePrompt({
+        promptId: prompt.id,
+        title: 'Hijack',
+        user: { participantId: 'clinician-2' },
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('deletes owned prompts and rejects missing ones', async () => {
+    const { prompts, prompt, service } = await seeded();
+    const remove = jest.spyOn(prompts, 'deleteForOwner');
+
+    await service.deletePrompt(prompt.id, owner);
+
+    expect(remove).toHaveBeenCalledWith('fixed-id', 'clinician-1');
+    await expect(service.deletePrompt(prompt.id, owner)).rejects.toThrow(
+      'Prompt not found.',
+    );
+  });
+
+  it('reports a missing prompt repository', async () => {
+    const service = new AgenticPromptLibraryService(
+      { messages: new EmptyMessageRepository() },
+      { createId: () => 'id' },
+    );
+
+    expect(() => service.listPrompts({ user: owner })).toThrow(
+      'Agentic prompt repository is not configured.',
+    );
+  });
+});
+
 function createService(prompts: AgenticPromptRepository) {
   let id = 1;
   return new AgenticPromptLibraryService(

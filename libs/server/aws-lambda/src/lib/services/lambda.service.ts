@@ -1,16 +1,19 @@
-import { Injectable } from "@nestjs/common";
-import { InvokeCommand, InvocationType, LambdaClient } from "@aws-sdk/client-lambda";
+import { Injectable } from '@nestjs/common';
+import {
+  InvokeCommand,
+  InvocationType,
+  LambdaClient,
+} from '@aws-sdk/client-lambda';
 
 @Injectable()
 export class LambdaService {
-  constructor(private lambda: LambdaClient) { }
+  constructor(private lambda: LambdaClient) {}
 
   async invoke<TEvent>(
     event: TEvent,
     lambdaName: string,
-    invocationType = InvocationType.RequestResponse
+    invocationType: InvocationType = InvocationType.RequestResponse,
   ) {
-
     const command = new InvokeCommand({
       FunctionName: lambdaName,
       InvocationType: invocationType,
@@ -20,7 +23,9 @@ export class LambdaService {
     const response = await this.lambda.send(command);
 
     try {
-      return JSON.parse(JSON.parse(response?.Payload?.toString() || '{}').body);
+      return JSON.parse(
+        JSON.parse(new TextDecoder().decode(response?.Payload) || '{}').body,
+      );
     } catch (e) {
       return null;
     }

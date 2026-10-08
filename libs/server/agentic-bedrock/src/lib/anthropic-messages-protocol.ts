@@ -211,7 +211,12 @@ function isToolCallWithInput(part: AgenticPart): part is AgenticToolCallPart {
 
 function partText(message: AgenticMessage): string {
   return message.parts
-    .filter((part) => part.type === 'text' || part.type === 'reasoning')
+    .filter(
+      (part) =>
+        part.type === 'text' ||
+        part.type === 'reasoning' ||
+        part.type === 'summary',
+    )
     .map((part) => (part as { text?: string }).text ?? '')
     .join('');
 }

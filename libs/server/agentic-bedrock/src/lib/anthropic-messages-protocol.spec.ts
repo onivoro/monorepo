@@ -110,6 +110,18 @@ describe('buildAnthropicMessagesRequestBody', () => {
     expect(body.messages.map((m) => m.role)).toEqual(['user']);
   });
 
+  it('lifts summary parts into the top-level system field', () => {
+    const body = buildAnthropicMessagesRequestBody(
+      request([
+        message('summary', [{ id: 's', type: 'summary', text: 'recap' }]),
+        message('user', [text('p1', 'and now?')]),
+      ]),
+      defaults,
+    );
+
+    expect(body.system).toBe('recap');
+  });
+
   it('emits assistant tool calls as tool_use blocks', () => {
     const body = buildAnthropicMessagesRequestBody(
       request([
@@ -324,5 +336,50 @@ describe('anthropicMessagesProtocol', () => {
 
     const finish = events.find((e) => e.type === 'finish');
     expect(finish).toMatchObject({ reason: 'tool-calls' });
+  });
+});
+
+describe('buildAnthropicMessagesRequestBody (tool result content)', () => {
+  const resultPart = (result: unknown) =>
+    ({
+      id: 'r',
+      type: 'tool-result',
+      toolCallId: 'call-1',
+      name: 'lookup',
+      result,
+    }) as AgenticMessage['parts'][number];
+
+  const contentFor = (result: unknown) => {
+    const body = buildAnthropicMessagesRequestBody(
+      request([
+        message('user', [text('u', 'go')]),
+        message('tool', [resultPart(result)]),
+      ]),
+      defaults,
+    );
+    const block = body.messages[0].content[1] as { content: string };
+    return block.content;
+  };
+
+  it('stringifies results that have no resultText', () => {
+    expect(contentFor('plain')).toBe('plain');
+    expect(contentFor({ a: 1 })).toBe(JSON.stringify({ a: 1 }, null, 2));
+    expect(contentFor(undefined)).toBe('null');
+  });
+
+  it('falls back to String() for unserialisable results', () => {
+    const circular: Record<string, unknown> = {};
+    circular['self'] = circular;
+    expect(contentFor(circular)).toBe('[object Object]');
+  });
+
+  it('keeps a conversation with no user message unchanged', () => {
+    const body = buildAnthropicMessagesRequestBody(
+      request([message('assistant', [text('a', 'hello')])]),
+      defaults,
+    );
+    expect(body.messages).toEqual([
+      { role: 'assistant', content: [{ type: 'text', text: 'hello' }] },
+    ]);
   });
 });

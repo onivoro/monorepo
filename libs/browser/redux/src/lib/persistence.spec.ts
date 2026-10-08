@@ -345,4 +345,68 @@ describe('loadPersistedState', () => {
     expect(written.slices.persisted.savedAt).toBe(T0);
     expect(written.slices.other.savedAt).toBe(T0);
   });
+  it('returns the initial state when nothing is stored', () => {
+    expect(loadPersistedState(registry, nextPrefix())).toEqual({
+      persisted: { value: 0 },
+      other: { value: 0 },
+      transient: { value: 0 },
+    });
+  });
+
+  it('returns the initial state and logs when storage holds invalid JSON', () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const prefix = nextPrefix();
+    localStorage.setItem(buildStorageKey(prefix), '{not json');
+
+    expect(loadPersistedState(registry, prefix)).toEqual({
+      persisted: { value: 0 },
+      other: { value: 0 },
+      transient: { value: 0 },
+    });
+    expect(error).toHaveBeenCalledWith(
+      'Error loading state:',
+      expect.any(Error),
+    );
+    error.mockRestore();
+  });
+
+  it('falls back to the initial state for a slice missing from storage', () => {
+    const prefix = nextPrefix();
+    seedEnvelope(prefix, {
+      persisted: { savedAt: T0, state: { value: 1 } },
+    });
+
+    const loaded = loadPersistedState(registry, prefix);
+
+    expect(loaded.persisted).toEqual({ value: 1 });
+    expect(loaded.other).toEqual({ value: 0 });
+  });
+
+  it('falls back to the initial state for a fresh entry with no state', () => {
+    const prefix = nextPrefix();
+    seedEnvelope(prefix, {
+      persisted: { savedAt: T0, state: null },
+    });
+
+    expect(loadPersistedState(registry, prefix).persisted).toEqual({
+      value: 0,
+    });
+  });
+
+  it('never hydrates a slice that is not marked for persistence', () => {
+    const prefix = nextPrefix();
+    seedEnvelope(prefix, {
+      transient: { savedAt: T0, state: { value: 5 } },
+    });
+
+    expect(loadPersistedState(registry, prefix).transient).toEqual({
+      value: 0,
+    });
+  });
+});
+
+describe('buildStorageKey', () => {
+  it('combines the prefix with the current host', () => {
+    expect(buildStorageKey('app')).toBe(`app-state-${location.host}`);
+  });
 });

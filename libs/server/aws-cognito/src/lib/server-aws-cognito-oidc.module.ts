@@ -16,9 +16,7 @@ export class ServerAwsCognitoOidcModule {
   static configure(config: ServerAwsCognitoOidcConfig) {
     return moduleFactory({
       module: ServerAwsCognitoOidcModule,
-      imports: [
-        ServerAwsCognitoModule.configure(config),
-      ],
+      imports: [ServerAwsCognitoModule.configure(config)],
       providers: [
         CookieService,
         OidcAuthMiddleware,
@@ -27,19 +25,19 @@ export class ServerAwsCognitoOidcModule {
         {
           provide: JwksClient,
           useValue: new JwksClient({
-            jwksUri: `https://cognito-idp.us-east-2.amazonaws.com/${config.COGNITO_USER_POOL_ID}/.well-known/jwks.json`,
+            jwksUri: `https://cognito-idp.${config.AWS_REGION}.amazonaws.com/${config.COGNITO_USER_POOL_ID}/.well-known/jwks.json`,
             cache: true, // Cache keys to reduce requests
             rateLimit: true, // Limit requests to JWKS endpoint
-            jwksRequestsPerMinute: 10
-          })
+            jwksRequestsPerMinute: 10,
+          }),
         },
-        { provide: ServerAwsCognitoOidcConfig, useValue: config }
+        { provide: ServerAwsCognitoOidcConfig, useValue: config },
       ],
       controllers: [
         DefaultController,
         OidcConfigController,
         OidcCookieController,
       ],
-    })
+    });
   }
 }

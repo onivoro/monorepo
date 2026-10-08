@@ -11,6 +11,7 @@ import {
   HandlerInfo,
   combineDisposables,
 } from '@onivoro/isomorphic-jsonrpc';
+import { JsonRpcResponseError } from '../errors/jsonrpc-response-error';
 
 /**
  * Configuration for the WebviewMessageBus.
@@ -197,18 +198,21 @@ export class WebviewMessageBus implements MessageBus {
     if (!message || typeof message !== 'object') return;
 
     const msg = message as Record<string, unknown>;
+    const hasId = 'id' in msg && msg.id !== undefined;
 
-    if ('id' in msg && msg.id !== undefined) {
-      this.handleResponse(msg as unknown as JsonRpcResponse);
+    if (typeof msg.method === 'string') {
+      if (hasId) {
+        this.handleRequest(msg as unknown as JsonRpcRequest);
+      } else {
+        this.handleNotification(msg as unknown as JsonRpcNotification);
+      }
       return;
     }
 
-    if ('method' in msg && typeof msg.method === 'string') {
-      if (!('id' in msg)) {
-        this.handleNotification(msg as unknown as JsonRpcNotification);
-      } else {
-        this.handleRequest(msg as unknown as JsonRpcRequest);
-      }
+    // No method: a response to one of our requests. `result` is not required,
+    // because a void result can be dropped when the message is serialized.
+    if (hasId && !('method' in msg)) {
+      this.handleResponse(msg as unknown as JsonRpcResponse);
     }
   }
 
@@ -222,7 +226,7 @@ export class WebviewMessageBus implements MessageBus {
     this.pendingRequests.delete(id);
 
     if (response.error) {
-      pending.reject(new Error(response.error.message || 'Unknown error'));
+      pending.reject(new JsonRpcResponseError(response.error));
     } else {
       pending.resolve(response.result);
     }

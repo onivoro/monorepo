@@ -17,30 +17,48 @@ import { BadRequestException } from '@nestjs/common';
 import { ReadStream } from 'fs';
 
 export type TQueryStreamParams<TRecord = any> = {
-  query: string,
-  onData?: (stream: ReadStream, record: TRecord, count: number) => Promise<any | void>,
-  onError?: (stream: ReadStream, error: any) => Promise<any | void>,
-  onEnd?: (stream: ReadStream, count: number) => Promise<any | void>,
+  query: string;
+  onData?: (
+    stream: ReadStream,
+    record: TRecord,
+    count: number,
+  ) => Promise<any | void>;
+  onError?: (stream: ReadStream, error: any) => Promise<any | void>;
+  onEnd?: (stream: ReadStream, count: number) => Promise<any | void>;
 };
 
-export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntityProvider<
-  TEntity,
-  FindOneOptions<TEntity>,
-  FindManyOptions<TEntity>,
-  FindOptionsWhere<TEntity>,
-  QueryDeepPartialEntity<TEntity>
-> {
-  constructor(public entityType: EntityTarget<TEntity>, public entityManager: EntityManager) { }
+export class TypeOrmRepository<TEntity extends ObjectLiteral>
+  implements
+    IEntityProvider<
+      TEntity,
+      FindOneOptions<TEntity>,
+      FindManyOptions<TEntity>,
+      FindOptionsWhere<TEntity>,
+      QueryDeepPartialEntity<TEntity>
+    >
+{
+  constructor(
+    public entityType: EntityTarget<TEntity>,
+    public entityManager: EntityManager,
+  ) {}
 
   forTransaction(entityManager: EntityManager): TypeOrmRepository<TEntity> {
-    return new (this.constructor as typeof TypeOrmRepository<TEntity>)(this.entityType, entityManager);
+    // Clone without calling the constructor so subclasses with any constructor signature work.
+    const forked: TypeOrmRepository<TEntity> = Object.assign(
+      Object.create(Object.getPrototypeOf(this)),
+      this,
+    );
+    forked.entityManager = entityManager;
+    return forked;
   }
 
   async getMany(options: FindManyOptions<TEntity>): Promise<TEntity[]> {
     return await (this.repo.find as any)(options);
   }
 
-  async getManyAndCount(options: FindManyOptions<TEntity>): Promise<[TEntity[], number]> {
+  async getManyAndCount(
+    options: FindManyOptions<TEntity>,
+  ): Promise<[TEntity[], number]> {
     return await (this.repo.findAndCount as any)(options);
   }
 
@@ -48,18 +66,20 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     const results = await this.getMany(options);
 
     if (results?.length > 1) {
-      throw new Error(`${TypeOrmRepository.prototype.getOne.name} expects only 1 result but found ${results.length} results of entity type "${this.entityType}" for criteria ${JSON.stringify(options, null, 2)}`);
+      throw new Error(
+        `${TypeOrmRepository.prototype.getOne.name} expects only 1 result but found ${results.length} results of entity type "${this.entityType}" for criteria ${JSON.stringify(options, null, 2)}`,
+      );
     }
 
     return results[0];
   }
 
   async postOne(body: Partial<TEntity>): Promise<TEntity> {
-    return await this.repo.save(body) as TEntity;
+    return (await this.repo.save(body)) as TEntity;
   }
 
   async postMany(body: Partial<TEntity>[]): Promise<TEntity[]> {
-    return await this.repo.save(body) as TEntity[];
+    return (await this.repo.save(body)) as TEntity[];
   }
 
   async delete(options: FindOptionsWhere<TEntity>): Promise<void> {
@@ -70,19 +90,40 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     return await (this.repo.softDelete as any)(options);
   }
 
-  put<T extends DeepPartial<TEntity>>(entities: T[], options: SaveOptions & { reload: false }): Promise<T[]>;
-  put<T extends DeepPartial<TEntity>>(entities: T[], options?: SaveOptions): Promise<(T & TEntity)[]>;
-  put<T extends DeepPartial<TEntity>>(entity: T, options: SaveOptions & { reload: false }): Promise<T>;
-  put<T extends DeepPartial<TEntity>>(entity: T, options?: SaveOptions): Promise<T & TEntity>;
-  async put<T extends DeepPartial<TEntity>>(entityOrEntities: T | T[], options?: SaveOptions): Promise<T | T[] | (T & TEntity) | (T & TEntity)[]> {
+  put<T extends DeepPartial<TEntity>>(
+    entities: T[],
+    options: SaveOptions & { reload: false },
+  ): Promise<T[]>;
+  put<T extends DeepPartial<TEntity>>(
+    entities: T[],
+    options?: SaveOptions,
+  ): Promise<(T & TEntity)[]>;
+  put<T extends DeepPartial<TEntity>>(
+    entity: T,
+    options: SaveOptions & { reload: false },
+  ): Promise<T>;
+  put<T extends DeepPartial<TEntity>>(
+    entity: T,
+    options?: SaveOptions,
+  ): Promise<T & TEntity>;
+  async put<T extends DeepPartial<TEntity>>(
+    entityOrEntities: T | T[],
+    options?: SaveOptions,
+  ): Promise<T | T[] | (T & TEntity) | (T & TEntity)[]> {
     return await this.repo.save(entityOrEntities as any, options);
   }
 
-  async patch(options: FindOptionsWhere<TEntity>, body: QueryDeepPartialEntity<TEntity>) {
+  async patch(
+    options: FindOptionsWhere<TEntity>,
+    body: QueryDeepPartialEntity<TEntity>,
+  ) {
     await this.repo.update(options, body);
   }
 
-  async head(options: FindOptionsWhere<TEntity>, withDeleted = true): Promise<boolean> {
+  async head(
+    options: FindOptionsWhere<TEntity>,
+    withDeleted = true,
+  ): Promise<boolean> {
     return await this.repo.exists({ where: options, withDeleted });
   }
 
@@ -90,9 +131,14 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
     return this.entityManager.getRepository(this.entityType as any);
   }
 
-  static async queryStream<TRecord = any>(queryRunner: QueryRunner, _: TQueryStreamParams) {
+  static async queryStream<TRecord = any>(
+    queryRunner: QueryRunner,
+    _: TQueryStreamParams,
+  ) {
     if (!_.query) {
-      throw new BadRequestException(`StreamingQueryRunner requires one of: {query, table}`);
+      throw new BadRequestException(
+        `StreamingQueryRunner requires one of: {query, table}`,
+      );
     }
 
     let processedCount = 0;
@@ -106,41 +152,76 @@ export class TypeOrmRepository<TEntity extends ObjectLiteral> implements IEntity
       });
 
       stream.on('error', (error: Error) => {
-        console.error({ detail: `Error processing stream for query "${_.query}"`, error });
+        console.error({
+          detail: `Error processing stream for query "${_.query}"`,
+          error,
+        });
         _.onError?.(stream, error);
       });
 
       stream.on('end', () => {
-        console.log({ detail: `Finished processing stream for query "${_.query}"`, processedCount });
+        console.log({
+          detail: `Finished processing stream for query "${_.query}"`,
+          processedCount,
+        });
         _.onEnd?.(stream, processedCount);
       });
 
       return { stream, error: null };
     } catch (error: any) {
-      console.error({ detail: `Error processing stream for query "${_.query}"`, error });
+      console.error({
+        detail: `Error processing stream for query "${_.query}"`,
+        error,
+      });
       return { stream: null, error };
     }
   }
 
   async queryStream<TRecord = any>(_: TQueryStreamParams) {
     const queryRunner = this.entityManager.connection.createQueryRunner();
-    return await TypeOrmRepository.queryStream<TRecord>(queryRunner, _);
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        queryRunner.release().catch((error: any) =>
+          console.error({
+            detail: `Error releasing query runner for query "${_.query}"`,
+            error,
+          }),
+        );
+      }
+    };
+
+    try {
+      const result = await TypeOrmRepository.queryStream<TRecord>(
+        queryRunner,
+        _,
+      );
+
+      if (result.stream) {
+        result.stream.once('end', release);
+        result.stream.once('error', release);
+        result.stream.once('close', release);
+      } else {
+        release();
+      }
+
+      return result;
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
 
   buildWhereILike(filters?: Record<string, any>): FindOptionsWhere<TEntity> {
-
-    if(!filters) {
+    if (!filters) {
       return {};
     }
 
-    return Object.entries(filters || {})
-      .reduce(
-        (_, [column, filter]) => (
-          filter
-            ? { ..._, [column]: ILike(`%${filter}%`) }
-            : _
-        ),
-        {}
-      ) as any;
+    return Object.entries(filters || {}).reduce(
+      (_, [column, filter]) =>
+        filter ? { ..._, [column]: ILike(`%${filter}%`) } : _,
+      {},
+    ) as any;
   }
 }

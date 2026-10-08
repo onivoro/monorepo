@@ -16,7 +16,8 @@
   },
   "peerDependencies": {
     "@aws-sdk/client-location": "*",
-    "@nestjs/common": "*"
+    "@nestjs/common": "*",
+    "@nestjs/swagger": "*"
   },
   "files": [
     "**/*.js",

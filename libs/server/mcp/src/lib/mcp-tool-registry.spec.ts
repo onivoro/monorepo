@@ -32,7 +32,10 @@ describe('McpToolRegistry', () => {
     it('should throw on duplicate tool name', () => {
       registry.registerTool({ name: 'dup', description: 'first' }, jest.fn());
       expect(() =>
-        registry.registerTool({ name: 'dup', description: 'second' }, jest.fn()),
+        registry.registerTool(
+          { name: 'dup', description: 'second' },
+          jest.fn(),
+        ),
       ).toThrow(/already registered/);
     });
   });
@@ -72,12 +75,17 @@ describe('McpToolRegistry', () => {
 
       const result = await registry.executeToolRaw('tool', { input: 'x' });
 
-      expect(handler).toHaveBeenCalledWith({ input: 'x' }, expect.objectContaining({ toolName: 'tool' }));
+      expect(handler).toHaveBeenCalledWith(
+        { input: 'x' },
+        expect.objectContaining({ toolName: 'tool' }),
+      );
       expect(result).toEqual({ data: 'hello' });
     });
 
     it('should throw for unknown tool', async () => {
-      await expect(registry.executeToolRaw('nope', {})).rejects.toThrow(/not registered/);
+      await expect(registry.executeToolRaw('nope', {})).rejects.toThrow(
+        /not registered/,
+      );
     });
 
     it('should forward authInfo in the context', async () => {
@@ -169,7 +177,10 @@ describe('McpToolRegistry', () => {
     it('should validate params against the schema', async () => {
       const schema = z.object({ name: z.string() });
       const handler = jest.fn().mockResolvedValue('ok');
-      registry.registerTool({ name: 'tool', description: 'd', schema }, handler);
+      registry.registerTool(
+        { name: 'tool', description: 'd', schema },
+        handler,
+      );
 
       await expect(
         registry.executeToolRaw('tool', { name: 123 } as any),
@@ -178,9 +189,15 @@ describe('McpToolRegistry', () => {
     });
 
     it('should pass validated params to the handler', async () => {
-      const schema = z.object({ name: z.string(), count: z.number().default(1) });
+      const schema = z.object({
+        name: z.string(),
+        count: z.number().default(1),
+      });
       const handler = jest.fn().mockResolvedValue('ok');
-      registry.registerTool({ name: 'tool', description: 'd', schema }, handler);
+      registry.registerTool(
+        { name: 'tool', description: 'd', schema },
+        handler,
+      );
 
       await registry.executeToolRaw('tool', { name: 'test' });
 
@@ -218,7 +235,9 @@ describe('McpToolRegistry', () => {
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       const result = await registry.executeToolWrapped('tool', {});
-      expect(result).toEqual({ content: [{ type: 'text', text: 'plain text' }] });
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'plain text' }],
+      });
     });
 
     it('should stringify object results', async () => {
@@ -322,7 +341,9 @@ describe('McpToolRegistry', () => {
       registry.registerInterceptor(interceptor);
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
-      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow('unauthorized');
+      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(
+        'unauthorized',
+      );
       expect(handler).not.toHaveBeenCalled();
     });
 
@@ -330,7 +351,7 @@ describe('McpToolRegistry', () => {
       const handler = jest.fn().mockResolvedValue({ count: 1 });
       const interceptor: McpToolInterceptor = {
         async intercept(ctx, next) {
-          const result = await next() as Record<string, unknown>;
+          const result = (await next()) as Record<string, unknown>;
           return { ...result, intercepted: true };
         },
       };
@@ -369,7 +390,13 @@ describe('McpToolRegistry', () => {
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
       await registry.executeToolRaw('tool', {});
 
-      expect(order).toEqual(['i1-before', 'i2-before', 'handler', 'i2-after', 'i1-after']);
+      expect(order).toEqual([
+        'i1-before',
+        'i2-before',
+        'handler',
+        'i2-after',
+        'i1-after',
+      ]);
     });
 
     it('should short-circuit the chain when an interceptor does not call next()', async () => {
@@ -391,15 +418,21 @@ describe('McpToolRegistry', () => {
 
   describe('guards', () => {
     class AllowGuard implements McpCanActivate {
-      canActivate() { return true; }
+      canActivate() {
+        return true;
+      }
     }
 
     class DenyGuard implements McpCanActivate {
-      canActivate() { return false; }
+      canActivate() {
+        return false;
+      }
     }
 
     class AsyncDenyGuard implements McpCanActivate {
-      async canActivate() { return false; }
+      async canActivate() {
+        return false;
+      }
     }
 
     const scopeGuard = new McpScopeGuard();
@@ -421,7 +454,11 @@ describe('McpToolRegistry', () => {
       withResolver();
       const handler = jest.fn().mockResolvedValue('ok');
       const guards: McpGuardMetadata[] = [{ guardClass: AllowGuard }];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
       const result = await registry.executeToolRaw('tool', {});
       expect(result).toBe('ok');
@@ -432,9 +469,15 @@ describe('McpToolRegistry', () => {
       withResolver();
       const handler = jest.fn().mockResolvedValue('ok');
       const guards: McpGuardMetadata[] = [{ guardClass: DenyGuard }];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
-      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(/Access denied by DenyGuard/);
+      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(
+        /Access denied by DenyGuard/,
+      );
       expect(handler).not.toHaveBeenCalled();
     });
 
@@ -442,9 +485,15 @@ describe('McpToolRegistry', () => {
       withResolver();
       const handler = jest.fn().mockResolvedValue('ok');
       const guards: McpGuardMetadata[] = [{ guardClass: AsyncDenyGuard }];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
-      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(/Access denied/);
+      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(
+        /Access denied/,
+      );
       expect(handler).not.toHaveBeenCalled();
     });
 
@@ -453,7 +502,11 @@ describe('McpToolRegistry', () => {
       const handler = jest.fn().mockResolvedValue('ok');
       const schema = z.object({ name: z.string() });
       const guards: McpGuardMetadata[] = [{ guardClass: DenyGuard }];
-      registry.registerTool({ name: 'tool', description: 'd', schema }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd', schema },
+        handler,
+        guards,
+      );
 
       // Pass params that would fail schema validation, but guard rejects first
       await expect(
@@ -474,9 +527,15 @@ describe('McpToolRegistry', () => {
         },
       });
       const guards: McpGuardMetadata[] = [{ guardClass: DenyGuard }];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
-      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(/Access denied/);
+      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(
+        /Access denied/,
+      );
       expect(order).toEqual([]);
     });
 
@@ -487,18 +546,30 @@ describe('McpToolRegistry', () => {
         { guardClass: AllowGuard },
         { guardClass: DenyGuard },
       ];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
-      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(/Access denied by DenyGuard/);
+      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(
+        /Access denied by DenyGuard/,
+      );
       expect(handler).not.toHaveBeenCalled();
     });
 
     it('should throw when guards are configured but no resolver is set', async () => {
       const handler = jest.fn().mockResolvedValue('ok');
       const guards: McpGuardMetadata[] = [{ guardClass: AllowGuard }];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
-      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(/no guard resolver/);
+      await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(
+        /no guard resolver/,
+      );
     });
 
     it('should pass config to the guard', async () => {
@@ -507,7 +578,11 @@ describe('McpToolRegistry', () => {
       const guards: McpGuardMetadata[] = [
         { guardClass: McpScopeGuard, config: { scopes: ['write'] } },
       ];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
       // With matching scopes — allowed
       await registry.executeToolRaw('tool', {}, MOCK_AUTH);
@@ -521,7 +596,11 @@ describe('McpToolRegistry', () => {
         const guards: McpGuardMetadata[] = [
           { guardClass: McpScopeGuard, config: { scopes: ['read', 'write'] } },
         ];
-        registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+        registry.registerTool(
+          { name: 'tool', description: 'd' },
+          handler,
+          guards,
+        );
 
         await registry.executeToolRaw('tool', {}, MOCK_AUTH);
         expect(handler).toHaveBeenCalled();
@@ -533,7 +612,11 @@ describe('McpToolRegistry', () => {
         const guards: McpGuardMetadata[] = [
           { guardClass: McpScopeGuard, config: { scopes: ['admin'] } },
         ];
-        registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+        registry.registerTool(
+          { name: 'tool', description: 'd' },
+          handler,
+          guards,
+        );
 
         await expect(
           registry.executeToolRaw('tool', {}, MOCK_AUTH),
@@ -546,11 +629,15 @@ describe('McpToolRegistry', () => {
         const guards: McpGuardMetadata[] = [
           { guardClass: McpScopeGuard, config: { scopes: ['read'] } },
         ];
-        registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+        registry.registerTool(
+          { name: 'tool', description: 'd' },
+          handler,
+          guards,
+        );
 
-        await expect(
-          registry.executeToolRaw('tool', {}),
-        ).rejects.toThrow(/Access denied/);
+        await expect(registry.executeToolRaw('tool', {})).rejects.toThrow(
+          /Access denied/,
+        );
       });
 
       it('should allow when no scopes are required', async () => {
@@ -559,7 +646,11 @@ describe('McpToolRegistry', () => {
         const guards: McpGuardMetadata[] = [
           { guardClass: McpScopeGuard, config: { scopes: [] } },
         ];
-        registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+        registry.registerTool(
+          { name: 'tool', description: 'd' },
+          handler,
+          guards,
+        );
 
         await registry.executeToolRaw('tool', {});
         expect(handler).toHaveBeenCalled();
@@ -570,7 +661,10 @@ describe('McpToolRegistry', () => {
   describe('auth strategy', () => {
     it('should enrich authInfo before guards see it', async () => {
       registry.setAuthStrategy({
-        resolveAuth: (authInfo) => ({ ...authInfo!, extra: { userId: 'user-42' } }),
+        resolveAuth: (authInfo) => ({
+          ...authInfo!,
+          extra: { userId: 'user-42' },
+        }),
       });
 
       let guardReceivedAuth: McpAuthInfo | undefined;
@@ -584,7 +678,11 @@ describe('McpToolRegistry', () => {
 
       const handler = jest.fn().mockResolvedValue('ok');
       const guards: McpGuardMetadata[] = [{ guardClass: InspectGuard }];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
       await registry.executeToolRaw('tool', {}, MOCK_AUTH);
       expect(guardReceivedAuth?.extra).toEqual({ userId: 'user-42' });
@@ -592,20 +690,31 @@ describe('McpToolRegistry', () => {
 
     it('should reject by throwing before guards run', async () => {
       registry.setAuthStrategy({
-        resolveAuth: () => { throw new Error('Token expired'); },
+        resolveAuth: () => {
+          throw new Error('Token expired');
+        },
       });
 
       const guardCalled = jest.fn().mockReturnValue(true);
       class SpyGuard implements McpCanActivate {
-        canActivate() { guardCalled(); return true; }
+        canActivate() {
+          guardCalled();
+          return true;
+        }
       }
       registry.setGuardResolver(() => new SpyGuard());
 
       const handler = jest.fn().mockResolvedValue('ok');
       const guards: McpGuardMetadata[] = [{ guardClass: SpyGuard }];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
-      await expect(registry.executeToolRaw('tool', {}, MOCK_AUTH)).rejects.toThrow('Token expired');
+      await expect(
+        registry.executeToolRaw('tool', {}, MOCK_AUTH),
+      ).rejects.toThrow('Token expired');
       expect(guardCalled).not.toHaveBeenCalled();
       expect(handler).not.toHaveBeenCalled();
     });
@@ -614,10 +723,12 @@ describe('McpToolRegistry', () => {
       registry.setAuthStrategy({ resolveAuth: () => undefined });
 
       let handlerAuth: McpAuthInfo | undefined = MOCK_AUTH;
-      const handler = jest.fn().mockImplementation((_params: any, ctx: McpToolContext) => {
-        handlerAuth = ctx.authInfo;
-        return 'ok';
-      });
+      const handler = jest
+        .fn()
+        .mockImplementation((_params: any, ctx: McpToolContext) => {
+          handlerAuth = ctx.authInfo;
+          return 'ok';
+        });
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       await registry.executeToolRaw('tool', {}, MOCK_AUTH);
@@ -632,10 +743,12 @@ describe('McpToolRegistry', () => {
       });
 
       let handlerAuth: McpAuthInfo | undefined;
-      const handler = jest.fn().mockImplementation((_params: any, ctx: McpToolContext) => {
-        handlerAuth = ctx.authInfo;
-        return 'ok';
-      });
+      const handler = jest
+        .fn()
+        .mockImplementation((_params: any, ctx: McpToolContext) => {
+          handlerAuth = ctx.authInfo;
+          return 'ok';
+        });
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       await registry.executeToolRaw('tool', {}, MOCK_AUTH);
@@ -645,17 +758,27 @@ describe('McpToolRegistry', () => {
     it('should run before guards (ordering)', async () => {
       const order: string[] = [];
       registry.setAuthStrategy({
-        resolveAuth: (authInfo) => { order.push('provider'); return authInfo; },
+        resolveAuth: (authInfo) => {
+          order.push('provider');
+          return authInfo;
+        },
       });
 
       class OrderGuard implements McpCanActivate {
-        canActivate() { order.push('guard'); return true; }
+        canActivate() {
+          order.push('guard');
+          return true;
+        }
       }
       registry.setGuardResolver(() => new OrderGuard());
 
       const handler = jest.fn().mockResolvedValue('ok');
       const guards: McpGuardMetadata[] = [{ guardClass: OrderGuard }];
-      registry.registerTool({ name: 'tool', description: 'd' }, handler, guards);
+      registry.registerTool(
+        { name: 'tool', description: 'd' },
+        handler,
+        guards,
+      );
 
       await registry.executeToolRaw('tool', {}, MOCK_AUTH);
       expect(order).toEqual(['provider', 'guard']);
@@ -667,10 +790,12 @@ describe('McpToolRegistry', () => {
       });
 
       let handlerAuth: McpAuthInfo | undefined;
-      const handler = jest.fn().mockImplementation((_params: any, ctx: McpToolContext) => {
-        handlerAuth = ctx.authInfo;
-        return 'ok';
-      });
+      const handler = jest
+        .fn()
+        .mockImplementation((_params: any, ctx: McpToolContext) => {
+          handlerAuth = ctx.authInfo;
+          return 'ok';
+        });
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       await registry.executeToolRaw('tool', {}, MOCK_AUTH);
@@ -680,10 +805,12 @@ describe('McpToolRegistry', () => {
 
     it('should pass through raw authInfo when no provider is set', async () => {
       let handlerAuth: McpAuthInfo | undefined;
-      const handler = jest.fn().mockImplementation((_params: any, ctx: McpToolContext) => {
-        handlerAuth = ctx.authInfo;
-        return 'ok';
-      });
+      const handler = jest
+        .fn()
+        .mockImplementation((_params: any, ctx: McpToolContext) => {
+          handlerAuth = ctx.authInfo;
+          return 'ok';
+        });
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       await registry.executeToolRaw('tool', {}, MOCK_AUTH);
@@ -693,7 +820,10 @@ describe('McpToolRegistry', () => {
     it('should call provider with undefined when no authInfo is present', async () => {
       let providerReceived: McpAuthInfo | undefined | null = null;
       registry.setAuthStrategy({
-        resolveAuth: (authInfo) => { providerReceived = authInfo; return authInfo; },
+        resolveAuth: (authInfo) => {
+          providerReceived = authInfo;
+          return authInfo;
+        },
       });
 
       const handler = jest.fn().mockResolvedValue('ok');
@@ -743,7 +873,9 @@ describe('McpToolRegistry', () => {
     });
 
     it('should handle listener errors without breaking other listeners', () => {
-      const bad = jest.fn().mockImplementation(() => { throw new Error('oops'); });
+      const bad = jest.fn().mockImplementation(() => {
+        throw new Error('oops');
+      });
       const good = jest.fn();
       registry.onRegistrationChange(bad);
       registry.onRegistrationChange(good);
@@ -770,12 +902,16 @@ describe('McpToolRegistry', () => {
 
   describe('setToolEnabled', () => {
     it('should throw when tool is not registered', () => {
-      expect(() => registry.setToolEnabled('nope', false)).toThrow('not registered');
+      expect(() => registry.setToolEnabled('nope', false)).toThrow(
+        'not registered',
+      );
     });
 
     it('should throw when no delegate is set', () => {
       registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
-      expect(() => registry.setToolEnabled('tool', false)).toThrow('No server wired');
+      expect(() => registry.setToolEnabled('tool', false)).toThrow(
+        'No server wired',
+      );
     });
 
     it('should call delegate when set', () => {
@@ -788,6 +924,35 @@ describe('McpToolRegistry', () => {
 
       registry.setToolEnabled('tool', true);
       expect(delegate).toHaveBeenCalledWith('tool', true);
+    });
+
+    it('should call every delegate and stop calling a removed one', () => {
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+      const first = jest.fn();
+      const second = jest.fn();
+      const removeFirst = registry.setToolEnabledDelegate(first);
+      registry.setToolEnabledDelegate(second);
+
+      registry.setToolEnabled('tool', false);
+      expect(first).toHaveBeenCalledWith('tool', false);
+      expect(second).toHaveBeenCalledWith('tool', false);
+
+      removeFirst();
+      registry.setToolEnabled('tool', true);
+      expect(first).toHaveBeenCalledTimes(1);
+      expect(second).toHaveBeenCalledWith('tool', true);
+    });
+
+    it('should remember enabled state, even while no server is currently wired', () => {
+      registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+      expect(registry.isToolEnabled('tool')).toBe(true);
+
+      registry.setToolEnabledDelegate(jest.fn())();
+      registry.setToolEnabled('tool', false);
+      expect(registry.isToolEnabled('tool')).toBe(false);
+
+      registry.setToolEnabled('tool', true);
+      expect(registry.isToolEnabled('tool')).toBe(true);
     });
   });
 
@@ -826,7 +991,9 @@ describe('McpToolRegistry', () => {
     });
 
     it('should not throw when unsubscribing from non-existent URI', () => {
-      expect(() => registry.unsubscribeResource('app://nope', 'sess-1')).not.toThrow();
+      expect(() =>
+        registry.unsubscribeResource('app://nope', 'sess-1'),
+      ).not.toThrow();
     });
 
     it('should remove all subscriptions for a session', () => {
@@ -837,7 +1004,9 @@ describe('McpToolRegistry', () => {
       registry.removeSessionSubscriptions('sess-1');
 
       expect(registry.getResourceSubscribers('app://a').size).toBe(1);
-      expect(registry.getResourceSubscribers('app://a').has('sess-2')).toBe(true);
+      expect(registry.getResourceSubscribers('app://a').has('sess-2')).toBe(
+        true,
+      );
       expect(registry.getResourceSubscribers('app://b').size).toBe(0);
     });
 
@@ -861,7 +1030,9 @@ describe('McpToolRegistry', () => {
     });
 
     it('should isolate errors in resource update listeners', () => {
-      const badListener = jest.fn().mockImplementation(() => { throw new Error('oops'); });
+      const badListener = jest.fn().mockImplementation(() => {
+        throw new Error('oops');
+      });
       const goodListener = jest.fn();
       registry.onResourceUpdate(badListener);
       registry.onResourceUpdate(goodListener);

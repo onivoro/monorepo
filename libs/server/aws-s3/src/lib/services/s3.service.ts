@@ -1,5 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, PutObjectCommandOutput, PutObjectRequest, S3, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  PutObjectCommandOutput,
+  PutObjectRequest,
+  S3,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { ServerAwsS3Config } from '../server-aws-s3-config.class';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { IS3UploadResponse } from '../interfaces/s3-upload-response.interface';
@@ -9,8 +19,8 @@ import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 export type TS3Params = {
-  Key: string,
-  Bucket?: string | null | undefined
+  Key: string;
+  Bucket?: string | null | undefined;
 };
 
 export type TS3PrefixParams = Omit<TS3Params, 'Key'> & {
@@ -21,17 +31,33 @@ export type TS3ObjectsParams = Omit<TS3Params, 'Key'> & {
   Objects: { Key: string }[];
 };
 
-export type TStreamFromS3Options<T = unknown> = Omit<ReadLineOptions, 'input'> & {
+export type TStreamFromS3Options<T = unknown> = Omit<
+  ReadLineOptions,
+  'input'
+> & {
   Bucket?: string;
   skipEmptyLines?: boolean;
   parser?: (line: string) => T;
 };
 
+function describeBody(Body: unknown): string {
+  return (Body as any)?.constructor?.name ?? typeof Body;
+}
+
 @Injectable()
 export class S3Service {
-  constructor(private config: ServerAwsS3Config, private s3: S3Client) { }
+  constructor(
+    private config: ServerAwsS3Config,
+    private s3: S3Client,
+  ) {}
 
-  async upload(params: TS3Params & { Body: PutObjectRequest['Body'], ACL?: PutObjectRequest['ACL'], ContentType?: PutObjectRequest['ContentType'] }): Promise<IS3UploadResponse> {
+  async upload(
+    params: TS3Params & {
+      Body: PutObjectRequest['Body'];
+      ACL?: PutObjectRequest['ACL'];
+      ContentType?: PutObjectRequest['ContentType'];
+    },
+  ): Promise<IS3UploadResponse> {
     // todo: sanitize filename here before uploading
     const resolvedParams = this.addDefaultBucket(params);
     const command = new PutObjectCommand(this.addDefaultBucket(resolvedParams));
@@ -88,7 +114,12 @@ export class S3Service {
    * }
    */
   async *streamFromS3<T>(s3FileKey: string, options?: TStreamFromS3Options<T>) {
-    const { Bucket, skipEmptyLines = true, parser, ...readlineOptions } = options ?? {};
+    const {
+      Bucket,
+      skipEmptyLines = true,
+      parser,
+      ...readlineOptions
+    } = options ?? {};
 
     const result = await this.getFile({
       Key: s3FileKey,
@@ -97,9 +128,7 @@ export class S3Service {
 
     if (!(result.Body instanceof Readable)) {
       throw new Error(
-        `File not readable -> key:${s3FileKey}, type:${Object.getPrototypeOf(
-          result.Body
-        )}`
+        `File not readable -> key:${s3FileKey}, type:${describeBody(result.Body)}`,
       );
     }
 
@@ -130,7 +159,10 @@ export class S3Service {
    *   console.log(line);
    * }
    */
-  async *streamLinesFromS3(s3FileKey: string, options?: Omit<TStreamFromS3Options<string>, 'parser'>) {
+  async *streamLinesFromS3(
+    s3FileKey: string,
+    options?: Omit<TStreamFromS3Options<string>, 'parser'>,
+  ) {
     yield* this.streamFromS3<string>(s3FileKey, {
       ...options,
       parser: (line) => line,
@@ -152,7 +184,10 @@ export class S3Service {
    */
   async *streamCsvFromS3(
     s3FileKey: string,
-    options?: Omit<TStreamFromS3Options<string[]>, 'parser'> & { skipHeader?: boolean; delimiter?: string }
+    options?: Omit<TStreamFromS3Options<string[]>, 'parser'> & {
+      skipHeader?: boolean;
+      delimiter?: string;
+    },
   ) {
     const { skipHeader, delimiter = ',', ...rest } = options ?? {};
     let isFirst = true;
@@ -185,7 +220,7 @@ export class S3Service {
    */
   async collectFromS3<T>(
     s3FileKey: string,
-    options?: TStreamFromS3Options<T> & { limit?: number }
+    options?: TStreamFromS3Options<T> & { limit?: number },
   ): Promise<T[]> {
     const { limit, ...streamOptions } = options ?? {};
     const results: T[] = [];
@@ -217,7 +252,7 @@ export class S3Service {
   async forEachFromS3<T>(
     s3FileKey: string,
     callback: (record: T, index: number) => Promise<void> | void,
-    options?: TStreamFromS3Options<T>
+    options?: TStreamFromS3Options<T>,
   ): Promise<number> {
     let index = 0;
 
@@ -256,7 +291,7 @@ export class S3Service {
   async pipeFromS3(
     s3FileKey: string,
     destination: Writable,
-    options?: { Bucket?: string }
+    options?: { Bucket?: string },
   ): Promise<void> {
     const result = await this.getFile({
       Key: s3FileKey,
@@ -265,9 +300,7 @@ export class S3Service {
 
     if (!(result.Body instanceof Readable)) {
       throw new Error(
-        `File not readable -> key:${s3FileKey}, type:${Object.getPrototypeOf(
-          result.Body
-        )}`
+        `File not readable -> key:${s3FileKey}, type:${describeBody(result.Body)}`,
       );
     }
 
@@ -282,7 +315,10 @@ export class S3Service {
    * const stream = await s3Service.getReadableStreamFromS3('data.bin');
    * stream.pipe(someTransform).pipe(destination);
    */
-  async getReadableStreamFromS3(s3FileKey: string, options?: { Bucket?: string }): Promise<Readable> {
+  async getReadableStreamFromS3(
+    s3FileKey: string,
+    options?: { Bucket?: string },
+  ): Promise<Readable> {
     const result = await this.getFile({
       Key: s3FileKey,
       Bucket: options?.Bucket,
@@ -290,30 +326,44 @@ export class S3Service {
 
     if (!(result.Body instanceof Readable)) {
       throw new Error(
-        `File not readable -> key:${s3FileKey}, type:${Object.getPrototypeOf(
-          result.Body
-        )}`
+        `File not readable -> key:${s3FileKey}, type:${describeBody(result.Body)}`,
       );
     }
 
     return result.Body;
   }
 
-  async uploadPublic(params: TS3Params & { Body: PutObjectRequest['Body'], ContentType?: PutObjectRequest['ContentType'] }): Promise<IS3UploadResponse> {
+  async uploadPublic(
+    params: TS3Params & {
+      Body: PutObjectRequest['Body'];
+      ContentType?: PutObjectRequest['ContentType'];
+    },
+  ): Promise<IS3UploadResponse> {
     return await this.upload({ ...params, ACL: 'public-read' });
   }
 
-  async getPresignedUrl(params: TS3Params & { Expires: number, ResponseContentDisposition: string }): Promise<string> {
-    const { Bucket, Key } = this.addDefaultBucket(params);
-    const command = new GetObjectCommand({ Bucket, Key });
-    const url = await getSignedUrl(this.s3, command, { expiresIn: params.Expires });
+  async getPresignedUrl(
+    params: TS3Params & { Expires: number; ResponseContentDisposition: string },
+  ): Promise<string> {
+    const { Bucket, Key, ResponseContentDisposition } =
+      this.addDefaultBucket(params);
+    const command = new GetObjectCommand({
+      Bucket,
+      Key,
+      ResponseContentDisposition,
+    });
+    const url = await getSignedUrl(this.s3, command, {
+      expiresIn: params.Expires,
+    });
 
     return url;
   }
 
   async getFile(params: TS3Params) {
     if (!params?.Key) {
-      throw new BadRequestException(`${S3Service.name}.${S3Service.prototype.getFile.name} requires a valid S3 key`)
+      throw new BadRequestException(
+        `${S3Service.name}.${S3Service.prototype.getFile.name} requires a valid S3 key`,
+      );
     }
 
     const { Bucket, Key } = this.addDefaultBucket(params);
@@ -323,7 +373,9 @@ export class S3Service {
 
   async delete(params: TS3Params) {
     if (!params?.Key) {
-      throw new BadRequestException(`${S3Service.name}.${S3Service.prototype.delete.name} requires a valid S3 key`)
+      throw new BadRequestException(
+        `${S3Service.name}.${S3Service.prototype.delete.name} requires a valid S3 key`,
+      );
     }
 
     const command = new DeleteObjectCommand(this.addDefaultBucket(params));
@@ -334,61 +386,90 @@ export class S3Service {
 
   async deleteByPrefix(params: TS3PrefixParams) {
     if (!params?.Prefix) {
-      throw new BadRequestException(`${S3Service.name}.${S3Service.prototype.deleteByPrefix.name} requires a valid S3 prefix`)
+      throw new BadRequestException(
+        `${S3Service.name}.${S3Service.prototype.deleteByPrefix.name} requires a valid S3 prefix`,
+      );
     }
 
-    const command = new ListObjectsV2Command(this.addDefaultBucket(params));
-    const data = await this.s3.send(command);
+    const { Bucket, Prefix } = this.addDefaultBucket(params);
+    let ContinuationToken: string | undefined;
 
-    const Objects: {Key: string}[] = (data.Contents || []).map(({ Key }) => ({ Key })) as any;
+    do {
+      const data = await this.s3.send(
+        new ListObjectsV2Command({ Bucket, Prefix, ContinuationToken }),
+      );
 
-    await this.deleteObjects(this.addDefaultBucket({ ...params, Objects }));
+      const Objects: { Key: string }[] = (data.Contents || []).map(
+        ({ Key }) => ({ Key }),
+      ) as any;
+
+      if (Objects.length) {
+        await this.deleteObjects({ Bucket, Objects });
+      }
+
+      ContinuationToken = data.IsTruncated
+        ? data.NextContinuationToken
+        : undefined;
+    } while (ContinuationToken);
   }
 
   async deleteObjects(params: TS3ObjectsParams) {
     if (!params?.Objects?.length) {
-      throw new BadRequestException(`${S3Service.name}.${S3Service.prototype.deleteByPrefix.name} requires an array of valid S3 keys`)
+      throw new BadRequestException(
+        `${S3Service.name}.${S3Service.prototype.deleteObjects.name} requires an array of valid S3 keys`,
+      );
     }
 
     const { Objects, Bucket } = this.addDefaultBucket(params);
 
     if (Objects.length) {
-
       const command = new DeleteObjectsCommand({
         Bucket,
-        Delete: { Objects }
+        Delete: { Objects },
       });
 
       return await this.s3.send(command);
     }
   }
 
-  async getDownloadUrl(params: TS3Params & { fileName?: string | null | undefined }) {
+  async getDownloadUrl(
+    params: TS3Params & { fileName?: string | null | undefined },
+  ) {
     if (!params || !params?.Key) {
-      throw new BadRequestException(`${S3Service.name}.${S3Service.prototype.getDownloadUrl.name} requires a valid S3 key`)
+      throw new BadRequestException(
+        `${S3Service.name}.${S3Service.prototype.getDownloadUrl.name} requires a valid S3 key`,
+      );
     }
 
     return await this.getPresignedUrl({
       ...this.addDefaultBucket(params),
       Expires: 100,
-      ResponseContentDisposition: `attachment; filename="${params.fileName || params.Key.split('/').pop()}"`
+      ResponseContentDisposition: `attachment; filename="${params.fileName || params.Key.split('/').pop()}"`,
     });
   }
 
-  async getAssetUrl(params: TS3Params & { Expires?: number | null | undefined }) {
+  async getAssetUrl(
+    params: TS3Params & { Expires?: number | null | undefined },
+  ) {
     if (!params || !params?.Key) {
-      throw new BadRequestException(`${S3Service.name}.${S3Service.prototype.getAssetUrl.name} requires a valid S3 key`)
+      throw new BadRequestException(
+        `${S3Service.name}.${S3Service.prototype.getAssetUrl.name} requires a valid S3 key`,
+      );
     }
 
     return await this.getPresignedUrl({
       ...this.addDefaultBucket(params),
       Expires: params.Expires || 10_000,
-      ResponseContentDisposition: 'inline'
-    })
+      ResponseContentDisposition: 'inline',
+    });
   }
 
-  private addDefaultBucket<TParams extends { Bucket?: string | null } & Record<string, any>>(params: TParams): TParams & { Bucket: string } {
-    return { ...params, Bucket: this.getBucket(params?.Bucket) } as TParams & { Bucket: string };
+  private addDefaultBucket<
+    TParams extends { Bucket?: string | null } & Record<string, any>,
+  >(params: TParams): TParams & { Bucket: string } {
+    return { ...params, Bucket: this.getBucket(params?.Bucket) } as TParams & {
+      Bucket: string;
+    };
   }
 
   private getBucket(Bucket?: string | null): string {

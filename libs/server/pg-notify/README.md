@@ -10,14 +10,24 @@ event and you would rather not run a broker to do it.
 ## Installation
 
 ```bash
-npm install @onivoro/server-pg-notify pg-listen typeorm
+npm install @onivoro/server-pg-notify pg-listen pg typeorm
 ```
+
+Peer dependencies: `@nestjs/common` (10 or 11), `pg-listen` (^1.7, which itself needs
+`pg`), and `typeorm` (^0.3).
 
 ## Listening
 
-Extend `NotificationListener` with the channel and a payload type:
+Extend `NotificationListener` with the channel and a payload type, and register
+the subclass as a provider:
 
 ```ts
+import { Injectable } from '@nestjs/common';
+import { NotificationListener } from '@onivoro/server-pg-notify';
+import { DataSource } from 'typeorm';
+
+type OutboxEvent = { id: string; kind: string };
+
 @Injectable()
 export class OutboxListener extends NotificationListener<OutboxEvent> {
   constructor(dataSource: DataSource) {
@@ -30,8 +40,17 @@ export class OutboxListener extends NotificationListener<OutboxEvent> {
 }
 ```
 
-Connection details come from the TypeORM `DataSource`, so the subscription uses
-the same credentials as the rest of the application.
+Connection details come from the TypeORM `DataSource` (which must use the
+Postgres driver), so the subscription uses the same credentials as the rest of
+the application: `url`, `host`, `username`, `password`, `database`, `port`,
+`ssl`, `connectTimeoutMS`, `applicationName`, `poolSize`, and anything in
+`extra` (spread last, so it can override the settings below).
+
+The subscription is opened in `onModuleInit` and closed in `onModuleDestroy`.
+A failure to connect at boot is not caught, so it fails application startup
+rather than leaving an app that looks healthy and receives nothing.
+`onNotification` may return a promise. The channel name is available to
+subclasses as `this.channel`.
 
 ### Why this is not twenty lines
 
@@ -50,14 +69,49 @@ one that is easy to miss:
    silently deaf is a worse trade: a crash at least restarts into a working
    listener.
 
+Concretely: `pg-listen` is given a 30 second `retryTimeout`. When it still gives
+up, the listener tears the subscriber down and builds a new one after 1s, then
+2s, 4s, and so on, capped at 30s, resetting after a successful subscribe.
 Reconnection is unbounded with capped backoff. Bounded attempts end in a process
 that is running and permanently deaf, which is the failure nobody notices.
 
 ## Publishing
 
+`PgNotifyPublisher` takes a TypeORM `DataSource` and optional
+`PgNotifyPublisherOptions`. It is `@Injectable()` and resolves the `DataSource`
+by type, so with `@nestjs/typeorm` (or any provider registered under the
+`DataSource` class) it can be listed as a plain provider; the options are
+`@Optional()` and default to `{}`:
+
 ```ts
-await publisher.publishJson('outbox_events', { id, kind });
+import { Module } from '@nestjs/common';
+import { PgNotifyPublisher } from '@onivoro/server-pg-notify';
+
+@Module({
+  providers: [PgNotifyPublisher],
+  exports: [PgNotifyPublisher],
+})
+export class NotifyModule {}
 ```
+
+To pass options (such as `onOversized`), or to use a non-default `DataSource`,
+provide it with a factory instead:
+
+```ts
+{
+  provide: PgNotifyPublisher,
+  useFactory: (dataSource: DataSource) =>
+    new PgNotifyPublisher(dataSource, { onOversized }),
+  inject: [DataSource],
+}
+```
+
+```ts
+await publisher.publish('outbox_events', 'refresh'); // raw string payload
+await publisher.publishJson('outbox_events', { id, kind }); // JSON.stringify(payload)
+```
+
+Both run `SELECT pg_notify($1, $2)` through `dataSource.query`.
 
 Two things this handles that a bare `pg_notify` call does not.
 
@@ -68,9 +122,13 @@ streaming, defeats the point entirely. The tradeoff is that a notification can
 arrive for a transaction that later rolls back; a receiver that reads the row
 back finds nothing, which is the safer of the two failure modes.
 
-**It respects the 8000 byte limit.** Postgres rejects an oversized payload
-outright, failing the statement and taking the caller with it. Oversized
-payloads are dropped with a warning, or reshaped by an `onOversized` handler:
+**It respects the 8000 byte limit** (exported as `PG_NOTIFY_MAX_PAYLOAD_BYTES`,
+measured as UTF-8 bytes). Postgres rejects an oversized payload outright,
+failing the statement and taking the caller with it. Oversized payloads are
+dropped with a warning, or reshaped by an `onOversized(payload, channel)`
+handler. If the handler returns `undefined`, or a replacement that is still over
+the limit, the notification is dropped and logged; `publish` does not throw in
+either case:
 
 ```ts
 new PgNotifyPublisher(dataSource, {
@@ -95,8 +153,45 @@ await createNotifyTrigger(queryRunner, {
 });
 ```
 
-Keep `columns` small, for the same 8000 byte reason. A delete-only trigger reads
-`OLD` rather than `NEW`, since `NEW` is not bound in one.
+`createNotifyTrigger` creates (or replaces) a plpgsql function that sends
+`json_build_object` of the listed columns to the channel, then an `AFTER ... FOR
+EACH ROW` trigger on the table. `events` defaults to `['INSERT']`. The function
+and trigger are named `notify_<table>_changed` and `trg_notify_<table>_changed`
+unless you pass `functionName` / `triggerName`, which you need when one table
+carries several notify triggers. The trigger is created with `CREATE TRIGGER`
+(not `OR REPLACE`, which needs Postgres 14), so running it twice for the same
+trigger name fails rather than silently replacing an existing trigger; run
+`dropNotifyTrigger` first to re-create one.
+
+Keep `columns` small, for the same 8000 byte reason. A delete-only trigger
+(`events: ['DELETE']`) reads `OLD` rather than `NEW`, since `NEW` is not bound in
+one. Any other combination reads `NEW`, so a trigger on `['INSERT', 'DELETE']`
+sends `null` column values for deletes; use a separate delete-only trigger with
+its own names instead.
+
+`dropNotifyTrigger` takes the same options and drops the trigger and function
+(`IF EXISTS`), for the migration's `down`:
+
+```ts
+import { MigrationInterface, QueryRunner } from 'typeorm';
+import { createNotifyTrigger, dropNotifyTrigger, CreateNotifyTriggerOptions } from '@onivoro/server-pg-notify';
+
+const outboxTrigger: CreateNotifyTriggerOptions = {
+  table: 'outbox',
+  channel: 'outbox_events',
+  columns: ['id', 'kind'],
+};
+
+export class OutboxNotify1700000000000 implements MigrationInterface {
+  async up(queryRunner: QueryRunner) {
+    await createNotifyTrigger(queryRunner, outboxTrigger);
+  }
+
+  async down(queryRunner: QueryRunner) {
+    await dropNotifyTrigger(queryRunner, outboxTrigger);
+  }
+}
+```
 
 ## Fanning out a stream across instances
 

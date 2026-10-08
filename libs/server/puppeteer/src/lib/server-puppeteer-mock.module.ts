@@ -5,21 +5,25 @@ import { Page } from 'puppeteer';
 
 @Module({})
 export class ServerPuppeteerMockModule {
-    static configure() {
-        return moduleFactory({
-            module: ServerPuppeteerMockModule,
-            providers: [
-                {
-                    provide: PuppeteerService, useFactory: () => {
-                        const mockSvc: PuppeteerService = {
-                            browser: {} as any,
-                            usePage: async (fn: (page: Page) => Promise<string>, url?: string) => 'This is not implemented yet'
-                        } as PuppeteerService;
+  static configure() {
+    return moduleFactory({
+      module: ServerPuppeteerMockModule,
+      providers: [
+        {
+          provide: PuppeteerService,
+          useFactory: () => {
+            const mockSvc: PuppeteerService = {
+              browser: {} as any,
+              usePage: async (
+                fn: (page: Page) => Promise<string>,
+                url?: string,
+              ) => 'This is not implemented yet',
+            } as PuppeteerService;
 
-                        return mockSvc;
-                    }
-                }
-            ]
-        });
-    }
+            return mockSvc;
+          },
+        },
+      ],
+    });
+  }
 }

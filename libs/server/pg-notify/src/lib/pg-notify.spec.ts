@@ -1,4 +1,5 @@
-import type { DataSource, QueryRunner } from 'typeorm';
+import { Test } from '@nestjs/testing';
+import { DataSource, QueryRunner } from 'typeorm';
 import {
   createNotifyTrigger,
   dropNotifyTrigger,
@@ -32,6 +33,22 @@ function fakeQueryRunner() {
 const oversized = 'x'.repeat(PG_NOTIFY_MAX_PAYLOAD_BYTES + 1);
 
 describe('PgNotifyPublisher', () => {
+  // the DataSource import used to be type-only, so the emitted paramtype was
+  // Function and Nest could not resolve it despite @Injectable()
+  it('can be provided by Nest without a factory', async () => {
+    const { dataSource, calls } = fakeDataSource();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PgNotifyPublisher,
+        { provide: DataSource, useValue: dataSource },
+      ],
+    }).compile();
+
+    await moduleRef.get(PgNotifyPublisher).publish('events', 'hello');
+
+    expect(calls).toHaveLength(1);
+  });
+
   it('sends the payload on its own connection', async () => {
     const { dataSource, calls } = fakeDataSource();
     await new PgNotifyPublisher(dataSource).publish('events', 'hello');

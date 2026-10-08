@@ -46,4 +46,24 @@ describe('xrayLogFields', () => {
       xray_segment_id: 'seg-1',
     });
   });
+
+  it('returns only the segment id for subsegments, which carry no trace_id', () => {
+    activate({ id: 'sub-1' });
+
+    expect(xrayLogFields()).toEqual({ xray_segment_id: 'sub-1' });
+  });
+
+  it('ignores a non-string trace_id', () => {
+    activate({ trace_id: 123, id: 'seg-1' });
+
+    expect(xrayLogFields()).toEqual({ xray_segment_id: 'seg-1' });
+  });
+
+  it('returns empty fields outside automatic mode', () => {
+    (AWSXRay.isAutomaticMode as jest.Mock).mockReturnValueOnce(false);
+    activate({ trace_id: '1-abc', id: 'seg-1' });
+
+    expect(xrayLogFields()).toEqual({});
+    expect(getSegment).not.toHaveBeenCalled();
+  });
 });

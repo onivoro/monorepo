@@ -1,16 +1,14 @@
 # @onivoro/server-aws-s3
 
-AWS S3 integration for NestJS applications with file upload/download capabilities.
+AWS S3 integration for NestJS applications: uploads, downloads, line-by-line streaming, deletes, and pre-signed URLs.
 
 ## Installation
 
 ```bash
-npm install @onivoro/server-aws-s3
+npm install @onivoro/server-aws-s3 @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
 ```
 
-## Overview
-
-This library provides AWS S3 integration for NestJS applications, offering file upload, download, deletion, and pre-signed URL generation.
+`@nestjs/common` is also a peer dependency.
 
 ## Module Setup
 
@@ -20,272 +18,156 @@ import { ServerAwsS3Module } from '@onivoro/server-aws-s3';
 
 @Module({
   imports: [
-    ServerAwsS3Module.configure()
-  ]
+    ServerAwsS3Module.configure({
+      AWS_REGION: process.env.AWS_REGION!,
+      AWS_BUCKET: process.env.AWS_BUCKET!,
+      AWS_PROFILE: process.env.AWS_PROFILE, // optional
+    }),
+  ],
 })
 export class AppModule {}
 ```
 
 ## Configuration
 
-The module uses environment-based configuration:
-
 ```typescript
 export class ServerAwsS3Config {
+  AWS_BUCKET: string; // default bucket when a call omits Bucket
+  AWS_PROFILE?: string;
   AWS_REGION: string;
-  AWS_PROFILE?: string;  // Optional AWS profile
-  AWS_S3_BUCKET: string;  // Default bucket name
-  AWS_S3_PREFIX?: string; // Optional prefix for all keys
 }
 ```
 
-## Service
+Credentials come from [`@onivoro/server-aws-credential-providers`](../aws-credential-providers/): when `AWS_PROFILE` is set the named profile is used, otherwise the AWS SDK default credential chain applies.
 
-### S3Service
+The module provides and exports `S3Service`, an `S3Client`, and `ServerAwsS3Config`.
 
-The service provides file operations:
+## S3Service
+
+All methods take an object parameter. `Bucket` is optional everywhere and falls back to `AWS_BUCKET`.
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { S3Service } from '@onivoro/server-aws-s3';
-
-@Injectable()
-export class FileStorageService {
-  constructor(private readonly s3Service: S3Service) {}
-
-  // Upload a file
-  async uploadFile(key: string, body: Buffer | string, contentType: string) {
-    const result = await this.s3Service.upload(key, body, contentType);
-    return result;
-  }
-
-  // Upload a public file
-  async uploadPublicFile(key: string, body: Buffer | string, contentType: string) {
-    const result = await this.s3Service.uploadPublic(key, body, contentType);
-    return result;
-  }
-
-  // Download a file
-  async downloadFile(key: string) {
-    const fileContent = await this.s3Service.download(key);
-    return fileContent;
-  }
-
-  // Get a pre-signed download URL
-  async getDownloadUrl(key: string, expiresIn: number = 3600) {
-    const url = await this.s3Service.getPresignedDownloadUrl(key, expiresIn);
-    return url;
-  }
-
-  // Delete a single file
-  async deleteFile(key: string) {
-    await this.s3Service.delete(key);
-  }
-
-  // Delete files by prefix
-  async deleteFilesByPrefix(prefix: string) {
-    await this.s3Service.deleteByPrefix(prefix);
-  }
-}
-```
-
-## Available Methods
-
-### Upload Operations
-- **upload(key: string, body: Buffer | string, contentType: string, bucket?: string)** - Upload a private file
-- **uploadPublic(key: string, body: Buffer | string, contentType: string, bucket?: string)** - Upload a publicly accessible file
-
-### Download Operations
-- **download(key: string, bucket?: string)** - Download file content
-- **getPresignedDownloadUrl(key: string, expiresInSeconds?: number, bucket?: string)** - Generate pre-signed download URL
-
-### Delete Operations
-- **delete(key: string, bucket?: string)** - Delete a single object
-- **deleteByPrefix(prefix: string, bucket?: string)** - Delete all objects with a specific prefix
-
-## Direct Client Access
-
-The service exposes the underlying S3 client for advanced operations:
-
-```typescript
-import { 
-  ListObjectsV2Command,
-  CopyObjectCommand,
-  HeadObjectCommand,
-  GetObjectTaggingCommand
-} from '@aws-sdk/client-s3';
-
-@Injectable()
-export class AdvancedS3Service {
-  constructor(private readonly s3Service: S3Service) {}
-
-  // List objects in bucket
-  async listObjects(prefix?: string) {
-    const command = new ListObjectsV2Command({
-      Bucket: process.env.AWS_S3_BUCKET,
-      Prefix: prefix
-    });
-    
-    return await this.s3Service.s3Client.send(command);
-  }
-
-  // Copy object
-  async copyObject(sourceKey: string, destinationKey: string) {
-    const command = new CopyObjectCommand({
-      Bucket: process.env.AWS_S3_BUCKET,
-      CopySource: `${process.env.AWS_S3_BUCKET}/${sourceKey}`,
-      Key: destinationKey
-    });
-    
-    return await this.s3Service.s3Client.send(command);
-  }
-
-  // Get object metadata
-  async getObjectMetadata(key: string) {
-    const command = new HeadObjectCommand({
-      Bucket: process.env.AWS_S3_BUCKET,
-      Key: key
-    });
-    
-    return await this.s3Service.s3Client.send(command);
-  }
-}
-```
-
-## Complete Example
-
-```typescript
-import { Module, Injectable, Controller, Post, Get, Delete, Param, UploadedFile, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ServerAwsS3Module, S3Service } from '@onivoro/server-aws-s3';
-
-@Module({
-  imports: [ServerAwsS3Module.configure()],
-  controllers: [DocumentController],
-  providers: [DocumentService]
-})
-export class DocumentModule {}
+import { S3Service, sanitizeFilename } from '@onivoro/server-aws-s3';
 
 @Injectable()
 export class DocumentService {
-  constructor(private readonly s3Service: S3Service) {}
+  constructor(private readonly s3: S3Service) {}
 
   async uploadDocument(userId: string, file: Express.Multer.File) {
-    const key = `documents/${userId}/${Date.now()}-${file.originalname}`;
-    
-    try {
-      // Upload to S3
-      const result = await this.s3Service.upload(
-        key,
-        file.buffer,
-        file.mimetype
-      );
-
-      return {
-        key,
-        location: result.Location,
-        etag: result.ETag
-      };
-    } catch (error) {
-      console.error('Upload failed:', error);
-      throw error;
-    }
+    const Key = `documents/${userId}/${Date.now()}-${sanitizeFilename(file.originalname)}`;
+    const { Location, ETag } = await this.s3.upload({
+      Key,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+    });
+    return { Key, Location, ETag };
   }
 
-  async getDocumentUrl(key: string) {
-    // Generate URL valid for 1 hour
-    const url = await this.s3Service.getPresignedDownloadUrl(key, 3600);
-    return { url };
+  getViewUrl(Key: string) {
+    return this.s3.getAssetUrl({ Key, Expires: 3600 });
   }
 
-  async deleteUserDocuments(userId: string) {
-    const prefix = `documents/${userId}/`;
-    await this.s3Service.deleteByPrefix(prefix);
-  }
-
-  async uploadPublicAvatar(userId: string, imageBuffer: Buffer) {
-    const key = `avatars/${userId}.jpg`;
-    
-    const result = await this.s3Service.uploadPublic(
-      key,
-      imageBuffer,
-      'image/jpeg'
-    );
-
-    return {
-      key,
-      publicUrl: result.Location
-    };
-  }
-}
-
-@Controller('documents')
-export class DocumentController {
-  constructor(private readonly documentService: DocumentService) {}
-
-  @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadDocument(
-    @UploadedFile() file: Express.Multer.File
-  ) {
-    const userId = 'user123'; // Get from auth context
-    return await this.documentService.uploadDocument(userId, file);
-  }
-
-  @Get(':key/url')
-  async getDocumentUrl(@Param('key') key: string) {
-    return await this.documentService.getDocumentUrl(key);
-  }
-
-  @Delete('user/:userId')
-  async deleteUserDocuments(@Param('userId') userId: string) {
-    await this.documentService.deleteUserDocuments(userId);
-    return { message: 'Documents deleted successfully' };
+  deleteUserDocuments(userId: string) {
+    return this.s3.deleteByPrefix({ Prefix: `documents/${userId}/` });
   }
 }
 ```
 
-## Environment Variables
+### Upload
 
-```bash
-# Required
-AWS_REGION=us-east-1
-AWS_S3_BUCKET=my-bucket-name
+- **`upload({ Key, Body, Bucket?, ACL?, ContentType? })`**: sends `PutObjectCommand` and resolves to an `IS3UploadResponse` (`{ Location, Bucket, Key, ETag? }`). `Location` is built by `resolveUrl` (virtual-hosted style, or path style when the bucket name contains a dot). At runtime the returned object also carries the other params you passed (`Body`, `ACL`, `ContentType`).
+- **`uploadPublic({ Key, Body, Bucket?, ContentType? })`**: `upload` with `ACL: 'public-read'`. The bucket must allow ACLs.
 
-# Optional
-AWS_PROFILE=my-profile
-AWS_S3_PREFIX=my-app/  # Prefix for all keys
-```
+### Download and Streaming
 
-## Error Handling
+- **`getFile({ Key, Bucket? })`**: returns the raw `GetObjectCommandOutput`. Throws `BadRequestException` if `Key` is empty.
+- **`getReadableStreamFromS3(key, { Bucket? }?)`**: returns the object body as a Node `Readable`; the caller closes it.
+- **`pipeFromS3(key, destination, { Bucket? }?)`**: pipes the object body into a `Writable` using `stream/promises` `pipeline`.
+- **`streamFromS3<T>(key, options?)`**: async generator yielding one record per line. Lines are parsed with `JSON.parse` unless you pass `parser`. Options (`TStreamFromS3Options<T>`): `Bucket`, `skipEmptyLines` (default `true`), `parser`, plus any `readline` options except `input` (such as `signal`); `crlfDelay` defaults to `Infinity`.
+- **`streamLinesFromS3(key, options?)`**: yields raw string lines.
+- **`streamCsvFromS3(key, options?)`**: yields `string[]` rows by splitting on `delimiter` (default `,`); `skipHeader: true` drops the first row. Empty lines are always skipped. It does not handle quoted fields.
+- **`collectFromS3<T>(key, options?)`**: collects `streamFromS3` records into an array, stopping at `limit` if given.
+- **`forEachFromS3<T>(key, callback, options?)`**: awaits `callback(record, index)` for each record and resolves to the record count.
+
+The streaming helpers (and `pipeFromS3` / `getReadableStreamFromS3`) throw `File not readable -> key:<key>, type:<type>` if the object body is not a Node `Readable`, where `<type>` is the body's constructor name (such as `Uint8Array`) or its `typeof` (such as `undefined`).
 
 ```typescript
-try {
-  await s3Service.download('non-existent-key');
-} catch (error) {
-  if (error.name === 'NoSuchKey') {
-    console.error('File not found');
-  } else if (error.name === 'AccessDenied') {
-    console.error('Permission denied');
+// JSON Lines
+for await (const event of this.s3.streamFromS3<AuditEvent>('exports/audit.jsonl')) {
+  await this.handle(event);
+}
+
+// CSV with header
+for await (const [name, email] of this.s3.streamCsvFromS3('imports/users.csv', { skipHeader: true })) {
+  // ...
+}
+
+// First 100 records
+const sample = await this.s3.collectFromS3<AuditEvent>('exports/audit.jsonl', { limit: 100 });
+
+// Stream an object to an HTTP response
+await this.s3.pipeFromS3('reports/q3.pdf', res);
+```
+
+### Pre-signed URLs
+
+- **`getPresignedUrl({ Key, Bucket?, Expires, ResponseContentDisposition })`**: signs a `GetObjectCommand` that expires in `Expires` seconds, with `ResponseContentDisposition` set so S3 returns that `Content-Disposition` header.
+- **`getDownloadUrl({ Key, Bucket?, fileName? })`**: `getPresignedUrl` with a 100-second expiry and an `attachment; filename="..."` disposition, so browsers download the file under that name.
+- **`getAssetUrl({ Key, Bucket?, Expires? })`**: `getPresignedUrl` with an `inline` disposition and a default expiry of 10,000 seconds.
+
+### Delete
+
+- **`delete({ Key, Bucket? })`**: sends `DeleteObjectCommand`.
+- **`deleteObjects({ Objects, Bucket? })`**: sends `DeleteObjectsCommand` for `Objects: { Key }[]`. Throws `BadRequestException` if `Objects` is empty.
+- **`deleteByPrefix({ Prefix, Bucket? })`**: lists every object under the prefix with `ListObjectsV2Command`, following `NextContinuationToken`, and deletes each page (up to 1,000 keys) with `deleteObjects`. Resolves to `undefined`, and does nothing when no object matches. Throws `BadRequestException` if `Prefix` is empty. Per-key failures that S3 reports in a `DeleteObjects` response's `Errors` are not checked.
+
+## Direct Client Access
+
+Inject the `S3Client` the module provides for anything the service does not cover:
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
+
+@Injectable()
+export class MetadataService {
+  constructor(private readonly s3Client: S3Client) {}
+
+  head(Bucket: string, Key: string) {
+    return this.s3Client.send(new HeadObjectCommand({ Bucket, Key }));
   }
 }
 ```
 
-## Limitations
+## Utility Functions
 
-- No multipart upload support (large files must be handled manually)
-- No built-in bucket management operations
-- No object tagging or versioning support
-- Limited to basic CRUD operations
-- For advanced features, use the exposed `s3Client` directly
+```typescript
+import { extractS3KeyFromUrl, extractS3NameFromKey, extractS3NameFromUrl, resolveUrl, sanitizeFilename } from '@onivoro/server-aws-s3';
 
-## Best Practices
+resolveUrl('us-east-2', { Bucket: 'my-bucket', Key: 'a/b.pdf' });
+// 'https://my-bucket.s3.us-east-2.amazonaws.com/a/b.pdf'
+resolveUrl('us-east-2', { Bucket: 'my.bucket', Key: 'a/b.pdf' });
+// 'https://s3.us-east-2.amazonaws.com/my.bucket/a/b.pdf'
 
-1. **Key Naming**: Use a consistent key naming strategy (e.g., `type/userId/timestamp-filename`)
-2. **Content Types**: Always specify correct content types for proper browser handling
-3. **Security**: Use pre-signed URLs for temporary access instead of public uploads when possible
-4. **Cleanup**: Implement lifecycle policies for automatic object expiration
-5. **Error Handling**: Always handle S3 errors appropriately
+extractS3KeyFromUrl('https://my-bucket.s3.us-east-2.amazonaws.com/a/b.pdf'); // 'a/b.pdf'
+extractS3KeyFromUrl('https://s3.us-east-2.amazonaws.com/my.bucket/a/b.pdf?X-Amz-Expires=60'); // 'a/b.pdf'
+extractS3NameFromKey('a/b.pdf'); // 'b.pdf'
+extractS3NameFromUrl('https://my-bucket.s3.us-east-2.amazonaws.com/a/b.pdf'); // 'b.pdf'
+
+sanitizeFilename('Q3 report: "final"!.pdf'); // 'Q3 report_ _final_.pdf'
+```
+
+- `extractS3KeyFromUrl` returns the path after the host, dropping any `?query` or `#fragment`. For path-style hosts (`s3.amazonaws.com`, `s3.<region>.amazonaws.com`, `s3-<region>.amazonaws.com`, `s3.dualstack.<region>.amazonaws.com`) it also drops the leading bucket segment, so it round-trips with `resolveUrl` in both styles. For `s3://bucket/key` it returns `key`. The key is not URL-decoded, matching `resolveUrl`, which does not encode it; keys containing `?` or `#` therefore do not round-trip. Input without `//` is returned unchanged. `extractS3NameFromUrl` uses it, so it gets the same handling.
+- `sanitizeFilename` replaces non-ASCII characters and ``/ ? : \ { } ^ ' % ` [ ] < > ~ # | " ! *`` with `_`, collapses repeated underscores, and trims whitespace. Spaces are kept.
+
+## Exported Types
+
+- `TS3Params`: `{ Key: string; Bucket?: string | null }`
+- `TS3PrefixParams`: `{ Prefix: string; Bucket?: string | null }`
+- `TS3ObjectsParams`: `{ Objects: { Key: string }[]; Bucket?: string | null }`
+- `TStreamFromS3Options<T>`
+- `IS3UploadResponse`
 
 ## License
 

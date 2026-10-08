@@ -1,232 +1,129 @@
 # @onivoro/server-aws-redshift
 
-AWS Redshift Data API integration for NestJS applications.
+AWS Redshift Data API integration for NestJS applications, aimed at **Redshift Serverless** workgroups.
 
 ## Installation
 
 ```bash
-npm install @onivoro/server-aws-redshift
+npm install @onivoro/server-aws-redshift @aws-sdk/client-redshift @aws-sdk/client-redshift-data @aws-sdk/client-redshift-serverless
 ```
 
-## Overview
-
-This library provides AWS Redshift Data API integration for NestJS applications, offering basic database operations, user management, and schema permissions.
+`@nestjs/common` is also a peer dependency.
 
 ## Module Setup
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { ServerAwsRedshiftModule } from '@onivoro/server-aws-redshift';
+import { ServerAwsRedshiftDataModule } from '@onivoro/server-aws-redshift';
 
 @Module({
   imports: [
-    ServerAwsRedshiftModule.configure()
-  ]
+    ServerAwsRedshiftDataModule.configure({
+      AWS_REGION: process.env.AWS_REGION!,
+      AWS_PROFILE: process.env.AWS_PROFILE, // optional
+    }),
+  ],
 })
 export class AppModule {}
 ```
 
 ## Configuration
 
-The module uses environment-based configuration:
-
 ```typescript
-export class ServerAwsRedshiftConfig {
+export class ServerAwsRedshiftDataConfig {
+  AWS_PROFILE?: string;
   AWS_REGION: string;
-  AWS_PROFILE?: string;  // Optional AWS profile
-  AWS_REDSHIFT_CLUSTER_IDENTIFIER: string;
-  AWS_REDSHIFT_DATABASE: string;
-  AWS_REDSHIFT_USER: string;
-  AWS_REDSHIFT_WORKGROUP?: string;
-  AWS_S3_BUCKET?: string;  // For data operations
 }
 ```
 
-## Service
+Credentials come from [`@onivoro/server-aws-credential-providers`](../aws-credential-providers/): when `AWS_PROFILE` is set the named profile is used, otherwise the AWS SDK default credential chain applies.
 
-### RedshiftDataService
+The module provides and exports:
 
-The service provides Redshift database operations:
+- `RedshiftDataService`
+- `RedshiftDataClient` (`@aws-sdk/client-redshift-data`)
+- `RedshiftServerlessClient` (`@aws-sdk/client-redshift-serverless`)
+- `RedshiftClient` (`@aws-sdk/client-redshift`)
+- `ServerAwsRedshiftDataConfig`
+
+Each client is created once per process (the first `configure()` call wins) and is constructed with `logger: console`, so the SDK logs to the console.
+
+## RedshiftDataService
+
+Every method that runs SQL takes a target of `{ database: string; workgroupName: string }` and sends `ExecuteStatementCommand` with `WorkgroupName`, so these methods target Redshift Serverless (provisioned clusters via `ClusterIdentifier` are not supported).
 
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { RedshiftDataService } from '@onivoro/server-aws-redshift';
 
+const target = { database: 'analytics', workgroupName: 'analytics-wg' };
+
 @Injectable()
-export class DataWarehouseService {
-  constructor(private readonly redshiftService: RedshiftDataService) {}
+export class ReportService {
+  constructor(private readonly redshift: RedshiftDataService) {}
 
-  // Execute a query
-  async executeQuery(sql: string) {
-    const result = await this.redshiftService.query(sql);
-    return result;
-  }
-
-  // Create a new user
-  async createAnalystUser(username: string, password: string) {
-    await this.redshiftService.createUser(username, password);
-  }
-
-  // Create a user group
-  async createAnalystGroup(groupName: string) {
-    await this.redshiftService.createGroup(groupName);
-  }
-
-  // Add user to group
-  async addUserToGroup(username: string, groupName: string) {
-    await this.redshiftService.addUserToGroup(username, groupName);
-  }
-
-  // Grant schema access
-  async grantSchemaAccess(groupName: string, schemaName: string) {
-    await this.redshiftService.grantSchemaPermissions(groupName, schemaName);
+  async ordersSince(since: string) {
+    // Named parameters use :name placeholders (Data API syntax)
+    return this.redshift.query(target, 'SELECT id, total FROM sales.orders WHERE created_at >= :since', { since });
   }
 }
 ```
 
-## Available Methods
+### Queries
 
-### Query Execution
-- **query(sql: string)** - Execute a SQL query and return results
+- **`query(target, sql, parameters?)`**: executes the statement, polls `DescribeStatement` every second until it is `FINISHED` (throws on `FAILED` or `ABORTED`), then fetches every page of `GetStatementResult` (following `NextToken`) and returns the rows as `Array<Array<string | number | boolean | undefined>>`. Each field is mapped to `stringValue ?? longValue ?? doubleValue ?? booleanValue`, so `0`, `false` and `''` are preserved; SQL `NULL` and `blobValue` fields come back as `undefined`. If fetching results fails (for example, the statement has no result set), it returns `[]`.
+- **`queryV1(target, sql, parameters?)`**: executes the statement and waits with `waitForStatement`, returning the statement's `ResultRows` count (not the rows).
+- **`waitForStatement(statementId, maxAttempts = 10, delay = 1000)`**: polls `DescribeStatement`; returns `ResultRows` on `FINISHED`; throws on `FAILED` or `ABORTED` (with the statement's `Error`, or `SQL statement was aborted`), or after `maxAttempts`.
 
-### User Management
-- **createUser(username: string, password: string)** - Create a new Redshift user
-- **createGroup(groupName: string)** - Create a new user group  
-- **addUserToGroup(username: string, groupName: string)** - Add user to a group
-- **grantSchemaPermissions(groupName: string, schemaName: string)** - Grant schema access to a group
+`parameters` is either an `SqlParameter[]` passed through unchanged, or a `RedshiftQueryParameters` object (`Record<string, string | number | boolean | null | undefined>`) converted to `{ name, value: String(value) }` entries (`null`/`undefined` become an undefined value).
 
-### Workgroup Operations
-- **getWorkgroupEndpoint(workgroupName: string)** - Get the endpoint for a workgroup (used internally)
+### User and Group Management
+
+- **`createDbGroupFromIamGroupIfNotExists({ iamGroup, database, workgroupName })`**: creates the group with `CREATE GROUP` if `pg_group` has no group with that name.
+- **`createDatabaseUser({ database, workgroupName, user })`**: looks the user up in `pg_user` by name (`usename`, bound as a parameter); if absent, runs `CREATE USER` with a random placeholder password (`IAM_<uuid>`) and returns that password, otherwise returns `''`. Errors are logged and rethrown.
+- **`addIamUserToDatabaseGroup({ database, workgroupName, user, group })`**: runs `ALTER GROUP ... ADD USER`. Errors are logged with `console.warn` and not rethrown.
+- **`grantUsageOnSchema({ database, workgroupName, schema, group })`**: grants `USAGE` on the schema, `SELECT` on all its tables, and default `SELECT` on future tables to the group. A failing statement is logged and the rest still run.
+- **`getAssociatedIAmRolesByWorkgroup({ database, workgroupName })`**: lists every group in the target database with its members from `pg_group`/`pg_user` via `query`, one row per group/member: `[role_name, member_name, role_id, owner_id, is_member]` (`member_name` is `undefined` for a group with no members).
+
+```typescript
+await redshift.createDbGroupFromIamGroupIfNotExists({ ...target, iamGroup: 'analysts' });
+await redshift.grantUsageOnSchema({ ...target, schema: 'reporting', group: 'analysts' });
+await redshift.addIamUserToDatabaseGroup({ ...target, user: 'IAMR:analyst', group: 'analysts' });
+```
+
+Identifiers (user, group, schema names) are interpolated directly into SQL without quoting or escaping, so never pass untrusted input to these methods.
+
+### Workgroups
+
+- **`verifyEndpointAccess(workgroupName)`**: returns the `GetWorkgroupCommand` response, or `undefined` (after logging an error) if the workgroup has no endpoint address.
 
 ## Direct Client Access
 
-The service exposes the underlying Redshift Data client:
+For anything the service does not cover, inject the SDK clients directly:
 
 ```typescript
-import { 
-  ListDatabasesCommand,
-  ListTablesCommand,
-  DescribeTableCommand,
-  GetStatementResultCommand
-} from '@aws-sdk/client-redshift-data';
+import { Injectable } from '@nestjs/common';
+import { ListTablesCommand, RedshiftDataClient } from '@aws-sdk/client-redshift-data';
 
 @Injectable()
-export class AdvancedRedshiftService {
-  constructor(private readonly redshiftService: RedshiftDataService) {}
+export class CatalogService {
+  constructor(private readonly dataClient: RedshiftDataClient) {}
 
-  // List all databases
-  async listDatabases() {
-    const command = new ListDatabasesCommand({
-      ClusterIdentifier: process.env.AWS_REDSHIFT_CLUSTER_IDENTIFIER,
-      Database: process.env.AWS_REDSHIFT_DATABASE,
-      DbUser: process.env.AWS_REDSHIFT_USER
-    });
-    
-    return await this.redshiftService.redshiftDataApiClient.send(command);
-  }
-
-  // List tables in a schema
-  async listTables(schemaName: string) {
-    const command = new ListTablesCommand({
-      ClusterIdentifier: process.env.AWS_REDSHIFT_CLUSTER_IDENTIFIER,
-      Database: process.env.AWS_REDSHIFT_DATABASE,
-      DbUser: process.env.AWS_REDSHIFT_USER,
-      SchemaPattern: schemaName
-    });
-    
-    return await this.redshiftService.redshiftDataApiClient.send(command);
+  listTables(schemaPattern: string) {
+    return this.dataClient.send(
+      new ListTablesCommand({
+        Database: 'analytics',
+        WorkgroupName: 'analytics-wg',
+        SchemaPattern: schemaPattern,
+      }),
+    );
   }
 }
 ```
 
-## Example: Data Warehouse Operations
+## Known Limitations
 
-```typescript
-import { Module, Injectable } from '@nestjs/common';
-import { ServerAwsRedshiftModule, RedshiftDataService } from '@onivoro/server-aws-redshift';
-
-@Module({
-  imports: [ServerAwsRedshiftModule.configure()],
-  providers: [AnalyticsService]
-})
-export class AnalyticsModule {}
-
-@Injectable()
-export class AnalyticsService {
-  constructor(private readonly redshiftService: RedshiftDataService) {}
-
-  async setupAnalyticsUser(email: string) {
-    const username = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_');
-    const tempPassword = `Temp123!${Math.random().toString(36).slice(-4)}`;
-    
-    try {
-      // Create user
-      await this.redshiftService.createUser(username, tempPassword);
-      
-      // Create or use existing analyst group
-      const groupName = 'analysts';
-      await this.redshiftService.createGroup(groupName);
-      
-      // Add user to group
-      await this.redshiftService.addUserToGroup(username, groupName);
-      
-      // Grant permissions to analytics schema
-      await this.redshiftService.grantSchemaPermissions(groupName, 'analytics');
-      
-      return {
-        username,
-        tempPassword,
-        message: 'User created successfully. Please change password on first login.'
-      };
-    } catch (error) {
-      console.error('Failed to setup user:', error);
-      throw error;
-    }
-  }
-
-  async runAnalyticsQuery(query: string) {
-    // Validate query is read-only
-    if (query.toLowerCase().includes('drop') || 
-        query.toLowerCase().includes('delete') || 
-        query.toLowerCase().includes('update')) {
-      throw new Error('Only SELECT queries are allowed');
-    }
-    
-    return await this.redshiftService.query(query);
-  }
-}
-```
-
-## Environment Variables
-
-```bash
-# Required
-AWS_REGION=us-east-1
-AWS_REDSHIFT_CLUSTER_IDENTIFIER=my-redshift-cluster
-AWS_REDSHIFT_DATABASE=mydb
-AWS_REDSHIFT_USER=admin
-
-# Optional
-AWS_PROFILE=my-profile
-AWS_REDSHIFT_WORKGROUP=my-workgroup
-AWS_S3_BUCKET=my-data-bucket
-```
-
-## Limitations
-
-- Basic query execution only (no advanced features like prepared statements)
-- Limited user management capabilities
-- No built-in connection pooling or query optimization
-- No support for advanced Redshift features (materialized views, stored procedures)
-- For advanced operations, use the exposed `redshiftDataApiClient` directly
-
-## Best Practices
-
-1. **Security**: Use least-privilege database users
-2. **Query Validation**: Always validate user input before executing queries
-3. **Error Handling**: Implement proper error handling for database operations
-4. **Performance**: Use appropriate cluster sizing and distribution keys
-5. **Monitoring**: Monitor query performance using Redshift console
+- `query` has no timeout; it polls until the statement is `FINISHED`, `FAILED` or `ABORTED`.
 
 ## License
 

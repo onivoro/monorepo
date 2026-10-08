@@ -30,7 +30,8 @@ import { ServerNotificationHandlerRegistry } from '../server-notification-handle
  * - `VSCODE_EXTENSION_CONTEXT` - The VSCode ExtensionContext
  * - `VSCODE_API` - The VSCode API module (use for window, languages, etc.)
  * - `STDIO_SERVER_PROCESS` - The StdioServerProcess instance
- * - `WEBVIEW_PROVIDER` - The webview provider instance (if provided)
+ * - `WEBVIEW_PROVIDER`, `WebviewHandlerRegistry`, `ExtensionMessageBus` and
+ *   `MESSAGE_BUS` - only when `webviewProvider` is given
  *
  * @example
  * ```typescript
@@ -91,6 +92,9 @@ export class VscodeModule {
       ServerNotificationHandlerRegistry,
     ];
 
+    // Webview-only providers; exported only when they are provided
+    const webviewExports: Array<symbol | string | Type> = [];
+
     // Optionally add webview provider and ExtensionMessageBus
     if (options.webviewProvider) {
       providers.push(
@@ -116,6 +120,12 @@ export class VscodeModule {
           useExisting: ExtensionMessageBus,
         },
       );
+      webviewExports.push(
+        WEBVIEW_PROVIDER,
+        WebviewHandlerRegistry,
+        ExtensionMessageBus,
+        MESSAGE_BUS,
+      );
     }
 
     return {
@@ -126,14 +136,11 @@ export class VscodeModule {
         VSCODE_EXTENSION_CONTEXT,
         VSCODE_API,
         STDIO_SERVER_PROCESS,
-        WEBVIEW_PROVIDER,
         VscodeCommandsService,
         VscodeWorkspaceService,
         ServerProcessService,
         ServerNotificationHandlerRegistry,
-        WebviewHandlerRegistry,
-        ExtensionMessageBus,
-        MESSAGE_BUS,
+        ...webviewExports,
         ...additionalProviders,
       ],
       global: true,

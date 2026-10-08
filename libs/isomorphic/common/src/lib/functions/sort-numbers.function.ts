@@ -1,3 +1,7 @@
 export const sortNumbers = (a: number, b: number) => {
-    return Number(a) < Number(b) ? -1 : 1;
+  if (Number(a) === Number(b)) {
+    return 0;
+  }
+
+  return Number(a) < Number(b) ? -1 : 1;
 };
