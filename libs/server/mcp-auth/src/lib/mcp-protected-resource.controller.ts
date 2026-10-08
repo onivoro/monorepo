@@ -1,7 +1,22 @@
-import { Controller, Get, Inject, NotFoundException, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  NotFoundException,
+  Param,
+} from '@nestjs/common';
+import {
+  protectedResourceWildcardRoute,
+  wildcardParamToPath,
+} from '@onivoro/server-mcp';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
 import type { McpAuthConfig } from './mcp-auth-config';
 import { McpScopeRegistry } from './mcp-scope-registry';
+
+const PROTECTED_RESOURCE_WILDCARD = protectedResourceWildcardRoute(
+  // Read at load, before the route below is declared.
+  require('@nestjs/core/package.json').version,
+);
 
 /**
  * Serves the RFC 9728 OAuth 2.0 Protected Resource Metadata endpoint
@@ -23,10 +38,12 @@ export class McpProtectedResourceController {
     return this.buildProtectedResourceMetadata();
   }
 
-  @Get('oauth-protected-resource/:resourcePath(*)')
-  getPathProtectedResourceMetadata(@Param('resourcePath') resourcePath: string): Record<string, unknown> {
+  @Get(`oauth-protected-resource/${PROTECTED_RESOURCE_WILDCARD}`)
+  getPathProtectedResourceMetadata(
+    @Param('resourcePath') resourcePath: string | string[],
+  ): Record<string, unknown> {
     this.assertMetadataRouteEnabled('path');
-    this.assertResourcePathMatch(resourcePath);
+    this.assertResourcePathMatch(wildcardParamToPath(resourcePath));
     return this.buildProtectedResourceMetadata();
   }
 
@@ -40,10 +57,11 @@ export class McpProtectedResourceController {
       bearer_methods_supported: ['header'],
     };
 
-    const authorizationServers =
-      this.config.authorizationServers?.length
-        ? this.config.authorizationServers
-        : (this.config.issuer ? [this.config.issuer] : undefined);
+    const authorizationServers = this.config.authorizationServers?.length
+      ? this.config.authorizationServers
+      : this.config.issuer
+        ? [this.config.issuer]
+        : undefined;
 
     if (authorizationServers?.length) {
       metadata['authorization_servers'] = authorizationServers;
