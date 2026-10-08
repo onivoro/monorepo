@@ -93,7 +93,7 @@
     "@nx/js": "21.2.1",
     "@nx/react": "21.2.1",
     "@nx/vite": "21.2.1",
-    "@nx/webpack": "21.2.1",
+    "@nx/webpack": "23.3.0",
     "@nx/workspace": "21.2.1",
     "@testing-library/react": "^16.3.3",
     "@types/bun": "^1.2.2",
