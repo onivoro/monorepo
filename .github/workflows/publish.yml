@@ -2,20 +2,20 @@ name: publish.yml
 
 # Publishes every @onivoro/* package to npm with provenance, through npm trusted publishing (OIDC).
 # No npm token is stored here: each package trusts this workflow file in the npm-publish environment
-# (see tools/npm-trust.sh). Runs on every push to main but only publishes when the shared version
-# isn't on npm yet, so a push without a version bump builds nothing.
+# (see tools/npm-trust.sh). Runs when a v<version> release tag is pushed (npm run release:push).
 #
 # Hardening (see readme.md):
+# - only repository admins can create v* tags (tag ruleset), and the npm-publish environment only
+#   accepts v* tags, so a push to main or any other branch can never publish
+# - the tag must match every package's version and point at a commit on main
 # - build installs dependencies with no install scripts and has no id-token permission, so no
 #   dependency code ever runs where an npm publish token can be minted
 # - publish installs and checks out nothing; it only uploads the built dist/ tarballs
-# - publish runs in the npm-publish environment, which only main can use and which needs an approval
 # - actions are pinned to commit SHAs
 
 on:
   push:
-    branches: ['main']
-  workflow_dispatch:
+    tags: ['v*']
 
 concurrency:
   group: publish
@@ -31,43 +31,41 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      publish: ${{ steps.check.outputs.publish }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Find packages whose version is not on npm
-        id: check
+      - name: Check the tag matches every package version and is on main
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          missing=0
           for pkg in libs/*/*/package.json; do
-            name=$(node -p "require('./$pkg').name")
             version=$(node -p "require('./$pkg').version")
-            if [ -z "$(npm view "$name@$version" version 2>/dev/null)" ]; then
-              echo "unpublished: $name@$version"
-              missing=1
+            if [ "$TAG" != "v$version" ]; then
+              echo "::error::$pkg is at $version but the tag is $TAG"
+              exit 1
             fi
           done
-          echo "publish=$missing" >> "$GITHUB_OUTPUT"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$TAG does not point at a commit on main"
+            exit 1
+          fi
 
-      - if: steps.check.outputs.publish == '1'
-        run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - if: steps.check.outputs.publish == '1'
-        run: npx nx run-many -t build --projects='lib-server-*,lib-isomorphic-*,lib-browser-*' --skip-nx-cache
+      - run: npx nx run-many -t build --projects='lib-server-*,lib-isomorphic-*,lib-browser-*' --skip-nx-cache
         env:
           NX_DAEMON: 'false'
           NX_NO_CLOUD: 'true'
 
-      - if: steps.check.outputs.publish == '1'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/libs
@@ -76,7 +74,6 @@ jobs:
 
   publish:
     needs: build
-    if: needs.build.outputs.publish == '1'
     runs-on: ubuntu-latest
     environment: npm-publish
     permissions:
@@ -93,7 +90,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
 
-      # Skips versions already on npm, so a rerun after a partial failure picks up where it stopped
+      # Skips versions already on npm, so rerunning the job after a partial failure picks up where it stopped
       - name: Publish
         run: |
           for pkg in dist/libs/*/*/package.json; do
