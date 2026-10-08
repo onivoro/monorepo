@@ -14,15 +14,29 @@ ENVIRONMENT=npm-publish
 
 cd "$(dirname "$0")/.."
 npm whoami > /dev/null || { echo 'ERROR: not logged in to npm. Run npm login first'; exit 1; }
+[ -t 0 ] && [ -t 1 ] || { echo 'ERROR: run this in an interactive terminal, so npm can ask for two-factor authentication'; exit 1; }
+
+log=$(mktemp)
+trap 'rm -f "$log"' EXIT
+
+list_trust() {
+  if [ "$(uname)" = Darwin ]; then
+    script -q "$2" npm trust list "$1"
+  else
+    script -q -e -c "npm trust list '$1'" "$2"
+  fi
+}
 
 dry_run=false
 for arg in "$@"; do [ "$arg" = --dry-run ] && dry_run=true; done
 
 for pkg in libs/*/*/package.json; do
   name=$(node -p "require('./$pkg').name")
-  # Reading trust needs two-factor authentication too, so a failure here must stop rather than count as untrusted
-  trust=$(npm trust list "$name") || { echo "ERROR: couldn't read the trust settings of $name"; exit 1; }
-  if grep -q "$WORKFLOW" <<< "$trust"; then
+  # Reading trust needs two-factor authentication too, so a failure here must stop rather than count as untrusted.
+  # npm only asks for it when stdin and stdout are a terminal, so run it under `script`, which gives it one,
+  # shows its prompts and records its output for the check below
+  list_trust "$name" "$log" || { echo "ERROR: couldn't read the trust settings of $name"; exit 1; }
+  if grep -q "$WORKFLOW" "$log"; then
     echo "skip: $name already trusts $WORKFLOW"
   else
     echo "trust: $name"
