@@ -20,7 +20,9 @@ for arg in "$@"; do [ "$arg" = --dry-run ] && dry_run=true; done
 
 for pkg in libs/*/*/package.json; do
   name=$(node -p "require('./$pkg').name")
-  if npm trust list "$name" 2>/dev/null | grep -q "$WORKFLOW"; then
+  # Reading trust needs two-factor authentication too, so a failure here must stop rather than count as untrusted
+  trust=$(npm trust list "$name") || { echo "ERROR: couldn't read the trust settings of $name"; exit 1; }
+  if grep -q "$WORKFLOW" <<< "$trust"; then
     echo "skip: $name already trusts $WORKFLOW"
   else
     echo "trust: $name"
