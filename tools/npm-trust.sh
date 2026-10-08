@@ -5,7 +5,11 @@
 # Then sets each package to require two-factor authentication and disallow tokens (mfa=publish), so a
 # leaked npm token can't publish it; trusted publishing still works.
 # Run once after `npm login`, and again whenever a new library is added; packages already trusted are skipped.
-# Extra arguments go to npm, e.g. --dry-run or --otp=<code>.
+#
+#   bash tools/npm-trust.sh                            # every package in libs/
+#   bash tools/npm-trust.sh @onivoro/server-foo        # only the packages named
+#
+# Arguments starting with - go to npm, e.g. --dry-run or --otp=<code>.
 set -euo pipefail
 
 REPO=onivoro/monorepo
@@ -28,10 +32,20 @@ list_trust() {
 }
 
 dry_run=false
-for arg in "$@"; do [ "$arg" = --dry-run ] && dry_run=true; done
+names=()
+flags=()
+for arg in "$@"; do
+  case $arg in
+    --dry-run) dry_run=true; flags+=("$arg") ;;
+    -*) flags+=("$arg") ;;
+    *) names+=("$arg") ;;
+  esac
+done
+if [ ${#names[@]} -eq 0 ]; then
+  for pkg in libs/*/*/package.json; do names+=("$(node -p "require('./$pkg').name")"); done
+fi
 
-for pkg in libs/*/*/package.json; do
-  name=$(node -p "require('./$pkg').name")
+for name in "${names[@]}"; do
   # Reading trust needs two-factor authentication too, so a failure here must stop rather than count as untrusted.
   # npm only asks for it when stdin and stdout are a terminal, so run it under `script`, which gives it one,
   # shows its prompts and records its output for the check below
@@ -40,12 +54,12 @@ for pkg in libs/*/*/package.json; do
     echo "skip: $name already trusts $WORKFLOW"
   else
     echo "trust: $name"
-    npm trust github "$name" --repository "$REPO" --file "$WORKFLOW" --environment "$ENVIRONMENT" --allow-publish --yes "$@"
+    npm trust github "$name" --repository "$REPO" --file "$WORKFLOW" --environment "$ENVIRONMENT" --allow-publish --yes ${flags[@]+"${flags[@]}"}
   fi
   if $dry_run; then
     echo "would set: $name mfa=publish"
   else
-    npm access set mfa=publish "$name" "$@"
+    npm access set mfa=publish "$name" ${flags[@]+"${flags[@]}"}
   fi
 done
 
