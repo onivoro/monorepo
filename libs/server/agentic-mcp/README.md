@@ -195,9 +195,10 @@ what lets the same tool serve an HTTP client and an in-process loop.
 
 `McpToolCatalogService` and `renderMcpToolCatalogHtml` render a browsable HTML
 page of the registered tools — names, titles, descriptions, annotations and
-input schemas — with an install guide and a copy-pasteable
-[opencode](https://opencode.ai/) config. `AgenticMcpModule` does not provide the
-service; register it where `McpToolRegistry` is available.
+input schemas — with an installation guide for [opencode](https://opencode.ai/),
+[Claude Code](https://claude.com/claude-code), Claude Desktop and
+[Codex](https://developers.openai.com/codex). `AgenticMcpModule` does not
+provide the service; register it where `McpToolRegistry` is available.
 
 ```ts
 @Get('mcp-tools')
@@ -214,20 +215,62 @@ tools() {
 
 `McpToolCatalogRenderConfig`:
 
-| Option              | Default                                                                                |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| `serverUrl`         | required                                                                               |
-| `mcpUrl`            | `${serverUrl}/api/mcp`                                                                 |
-| `serverName`        | `mcp-server`                                                                           |
-| `configJson`        | generated opencode config                                                              |
-| `authCommand`       | `opencode mcp auth mcp-server`                                                         |
-| `title`             | `MCP Tool Catalog`                                                                     |
-| `eyebrow`           | `Generated from McpToolRegistry`                                                       |
-| `resolveGroupLabel` | the verb in the name (`search-`, `-get-`, ...), else `Other`                           |
-| `groupOrder`        | `Search, Get, List, Create, Update, Delete, Other`; other groups follow alphabetically |
+| Option                   | Default                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------- |
+| `serverUrl`              | required                                                                               |
+| `mcpUrl`                 | `${serverUrl}/api/mcp`                                                                 |
+| `serverName`             | `mcp-server`; the name the server is registered under in every client                  |
+| `clients`                | `['opencode', 'claude-code', 'claude-desktop', 'codex']`; the sections shown, in order |
+| `oauthClientId`          | none; a pre-registered OAuth client for servers without dynamic client registration    |
+| `oauthScope`             | none; the scope opencode requests with `oauthClientId`                                 |
+| `claudeCodeCallbackPort` | `3118` (`DEFAULT_CLAUDE_CODE_CALLBACK_PORT`), used with `oauthClientId`                |
+| `codexCallbackPort`      | none (Codex picks an ephemeral port)                                                   |
+| `configJson`             | generated opencode config                                                              |
+| `authCommand`            | `opencode mcp auth <serverName>`                                                       |
+| `title`                  | `MCP Tool Catalog`                                                                     |
+| `eyebrow`                | `Generated from McpToolRegistry`                                                       |
+| `resolveGroupLabel`      | the verb in the name (`search-`, `-get-`, ...), else `Other`                           |
+| `groupOrder`             | `Search, Get, List, Create, Update, Delete, Other`; other groups follow alphabetically |
 
 `McpToolCatalogService.listTools()` returns the `McpToolCatalogEntry[]` the page
 is built from.
+
+### Pre-registered OAuth clients
+
+When the authorization server supports dynamic client registration, leave
+`oauthClientId` unset: each client registers itself on first sign-in. Servers
+without it, such as Amazon Cognito, need one app client that every MCP client
+signs in with. Pass its ID as `oauthClientId` and the guide adds it to each
+client's setup:
+
+```ts
+this.catalog.renderHtml({
+  serverUrl: 'https://acme.example.com',
+  serverName: 'acme',
+  oauthClientId: config.COGNITO_MCP_TOOLING_CLIENT_ID,
+  oauthScope: 'openid email',
+});
+```
+
+That app client must allow each client's OAuth callback URL:
+
+| Client         | Callback URL                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------- |
+| Claude Code    | `http://localhost:<claudeCodeCallbackPort>/callback` (default port `3118`)                              |
+| Claude Desktop | `https://claude.ai/api/mcp/auth_callback` (`CLAUDE_CONNECTOR_CALLBACK_URL`)                             |
+| Codex          | the URL `codex mcp add` prints; `http://127.0.0.1:<codexCallbackPort>/callback` when the port is pinned |
+| opencode       | the URL opencode uses, e.g. `http://127.0.0.1:19876/mcp/oauth/callback`                                 |
+
+`mcpClientCallbackUrls(options, targets?)` returns the fixed ones (Claude Code,
+Claude Desktop, and Codex when `codexCallbackPort` is set). Claude Desktop
+connects from Anthropic's servers, so its MCP URL must be reachable from the
+internet.
+
+The snippets are also exported for use outside the page:
+`opencodeMcpConfig`, `opencodeMcpAuthCommand`, `claudeCodeMcpAddCommand`,
+`codexMcpAddCommand`, `codexMcpCallbackPortSetting` and `codexMcpLoginCommand`
+each take `McpClientSetupOptions` (`serverName`, `mcpUrl`, and the OAuth fields
+above).
 
 Every config value and tool field on the page (titles, eyebrow, group labels,
 `configJson`, `authCommand`, the generated snippet, tool names, descriptions,

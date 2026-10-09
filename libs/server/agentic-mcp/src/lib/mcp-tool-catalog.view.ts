@@ -6,6 +6,7 @@ import {
   $div,
   $h1,
   $h2,
+  $h3,
   $head,
   $html,
   $li,
@@ -20,6 +21,17 @@ import {
   $title,
   $ul,
 } from '@onivoro/server-html';
+import {
+  claudeCodeMcpAddCommand,
+  codexMcpAddCommand,
+  codexMcpLoginCommand,
+  codexMcpCallbackPortSetting,
+  MCP_CLIENT_SETUP_TARGETS,
+  McpClientSetupOptions,
+  McpClientSetupTarget,
+  opencodeMcpAuthCommand,
+  opencodeMcpConfig,
+} from './mcp-client-setup';
 
 export type McpToolCatalogEntry = {
   annotations?: Record<string, unknown>;
@@ -30,15 +42,29 @@ export type McpToolCatalogEntry = {
 };
 
 export interface McpToolCatalogRenderConfig {
+  /** Replaces the generated opencode auth command. */
   authCommand?: string;
-  /** Replaces the generated client-config snippet entirely. */
+  /** Claude Code OAuth callback port; see `McpClientSetupOptions`. */
+  claudeCodeCallbackPort?: number;
+  /** Client setup sections to render, in order. Defaults to all of them. */
+  clients?: McpClientSetupTarget[];
+  /** Codex OAuth callback port; see `McpClientSetupOptions`. */
+  codexCallbackPort?: number;
+  /** Replaces the generated opencode config snippet entirely. */
   configJson?: string;
   eyebrow?: string;
   groupOrder?: string[];
   /** Absolute MCP endpoint. Defaults to `${serverUrl}/api/mcp`. */
   mcpUrl?: string;
   resolveGroupLabel?: (name: string) => string;
-  /** Key the server appears under in the generated snippet. */
+  /**
+   * Pre-registered OAuth client ID that every client authenticates with, for
+   * authorization servers without dynamic client registration (e.g. Cognito).
+   */
+  oauthClientId?: string;
+  /** OAuth scope opencode requests with `oauthClientId`. */
+  oauthScope?: string;
+  /** Key the server is registered under in each client. */
   serverName?: string;
   serverUrl: string;
   title?: string;
@@ -117,8 +143,50 @@ export function renderMcpToolCatalogHtml(
 }
 
 function renderInstallationGuide(config: McpToolCatalogRenderConfig) {
+  const options = clientSetupOptions(config);
+  const renderers: Record<
+    McpClientSetupTarget,
+    (options: McpClientSetupOptions) => string[]
+  > = {
+    opencode: (options) => renderOpencodeSetup(options, config),
+    'claude-code': renderClaudeCodeSetup,
+    'claude-desktop': renderClaudeDesktopSetup,
+    codex: renderCodexSetup,
+  };
+
   return [
     $h2({ textContent: 'Installation Guide' }),
+    ...(config.clients ?? MCP_CLIENT_SETUP_TARGETS).flatMap((target) =>
+      renderers[target](options),
+    ),
+  ];
+}
+
+function clientSetupOptions(
+  config: McpToolCatalogRenderConfig,
+): McpClientSetupOptions {
+  return {
+    serverName: config.serverName ?? 'mcp-server',
+    mcpUrl: config.mcpUrl ?? `${config.serverUrl}/api/mcp`,
+    oauthClientId: config.oauthClientId,
+    oauthScope: config.oauthScope,
+    claudeCodeCallbackPort: config.claudeCodeCallbackPort,
+    codexCallbackPort: config.codexCallbackPort,
+  };
+}
+
+/**
+ * The generated opencode config is deliberately minimal: it names the server
+ * and, with `oauthClientId`, its OAuth client. Anything about which model to
+ * run, or which cloud credentials to use, belongs to whoever is connecting --
+ * so a host that wants a richer snippet supplies its own through `configJson`.
+ */
+function renderOpencodeSetup(
+  options: McpClientSetupOptions,
+  config: McpToolCatalogRenderConfig,
+) {
+  return [
+    $h3({ textContent: 'opencode' }),
     $ul({
       children: [
         $li({
@@ -138,7 +206,7 @@ function renderInstallationGuide(config: McpToolCatalogRenderConfig) {
                 'Create an opencode file at ~/.config/opencode/opencode.json',
             }),
             $pre({
-              textContent: config.configJson ?? defaultOpencodeConfig(config),
+              textContent: config.configJson ?? opencodeMcpConfig(options),
             }),
           ],
         }),
@@ -146,7 +214,8 @@ function renderInstallationGuide(config: McpToolCatalogRenderConfig) {
           children: [
             $p({ textContent: 'Register this MCP server' }),
             $pre({
-              textContent: config.authCommand ?? 'opencode mcp auth mcp-server',
+              textContent:
+                config.authCommand ?? opencodeMcpAuthCommand(options),
             }),
           ],
         }),
@@ -155,29 +224,118 @@ function renderInstallationGuide(config: McpToolCatalogRenderConfig) {
   ];
 }
 
-/**
- * A copy-pasteable client config for this server, shown on the catalog page.
- *
- * Deliberately minimal: it names the server and nothing else. Anything about
- * which model to run, or which cloud credentials to use, belongs to whoever is
- * connecting -- so a host that wants a richer snippet supplies its own through
- * `configJson`.
- */
-function defaultOpencodeConfig(config: McpToolCatalogRenderConfig): string {
-  return JSON.stringify(
-    {
-      $schema: 'https://opencode.ai/config.json',
-      mcp: {
-        [config.serverName ?? 'mcp-server']: {
-          type: 'remote',
-          url: config.mcpUrl ?? `${config.serverUrl}/api/mcp`,
-          enabled: true,
-        },
-      },
-    },
-    null,
-    2,
-  );
+function renderClaudeCodeSetup(options: McpClientSetupOptions) {
+  return [
+    $h3({ textContent: 'Claude Code' }),
+    $ul({
+      children: [
+        $li({
+          children: [
+            $span({ textContent: 'Install Claude Code ' }),
+            $a({
+              textContent: 'claude.com/claude-code',
+              href: 'https://claude.com/claude-code',
+              target: '_blank',
+            }),
+          ],
+        }),
+        $li({
+          children: [
+            $p({ textContent: 'Add this MCP server' }),
+            $pre({ textContent: claudeCodeMcpAddCommand(options) }),
+          ],
+        }),
+        $li({
+          textContent: `In Claude Code, run /mcp, select ${options.serverName}, and choose Authenticate to sign in.`,
+        }),
+      ],
+    }),
+  ];
+}
+
+function renderClaudeDesktopSetup(options: McpClientSetupOptions) {
+  return [
+    $h3({ textContent: 'Claude Desktop' }),
+    $ul({
+      children: [
+        $li({
+          textContent:
+            'Open Settings, go to Connectors, and choose Add custom connector.',
+        }),
+        $li({
+          children: [
+            $p({ textContent: 'Name' }),
+            $pre({ textContent: options.serverName }),
+            $p({ textContent: 'Remote MCP server URL' }),
+            $pre({ textContent: options.mcpUrl }),
+          ],
+        }),
+        ...(options.oauthClientId
+          ? [
+              $li({
+                children: [
+                  $p({
+                    textContent:
+                      'Under Advanced settings, set OAuth Client ID and leave OAuth Client Secret empty.',
+                  }),
+                  $pre({ textContent: options.oauthClientId }),
+                ],
+              }),
+            ]
+          : []),
+        $li({
+          textContent:
+            'Choose Add, then Connect to sign in. Claude Desktop reaches the server from the internet, so a localhost URL will not work.',
+        }),
+      ],
+    }),
+  ];
+}
+
+function renderCodexSetup(options: McpClientSetupOptions) {
+  const callbackPortSetting = codexMcpCallbackPortSetting(options);
+
+  return [
+    $h3({ textContent: 'Codex' }),
+    $ul({
+      children: [
+        $li({
+          children: [
+            $span({ textContent: 'Install the Codex CLI ' }),
+            $a({
+              textContent: 'developers.openai.com/codex',
+              href: 'https://developers.openai.com/codex',
+              target: '_blank',
+            }),
+          ],
+        }),
+        $li({
+          children: [
+            $p({ textContent: 'Add this MCP server' }),
+            $pre({ textContent: codexMcpAddCommand(options) }),
+          ],
+        }),
+        ...(callbackPortSetting
+          ? [
+              $li({
+                children: [
+                  $p({
+                    textContent: `Pin the OAuth callback port: in ~/.codex/config.toml, add this line to the [mcp_servers.${options.serverName}.oauth] table that the previous command wrote`,
+                  }),
+                  $pre({ textContent: callbackPortSetting }),
+                ],
+              }),
+            ]
+          : []),
+        $li({
+          children: [
+            $p({ textContent: 'Sign in' }),
+            $pre({ textContent: codexMcpLoginCommand(options) }),
+          ],
+        }),
+      ],
+    }),
+  ];
 }
 
 function renderGroup(group: McpToolCatalogGroup) {
@@ -394,6 +552,13 @@ const styles = `
     padding: 18px 22px;
     background: #f7f2e8;
     font-size: 1.35rem;
+  }
+
+  .hero h2 { margin-top: 28px; border-radius: 12px; }
+
+  h3 {
+    margin: 22px 0 4px;
+    font-size: 1.1rem;
   }
 
   .count {
