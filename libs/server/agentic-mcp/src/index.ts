@@ -3,6 +3,7 @@ export * from './lib/agentic-mcp.module';
 export * from './lib/agentic-tool-input-context';
 export * from './lib/composite-agentic-tool-provider';
 export * from './lib/mcp-auth-unwrapping-tool-provider';
+export * from './lib/mcp-client-setup';
 export * from './lib/mcp-registry-agentic-tool-provider.service';
 export * from './lib/mcp-tool-catalog.service';
 export * from './lib/mcp-tool-catalog.view';

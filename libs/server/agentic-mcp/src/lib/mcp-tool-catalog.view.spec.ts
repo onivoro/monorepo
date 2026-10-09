@@ -94,6 +94,7 @@ describe(renderMcpToolCatalogHtml.name, () => {
     const custom = renderMcpToolCatalogHtml([], {
       serverUrl: 'https://s',
       configJson: 'CUSTOM-CONFIG',
+      clients: ['opencode'],
     });
     expect(custom).toContain('CUSTOM-CONFIG');
     expect(custom).not.toContain('https://s/api/mcp');
@@ -195,6 +196,72 @@ describe(renderMcpToolCatalogHtml.name, () => {
       expect(out).toContain('a &amp; b');
       expect(out).not.toContain('&amp;amp;');
       expect(out).not.toContain('&amp;lt;');
+    });
+  });
+
+  describe('client setup', () => {
+    const headings = (html: string) =>
+      [...html.matchAll(/<h3 >([^<]*)<\/h3>/g)].map((match) => match[1]);
+
+    it('renders opencode, Claude Code, Claude Desktop and Codex by default', () => {
+      expect(headings(html)).toEqual([
+        'opencode',
+        'Claude Code',
+        'Claude Desktop',
+        'Codex',
+      ]);
+      expect(html).toContain('claude mcp add');
+      expect(html).toContain('codex mcp add mcp-server');
+      expect(html).toContain('codex mcp login mcp-server');
+      expect(html).toContain('Add custom connector');
+    });
+
+    it('omits pre-registered client settings without oauthClientId', () => {
+      expect(html).not.toContain('--client-id');
+      expect(html).not.toContain('--oauth-client-id');
+      expect(html).not.toContain('Advanced settings');
+      expect(html).not.toContain('config.toml');
+      expect(html).not.toContain('callback_port');
+    });
+
+    it('renders only the requested clients, in order', () => {
+      const out = renderMcpToolCatalogHtml(tools, {
+        serverUrl: 'https://s',
+        clients: ['codex', 'claude-code'],
+      });
+      expect(headings(out)).toEqual(['Codex', 'Claude Code']);
+    });
+
+    it('threads a pre-registered client through every client', () => {
+      const out = renderMcpToolCatalogHtml(tools, {
+        serverUrl: 'https://s',
+        serverName: 'acme',
+        oauthClientId: 'client-123',
+        oauthScope: 'openid email',
+        claudeCodeCallbackPort: 4000,
+        codexCallbackPort: 5555,
+      });
+      expect(out).toContain('&quot;clientId&quot;: &quot;client-123&quot;');
+      expect(out).toContain('&quot;scope&quot;: &quot;openid email&quot;');
+      expect(out).toContain('--client-id client-123');
+      expect(out).toContain('--callback-port 4000');
+      expect(out).toContain('Advanced settings');
+      expect(out).toContain('--oauth-client-id client-123');
+      expect(out).toContain('[mcp_servers.acme.oauth] table');
+      expect(out).toContain('<pre >callback_port = 5555</pre>');
+      expect(out).toContain('opencode mcp auth acme');
+    });
+
+    it('keeps configJson and authCommand as opencode overrides', () => {
+      const out = renderMcpToolCatalogHtml(tools, {
+        serverUrl: 'https://s',
+        configJson: '{"custom":true}',
+        authCommand: 'opencode mcp auth custom',
+        oauthClientId: 'client-123',
+      });
+      expect(out).toContain('{&quot;custom&quot;:true}');
+      expect(out).toContain('opencode mcp auth custom');
+      expect(out).toContain('--client-id client-123');
     });
   });
 });
