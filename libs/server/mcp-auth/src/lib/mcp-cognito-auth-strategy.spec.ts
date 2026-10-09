@@ -11,7 +11,10 @@ const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
 });
 
-function signToken(claims: Record<string, unknown>, options?: jwt.SignOptions): string {
+function signToken(
+  claims: Record<string, unknown>,
+  options?: jwt.SignOptions,
+): string {
   return jwt.sign(claims, privateKey, {
     algorithm: 'RS256',
     keyid: 'test-kid-1',
@@ -38,8 +41,13 @@ describe('McpCognitoAuthStrategy', () => {
     } as any;
   });
 
-  function createProvider(configOverrides?: Partial<McpCognitoAuthConfig>): McpCognitoAuthStrategy {
-    return new McpCognitoAuthStrategy({ ...baseConfig, ...configOverrides }, mockJwksService);
+  function createProvider(
+    configOverrides?: Partial<McpCognitoAuthConfig>,
+  ): McpCognitoAuthStrategy {
+    return new McpCognitoAuthStrategy(
+      { ...baseConfig, ...configOverrides },
+      mockJwksService,
+    );
   }
 
   it('accepts valid Cognito access tokens', async () => {
@@ -52,7 +60,11 @@ describe('McpCognitoAuthStrategy', () => {
       username: 'user-123',
     });
 
-    const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+    const result = await provider.resolveAuth({
+      token,
+      clientId: '',
+      scopes: [],
+    });
     expect(result?.clientId).toBe(baseConfig.clientId);
     expect(result?.scopes).toEqual(['openid', 'email']);
   });
@@ -67,9 +79,9 @@ describe('McpCognitoAuthStrategy', () => {
       aud: baseConfig.clientId,
     });
 
-    await expect(
-      provider.verifyAccessToken(token),
-    ).rejects.toBeInstanceOf(InvalidTokenError);
+    await expect(provider.verifyAccessToken(token)).rejects.toBeInstanceOf(
+      InvalidTokenError,
+    );
   });
 
   it('rejects tokens issued for a different client', async () => {
@@ -81,8 +93,46 @@ describe('McpCognitoAuthStrategy', () => {
       iss: `https://cognito-idp.${baseConfig.region}.amazonaws.com/${baseConfig.userPoolId}`,
     });
 
-    await expect(
-      provider.verifyAccessToken(token),
-    ).rejects.toBeInstanceOf(InvalidTokenError);
+    await expect(provider.verifyAccessToken(token)).rejects.toBeInstanceOf(
+      InvalidTokenError,
+    );
+  });
+
+  describe('verifyAccessToken (the requireBearerAuth route)', () => {
+    const issuer = `https://cognito-idp.${baseConfig.region}.amazonaws.com/${baseConfig.userPoolId}`;
+
+    it.each([
+      [
+        'a different client_id',
+        { token_use: 'access', client_id: 'wrong-client-id' },
+        'Invalid JWT: unexpected client_id "wrong-client-id"',
+      ],
+      [
+        "token_use: 'id'",
+        { token_use: 'id', client_id: baseConfig.clientId },
+        'Invalid JWT: expected a Cognito access token',
+      ],
+      [
+        'an inProcessClientIds client',
+        { token_use: 'access', client_id: 'web-client' },
+        'Invalid JWT: unexpected client_id "web-client"',
+      ],
+    ])('rejects a token with %s', async (_label, claims, message) => {
+      provider = createProvider({ inProcessClientIds: ['web-client'] });
+      const token = signToken({ ...claims, scope: 'openid', iss: issuer });
+
+      const error = await provider.verifyAccessToken(token).catch((e) => e);
+
+      expect(error).toBeInstanceOf(InvalidTokenError);
+      expect(error.message).toBe(message);
+    });
+
+    it('rejects an empty token', async () => {
+      provider = createProvider();
+
+      await expect(provider.verifyAccessToken('')).rejects.toThrow(
+        new InvalidTokenError('Invalid access token'),
+      );
+    });
   });
 });

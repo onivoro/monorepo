@@ -1,4 +1,5 @@
 export * from './lib/agentic-mcp-auth';
+export * from './lib/agentic-mcp-auth-tool-provider';
 export * from './lib/agentic-mcp-config';
 export * from './lib/agentic-mcp.module';
 export * from './lib/agentic-tool-input-context';

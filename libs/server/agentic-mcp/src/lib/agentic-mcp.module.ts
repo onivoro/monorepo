@@ -5,6 +5,7 @@ import {
   LLM_ADAPTER_CONFIG,
   McpLlmToolAdapter,
 } from '@onivoro/server-mcp-llm-adapter';
+import { AgenticMcpAuthToolProvider } from './agentic-mcp-auth-tool-provider';
 import {
   AGENTIC_MCP_CONFIG,
   AgenticMcpConfig,
@@ -44,6 +45,7 @@ export class AgenticMcpModule {
           inject: [McpToolRegistry],
         },
         McpRegistryAgenticToolProvider,
+        AgenticMcpAuthToolProvider,
         {
           provide: AGENTIC_TOOL_PROVIDER,
           useExisting: McpRegistryAgenticToolProvider,
@@ -53,6 +55,7 @@ export class AgenticMcpModule {
         AGENTIC_MCP_CONFIG,
         McpLlmToolAdapter,
         McpRegistryAgenticToolProvider,
+        AgenticMcpAuthToolProvider,
         AGENTIC_TOOL_PROVIDER,
       ],
     };

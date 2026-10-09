@@ -1342,6 +1342,8 @@ await registry.executeToolRaw('search-orders', params, authInfo);
 
 - Guards still run. Only `resolveAuth()` is skipped, so the marked auth info must already be enriched the way guards and handlers expect.
 - The mark belongs to the exact object passed in. A copy (`{ ...authInfo }`) or a JSON round trip is not marked, and nothing in `extra`, a token claim or a request body can mark it. Mark the final object and pass it on unchanged.
+- The same marked object is shared by every call it is passed to, such as every tool call in an agentic run. Guards, interceptors and handlers should treat it as read-only.
+- It is verified once, by the caller, and trusted until discarded: `expiresAt` is not re-checked. Mark it per run or request, and do not cache it across requests.
 - Auth info arriving over HTTP or stdio is never trusted this way: `wireRegistryToServer` hands the registry a copy, so the strategy always runs for transport calls.
 - `isMcpAuthInfoResolved(authInfo)` reports whether an object is marked.
 - The mark is held by this copy of `@onivoro/server-mcp`. If an app ends up with two copies installed, auth marked by one is not recognised by the other, and the strategy runs (the safe failure).

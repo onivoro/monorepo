@@ -86,28 +86,87 @@ describe('resolveAgenticMcpAuth', () => {
     expect(verify).not.toHaveBeenCalled();
   });
 
-  it('reports verification and enrichment failures', async () => {
+  it('reports verification failures', async () => {
     await expect(
       resolveAgenticMcpAuth({
         token: 't',
         verify: async () => {
-          throw new Error('unexpected client_id "other"');
+          throw new Error('jwt expired');
         },
       }),
-    ).resolves.toEqual({
-      kind: AGENTIC_MCP_AUTH_KIND,
-      error: 'unexpected client_id "other"',
-    });
+    ).resolves.toEqual({ kind: AGENTIC_MCP_AUTH_KIND, error: 'jwt expired' });
     await expect(
       resolveAgenticMcpAuth({
         token: 't',
-        verify: async () => verified(),
-        enrich: async () => {
+        verify: async () => {
           throw 'not an error';
         },
         invalidTokenMessage: 'Bad token',
       }),
     ).resolves.toEqual({ kind: AGENTIC_MCP_AUTH_KIND, error: 'Bad token' });
+    await expect(
+      resolveAgenticMcpAuth({
+        token: 't',
+        verify: async () => {
+          throw new Error('');
+        },
+      }),
+    ).resolves.toEqual({
+      kind: AGENTIC_MCP_AUTH_KIND,
+      error: 'Invalid MCP access token',
+    });
+  });
+
+  describe('when enrich or check throws', () => {
+    let loggerError: jest.SpyInstance;
+
+    beforeEach(() => {
+      loggerError = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      loggerError.mockRestore();
+    });
+
+    it('logs an enrich failure and returns a generic message', async () => {
+      const info = verified();
+      const context = await resolveAgenticMcpAuth({
+        token: 't',
+        verify: async () => info,
+        enrich: async () => {
+          throw new Error('ECONNREFUSED db:5432');
+        },
+      });
+
+      expect(context).toEqual({
+        kind: AGENTIC_MCP_AUTH_KIND,
+        error: 'MCP authorization is unavailable.',
+      });
+      expect(context.error).not.toContain('ECONNREFUSED');
+      expect(context.mcpAuthInfo).toBeUndefined();
+      expect(isMcpAuthInfoResolved(info)).toBe(false);
+      expect(loggerError).toHaveBeenCalled();
+    });
+
+    it('logs a check failure and returns unavailableMessage', async () => {
+      const context = await resolveAgenticMcpAuth({
+        token: 't',
+        verify: async () => verified(),
+        check: () => {
+          throw new Error('ECONNREFUSED db:5432');
+        },
+        unavailableMessage: 'Try again later',
+      });
+
+      expect(context).toEqual({
+        kind: AGENTIC_MCP_AUTH_KIND,
+        error: 'Try again later',
+      });
+      expect(context.mcpAuthInfo).toBeUndefined();
+      expect(loggerError).toHaveBeenCalled();
+    });
   });
 
   it('refuses when the check returns a reason, without marking', async () => {
