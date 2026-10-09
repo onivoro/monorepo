@@ -7,7 +7,10 @@ import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
 import { MCP_COGNITO_AUTH_CONFIG } from './mcp-cognito-auth-config-token';
 import { McpJwksService } from './mcp-jwks.service';
 import { McpJwtAuthStrategy } from './mcp-jwt-auth-strategy';
-import { buildJwtConfig, McpCognitoAuthStrategy } from './mcp-cognito-auth-strategy';
+import {
+  buildJwtConfig,
+  McpCognitoAuthStrategy,
+} from './mcp-cognito-auth-strategy';
 import { McpScopeRegistry } from './mcp-scope-registry';
 import { McpProtectedResourceController } from './mcp-protected-resource.controller';
 
@@ -55,7 +58,12 @@ export class McpAuthModule {
         McpJwtAuthStrategy,
         McpScopeRegistry,
       ],
-      exports: [McpJwtAuthStrategy, McpJwksService, McpScopeRegistry, MCP_AUTH_CONFIG],
+      exports: [
+        McpJwtAuthStrategy,
+        McpJwksService,
+        McpScopeRegistry,
+        MCP_AUTH_CONFIG,
+      ],
     };
   }
 
@@ -67,20 +75,28 @@ export class McpAuthModule {
       providers: [
         {
           provide: MCP_AUTH_CONFIG,
-          useFactory: async (...args: unknown[]) => validateAuthConfig(await options.useFactory(...args)),
+          useFactory: async (...args: unknown[]) =>
+            validateAuthConfig(await options.useFactory(...args)),
           inject: options.inject || [],
         },
         McpJwksService,
         McpJwtAuthStrategy,
         McpScopeRegistry,
       ],
-      exports: [McpJwtAuthStrategy, McpJwksService, McpScopeRegistry, MCP_AUTH_CONFIG],
+      exports: [
+        McpJwtAuthStrategy,
+        McpJwksService,
+        McpScopeRegistry,
+        MCP_AUTH_CONFIG,
+      ],
     };
   }
 
   static configureCognito(config: McpCognitoAuthConfig): DynamicModule {
     const validatedCognitoConfig = validateCognitoConfig(config);
-    const validatedJwtConfig = validateAuthConfig(buildJwtConfig(validatedCognitoConfig));
+    const validatedJwtConfig = validateAuthConfig(
+      buildJwtConfig(validatedCognitoConfig),
+    );
     const controllers =
       (validatedJwtConfig.serveProtectedResourceMetadata ?? true)
         ? [McpProtectedResourceController]
@@ -108,7 +124,9 @@ export class McpAuthModule {
     };
   }
 
-  static configureCognitoAsync(options: McpCognitoAuthAsyncOptions): DynamicModule {
+  static configureCognitoAsync(
+    options: McpCognitoAuthAsyncOptions,
+  ): DynamicModule {
     return {
       module: McpAuthModule,
       imports: [...(options.imports || [])],
@@ -116,12 +134,14 @@ export class McpAuthModule {
       providers: [
         {
           provide: MCP_COGNITO_AUTH_CONFIG,
-          useFactory: async (...args: unknown[]) => validateCognitoConfig(await options.useFactory(...args)),
+          useFactory: async (...args: unknown[]) =>
+            validateCognitoConfig(await options.useFactory(...args)),
           inject: options.inject || [],
         },
         {
           provide: MCP_AUTH_CONFIG,
-          useFactory: (config: McpCognitoAuthConfig) => validateAuthConfig(buildJwtConfig(config)),
+          useFactory: (config: McpCognitoAuthConfig) =>
+            validateAuthConfig(buildJwtConfig(config)),
           inject: [MCP_COGNITO_AUTH_CONFIG],
         },
         McpJwksService,
@@ -152,7 +172,8 @@ export class McpAuthModule {
 }
 
 function validateAuthConfig(config: McpAuthConfig): McpAuthConfig {
-  const serveProtectedResourceMetadata = config.serveProtectedResourceMetadata ?? true;
+  const serveProtectedResourceMetadata =
+    config.serveProtectedResourceMetadata ?? true;
   if (!serveProtectedResourceMetadata) {
     return config;
   }
@@ -173,7 +194,9 @@ function validateAuthConfig(config: McpAuthConfig): McpAuthConfig {
   return config;
 }
 
-function validateCognitoConfig(config: McpCognitoAuthConfig): McpCognitoAuthConfig {
+function validateCognitoConfig(
+  config: McpCognitoAuthConfig,
+): McpCognitoAuthConfig {
   if (!config.region) {
     throw new Error('McpAuthModule.configureCognito requires region.');
   }
@@ -184,6 +207,12 @@ function validateCognitoConfig(config: McpCognitoAuthConfig): McpCognitoAuthConf
 
   if (!config.clientId) {
     throw new Error('McpAuthModule.configureCognito requires clientId.');
+  }
+
+  if (config.inProcessClientIds?.some((clientId) => !clientId)) {
+    throw new Error(
+      'McpAuthModule.configureCognito inProcessClientIds must not contain empty values.',
+    );
   }
 
   return config;
