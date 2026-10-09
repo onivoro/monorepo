@@ -4,6 +4,7 @@ import { AGENTIC_TOOL_PROVIDER } from '@onivoro/server-agentic';
 import { McpTool, McpToolRegistry } from '@onivoro/server-mcp';
 import { McpLlmToolAdapter } from '@onivoro/server-mcp-llm-adapter';
 import { z } from 'zod';
+import { AgenticMcpAuthToolProvider } from './agentic-mcp-auth-tool-provider';
 import { AGENTIC_MCP_CONFIG } from './agentic-mcp-config';
 import { AgenticMcpModule } from './agentic-mcp.module';
 import { McpRegistryAgenticToolProvider } from './mcp-registry-agentic-tool-provider.service';
@@ -115,7 +116,33 @@ describe(AgenticMcpModule.name, () => {
       AGENTIC_MCP_CONFIG,
       McpLlmToolAdapter,
       McpRegistryAgenticToolProvider,
+      AgenticMcpAuthToolProvider,
       AGENTIC_TOOL_PROVIDER,
     ]);
+  });
+
+  it('provides AgenticMcpAuthToolProvider without binding it to the tool provider token', async () => {
+    @Module({
+      imports: [AgenticMcpModule.configure()],
+      providers: [
+        {
+          provide: 'CONSUMER',
+          useFactory: (provider: AgenticMcpAuthToolProvider) => provider,
+          inject: [AgenticMcpAuthToolProvider],
+        },
+      ],
+    })
+    class ConsumerModule {}
+
+    moduleRef = await Test.createTestingModule({
+      imports: [ConsumerModule],
+    }).compile();
+
+    const authProvider = moduleRef.get(AgenticMcpAuthToolProvider);
+    expect(authProvider).toBeInstanceOf(AgenticMcpAuthToolProvider);
+    expect(moduleRef.get('CONSUMER')).toBe(authProvider);
+    expect(moduleRef.get(AGENTIC_TOOL_PROVIDER)).toBe(
+      moduleRef.get(McpRegistryAgenticToolProvider),
+    );
   });
 });

@@ -1,7 +1,10 @@
+import { Logger } from '@nestjs/common';
 import { McpAuthInfo, markMcpAuthInfoResolved } from '@onivoro/server-mcp';
 import type { McpAuthUnwrappingOptions } from './mcp-auth-unwrapping-tool-provider';
 
 export const AGENTIC_MCP_AUTH_KIND = 'agentic-mcp-auth';
+
+const logger = new Logger('resolveAgenticMcpAuth');
 
 /**
  * The auth an agentic run carries for its MCP tool calls: either verified MCP
@@ -27,6 +30,12 @@ export interface ResolveAgenticMcpAuthInput {
   /**
    * Returns a reason to refuse the enriched auth info, or `undefined` to allow
    * it, e.g. when the token belongs to someone other than the signed-in user.
+   *
+   * This is the only link between the token and the signed-in user. When
+   * `token` comes from anywhere other than the credential that authenticated
+   * the request (a separate header, the request body, stored state), pass a
+   * `check` that compares the token's identity (e.g. `sub` or the enriched
+   * email) with the session user's.
    */
   check?: (
     authInfo: McpAuthInfo,
@@ -35,6 +44,11 @@ export interface ResolveAgenticMcpAuthInput {
   missingTokenMessage?: string;
   /** Used when verification fails without a message. Default: `Invalid MCP access token`. */
   invalidTokenMessage?: string;
+  /**
+   * Used when `enrich` or `check` throws; the error itself is logged, not
+   * returned. Default: `MCP authorization is unavailable.`
+   */
+  unavailableMessage?: string;
 }
 
 /**
@@ -44,7 +58,12 @@ export interface ResolveAgenticMcpAuthInput {
  * running its auth strategy again. Guards still run.
  *
  * Never throws: failures come back as `{ error }`, which
- * `executeMcpAuthWrappedTool` turns into a tool error the model can see.
+ * `executeMcpAuthWrappedTool` turns into a tool error the model can see:
+ * - a missing token or a refusal from `check`: that message;
+ * - a failed `verify`: its error message (e.g. `jwt expired`), or
+ *   `invalidTokenMessage` when there is none;
+ * - a thrown `enrich` or `check`: logged, and `unavailableMessage` is returned,
+ *   so internal errors never reach the model.
  */
 export async function resolveAgenticMcpAuth(
   input: ResolveAgenticMcpAuthInput,
@@ -55,19 +74,9 @@ export async function resolveAgenticMcpAuth(
     );
   }
 
+  let verified: McpAuthInfo;
   try {
-    const verified = await input.verify(input.token);
-    const enriched = input.enrich ? await input.enrich(verified) : verified;
-    const refusal = await input.check?.(enriched);
-
-    if (refusal) {
-      return agenticMcpAuthError(refusal);
-    }
-
-    return {
-      kind: AGENTIC_MCP_AUTH_KIND,
-      mcpAuthInfo: markMcpAuthInfoResolved(enriched),
-    };
+    verified = await input.verify(input.token);
   } catch (error) {
     return agenticMcpAuthError(
       error instanceof Error && error.message
@@ -75,6 +84,30 @@ export async function resolveAgenticMcpAuth(
         : (input.invalidTokenMessage ?? 'Invalid MCP access token'),
     );
   }
+
+  let enriched: McpAuthInfo;
+  let refusal: string | undefined;
+  try {
+    enriched = input.enrich ? await input.enrich(verified) : verified;
+    refusal = await input.check?.(enriched);
+  } catch (error) {
+    logger.error(
+      'Failed to enrich or check MCP auth info',
+      error instanceof Error ? error.stack : String(error),
+    );
+    return agenticMcpAuthError(
+      input.unavailableMessage ?? 'MCP authorization is unavailable.',
+    );
+  }
+
+  if (refusal) {
+    return agenticMcpAuthError(refusal);
+  }
+
+  return {
+    kind: AGENTIC_MCP_AUTH_KIND,
+    mcpAuthInfo: markMcpAuthInfoResolved(enriched),
+  };
 }
 
 export function isAgenticMcpAuthContext(

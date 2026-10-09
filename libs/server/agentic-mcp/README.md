@@ -33,8 +33,9 @@ AgenticChatModule.configure({
 
 `AgenticMcpModule` provides and exports `AGENTIC_TOOL_PROVIDER` (as
 `McpRegistryAgenticToolProvider`), so importing it into `AgenticChatModule` is
-the whole wiring. It also exports `AGENTIC_MCP_CONFIG` and its
-`McpLlmToolAdapter`.
+the whole wiring. It also exports `AGENTIC_MCP_CONFIG`, its
+`McpLlmToolAdapter`, and `AgenticMcpAuthToolProvider` (see
+[Signed-in users' tokens](#signed-in-users-tokens)).
 
 Tools reach the model as `mcp__<namespace>__<tool>` — `mcp__acme__<tool>` here,
 `mcp__mcp__<tool>` with the default namespace `mcp` — with characters outside
@@ -201,34 +202,68 @@ enrichment and identity check, and marks the result with
 auth strategy for that run's tool calls. Guards still run.
 
 ```ts
-import { agenticMcpAuthUnwrappingOptions, executeMcpAuthWrappedTool, listMcpAuthWrappedTools, resolveAgenticMcpAuth } from '@onivoro/server-agentic-mcp';
+import { AGENTIC_TOOL_PROVIDER } from '@onivoro/server-agentic';
+import { AgenticMcpAuthToolProvider, resolveAgenticMcpAuth } from '@onivoro/server-agentic-mcp';
 
 // When the run starts:
 const authInfo = await resolveAgenticMcpAuth({
   token: request.accessToken,
   verify: (token) => cognitoStrategy.verifyInProcessAccessToken(token),
   enrich: (info) => addEmail(info), // optional
-  check: (info) => (info.extra?.['email'] === user.email ? undefined : 'Token does not match the signed-in user'), // optional
+  check: (info) => (info.extra?.['email'] === user.email ? undefined : 'Token does not match the signed-in user'), // required unless token is the session's own credential
 });
 // ...pass it as the run context's authInfo.
 
-// In your tool provider:
-listTools(context) {
-  return listMcpAuthWrappedTools(this.delegate, context, agenticMcpAuthUnwrappingOptions);
-}
-executeTool(call, context) {
-  return executeMcpAuthWrappedTool(this.delegate, call, context, agenticMcpAuthUnwrappingOptions);
+// In the module that configures AgenticChatModule:
+providers: [{ provide: AGENTIC_TOOL_PROVIDER, useExisting: AgenticMcpAuthToolProvider }],
+```
+
+`AgenticMcpAuthToolProvider` unwraps the context with
+`agenticMcpAuthUnwrappingOptions` and delegates to
+`McpRegistryAgenticToolProvider`. To narrow it, subclass it and bind the
+subclass instead. `executeTool` does not consult `listTools`, so check calls
+there too:
+
+```ts
+@Injectable()
+export class AppToolProvider extends AgenticMcpAuthToolProvider {
+  override async listTools(context: AgenticToolExecutionContext) {
+    const tools = await super.listTools(context);
+    return tools.filter((tool) => allowed(context, tool.name));
+  }
+
+  override async executeTool(call: AgenticToolCall, context: AgenticToolExecutionContext) {
+    if (!allowed(context, call.name)) {
+      return { toolCallId: call.id, name: call.name, isError: true, result: 'Forbidden', resultText: 'Forbidden' };
+    }
+    return super.executeTool(call, context);
+  }
 }
 ```
 
+`listMcpAuthWrappedTools`, `executeMcpAuthWrappedTool` and
+`McpAuthUnwrappingOptions` remain for apps with their own auth context type.
+
 - It returns an `AgenticMcpAuthContext`: `{ kind: 'agentic-mcp-auth', mcpAuthInfo }`,
-  or `{ kind: 'agentic-mcp-auth', error }` for a missing token, a verification
-  or enrichment failure, or a refusal from `check`. It never throws, so the
-  error reaches the model as a tool result (code `mcp_auth_unavailable`).
+  or `{ kind: 'agentic-mcp-auth', error }`. A missing token or a refusal from
+  `check` gives that message; a failed `verify` gives its error message (e.g.
+  `jwt expired`), or `invalidTokenMessage` when there is none; a thrown
+  `enrich` or `check` is logged and gives the generic `unavailableMessage`, so
+  internal errors never reach the model. It never throws, so the error reaches
+  the model as a tool result (code `mcp_auth_unavailable`).
 - `verify` decides which tokens count. With Cognito, list the web app client in
   `McpAuthModule.configureCognito({ inProcessClientIds })` and use
   `McpCognitoAuthStrategy.verifyInProcessAccessToken()` (see
   `@onivoro/server-mcp-auth`); the MCP route still accepts only its own client.
+- `check` is the only link between the token and the signed-in user. If `token`
+  comes from anywhere other than the credential that authenticated the request
+  — a separate header, the request body, stored conversation state — pass a
+  `check` that compares the token's identity (e.g. `sub` or the enriched email)
+  with the session user's. Without it, a valid token for one user would run
+  tools inside another user's chat, under that chat's permissions and history.
+- Resolve auth once per run and don't cache the result across requests. It is
+  verified when the run starts and trusted for that run only; its expiry isn't
+  re-checked mid-run.
 - Pass `mcpAuthInfo` on as is. A copy is not marked, and the registry would run
   its auth strategy again.
 - Apps can add their own fields to the context (`{ ...authInfo, actionIds }`);

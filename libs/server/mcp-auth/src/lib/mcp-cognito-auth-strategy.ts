@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { McpAuthInfo } from '@onivoro/server-mcp';
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { McpAuthConfig } from './mcp-auth-config';
 import type { McpCognitoAuthConfig } from './mcp-cognito-auth-config';
 import { MCP_COGNITO_AUTH_CONFIG } from './mcp-cognito-auth-config-token';
@@ -30,16 +29,6 @@ export class McpCognitoAuthStrategy extends McpJwtAuthStrategy {
       const resolved = await super.resolveAuth(authInfo);
       this.assertCognitoAccessToken(authInfo.token);
       return resolved;
-    } catch (error) {
-      throw this.toInvalidTokenError(error);
-    }
-  }
-
-  async verifyAccessToken(token: string): Promise<AuthInfo> {
-    try {
-      const verified = await super.verifyAccessToken(token);
-      this.assertCognitoAccessToken(token);
-      return verified;
     } catch (error) {
       throw this.toInvalidTokenError(error);
     }
