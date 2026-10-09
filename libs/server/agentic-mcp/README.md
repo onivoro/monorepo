@@ -191,6 +191,49 @@ An unknown tool name is an `mcp_tool_unknown` error result.
 Keeping policy outside means tools stay unaware of who is calling them, which is
 what lets the same tool serve an HTTP client and an in-process loop.
 
+### Signed-in users' tokens
+
+When the MCP route accepts only a dedicated tooling client, the in-app chat's
+web app token would be rejected by the registry's auth strategy on every tool
+call. `resolveAgenticMcpAuth()` verifies the token once, runs your optional
+enrichment and identity check, and marks the result with
+`markMcpAuthInfoResolved` from `@onivoro/server-mcp`, so the registry skips its
+auth strategy for that run's tool calls. Guards still run.
+
+```ts
+import { agenticMcpAuthUnwrappingOptions, executeMcpAuthWrappedTool, listMcpAuthWrappedTools, resolveAgenticMcpAuth } from '@onivoro/server-agentic-mcp';
+
+// When the run starts:
+const authInfo = await resolveAgenticMcpAuth({
+  token: request.accessToken,
+  verify: (token) => cognitoStrategy.verifyInProcessAccessToken(token),
+  enrich: (info) => addEmail(info), // optional
+  check: (info) => (info.extra?.['email'] === user.email ? undefined : 'Token does not match the signed-in user'), // optional
+});
+// ...pass it as the run context's authInfo.
+
+// In your tool provider:
+listTools(context) {
+  return listMcpAuthWrappedTools(this.delegate, context, agenticMcpAuthUnwrappingOptions);
+}
+executeTool(call, context) {
+  return executeMcpAuthWrappedTool(this.delegate, call, context, agenticMcpAuthUnwrappingOptions);
+}
+```
+
+- It returns an `AgenticMcpAuthContext`: `{ kind: 'agentic-mcp-auth', mcpAuthInfo }`,
+  or `{ kind: 'agentic-mcp-auth', error }` for a missing token, a verification
+  or enrichment failure, or a refusal from `check`. It never throws, so the
+  error reaches the model as a tool result (code `mcp_auth_unavailable`).
+- `verify` decides which tokens count. With Cognito, list the web app client in
+  `McpAuthModule.configureCognito({ inProcessClientIds })` and use
+  `McpCognitoAuthStrategy.verifyInProcessAccessToken()` (see
+  `@onivoro/server-mcp-auth`); the MCP route still accepts only its own client.
+- Pass `mcpAuthInfo` on as is. A copy is not marked, and the registry would run
+  its auth strategy again.
+- Apps can add their own fields to the context (`{ ...authInfo, actionIds }`);
+  `isAgenticMcpAuthContext` only looks at `kind`.
+
 ## Tool catalogue page
 
 `McpToolCatalogService` and `renderMcpToolCatalogHtml` render a browsable HTML

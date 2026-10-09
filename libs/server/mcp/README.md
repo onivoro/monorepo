@@ -873,15 +873,15 @@ async summarize(params: { itemId: string }) {
 
 The registry's tool execution pipeline is modeled after the [NestJS HTTP request lifecycle](https://docs.nestjs.com/faq/request-lifecycle). If you're familiar with how NestJS processes an HTTP request through middleware, guards, pipes, interceptors, and exception filters, the same mental model applies here — each stage has a direct analog in the MCP tool pipeline.
 
-| Stage | NestJS HTTP       | MCP Registry                   | Responsibility                                                                              |
-| :---: | ----------------- | ------------------------------ | ------------------------------------------------------------------------------------------- |
-|   1   | Middleware        | Transport layer                | NestJS middleware on the MCP route (authentication, logging)                                |
-|   2   | —                 | Auth strategy                  | Centralized auth enrichment/validation (`McpAuthStrategy.resolveAuth`)                      |
-|   3   | Guards            | `@McpGuard`                    | Authorization — should this call proceed?                                                   |
-|   4   | Pipes             | `schema.parse()`               | Validation and transformation of input params (internally executed based on the Zod schema) |
-|   5   | Interceptors      | `McpToolInterceptor` chain     | Cross-cutting concerns wrapping execution (auditing, caching, timing, transformation)       |
-|   6   | Route handler     | Tool handler                   | Business logic (innermost `next()` of the interceptor chain)                                |
-|   7   | Exception filters | `executeToolWrapped` try/catch | Error wrapping for MCP clients                                                              |
+| Stage | NestJS HTTP       | MCP Registry                   | Responsibility                                                                                                                 |
+| :---: | ----------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+|   1   | Middleware        | Transport layer                | NestJS middleware on the MCP route (authentication, logging)                                                                   |
+|   2   | —                 | Auth strategy                  | Centralized auth enrichment/validation (`McpAuthStrategy.resolveAuth`); skipped for auth marked with `markMcpAuthInfoResolved` |
+|   3   | Guards            | `@McpGuard`                    | Authorization — should this call proceed?                                                                                      |
+|   4   | Pipes             | `schema.parse()`               | Validation and transformation of input params (internally executed based on the Zod schema)                                    |
+|   5   | Interceptors      | `McpToolInterceptor` chain     | Cross-cutting concerns wrapping execution (auditing, caching, timing, transformation)                                          |
+|   6   | Route handler     | Tool handler                   | Business logic (innermost `next()` of the interceptor chain)                                                                   |
+|   7   | Exception filters | `executeToolWrapped` try/catch | Error wrapping for MCP clients                                                                                                 |
 
 ```
 Transport middleware → Auth strategy → Guards → Validation → Interceptor₁ → ... → Handler
@@ -1329,6 +1329,23 @@ McpHttpModule.registerAndServeHttp({
 
 **Why use an auth strategy instead of a guard?** Guards return `boolean` — they can approve or deny, but cannot modify the auth context. An auth strategy transforms `authInfo` before any guards see it. This means you decode a JWT once centrally, and all guards receive the decoded claims without each needing to parse the token independently.
 
+### Auth already resolved in-process
+
+The auth strategy runs on every tool call, including in-process calls such as an agentic loop calling `McpToolRegistry` directly. Sometimes the caller has already verified the token another way, for example a web app's own access token that the MCP route's strategy is configured to reject. Mark that auth info with `markMcpAuthInfoResolved()` and the registry passes it straight to the guards without calling the strategy:
+
+```typescript
+import { markMcpAuthInfoResolved } from '@onivoro/server-mcp';
+
+const authInfo = markMcpAuthInfoResolved(await verifyWebAppToken(token));
+await registry.executeToolRaw('search-orders', params, authInfo);
+```
+
+- Guards still run. Only `resolveAuth()` is skipped, so the marked auth info must already be enriched the way guards and handlers expect.
+- The mark belongs to the exact object passed in. A copy (`{ ...authInfo }`) or a JSON round trip is not marked, and nothing in `extra`, a token claim or a request body can mark it. Mark the final object and pass it on unchanged.
+- Auth info arriving over HTTP or stdio is never trusted this way: `wireRegistryToServer` hands the registry a copy, so the strategy always runs for transport calls.
+- `isMcpAuthInfoResolved(authInfo)` reports whether an object is marked.
+- The mark is held by this copy of `@onivoro/server-mcp`. If an app ends up with two copies installed, auth marked by one is not recognised by the other, and the strategy runs (the safe failure).
+
 ### Custom transport middleware
 
 If you need non-standard transport behavior, you can still add your own NestJS middleware around the MCP route. This is an advanced option; prefer `requireBearerAuth` for spec-compliant OAuth challenges.
@@ -1550,6 +1567,8 @@ McpPromptResult; // { description?, messages: McpPromptMessage[], _meta? }
 // Auth & execution context
 McpAuthInfo; // { token, clientId, scopes, expiresAt?, resource?, extra? }
 McpAuthStrategy; // Interface — resolveAuth(authInfo?) for centralized auth validation and enrichment
+markMcpAuthInfoResolved; // (authInfo) => authInfo — in-process callers: skip the auth strategy for this exact object (guards still run)
+isMcpAuthInfoResolved; // (authInfo?) => boolean — whether that exact object was marked
 McpToolContext; // { toolName, params, metadata, authInfo?, sessionId?, signal?, sendProgress?, sendLog?, createMessage?, elicitInput?, listRoots? }
 McpLogLevel; // 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'
 

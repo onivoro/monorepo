@@ -191,19 +191,20 @@ McpAuthModule.configureCognito({
 
 `configureCognito()` derives the JWT config for you: the issuer is `https://cognito-idp.<region>.amazonaws.com/<userPoolId>`, the JWKS URI is `<issuer>/.well-known/jwks.json`, the client ID comes from `client_id`, and scopes come from the space-delimited `scope` claim. PRM advertises the issuer as the authorization server unless you pass `authorizationServers`.
 
-Use `authStrategy: McpCognitoAuthStrategy` with it. On top of the JWT checks, the strategy rejects any token whose `token_use` is not `'access'` (so ID tokens are refused) or whose `client_id` is not exactly the configured `clientId`. Only one app client is accepted.
+Use `authStrategy: McpCognitoAuthStrategy` with it. On top of the JWT checks, the strategy rejects any token whose `token_use` is not `'access'` (so ID tokens are refused) or whose `client_id` is not exactly the configured `clientId`. The MCP route accepts only that one app client.
 
 #### `McpCognitoAuthConfig`
 
-| Field                                                                                                                                                                                                                                | Type                      | Description                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- | ---------------------------------------------------------------- |
-| `region`                                                                                                                                                                                                                             | `string`                  | _Required._ AWS region of the user pool                          |
-| `userPoolId`                                                                                                                                                                                                                         | `string`                  | _Required._ Cognito user pool ID                                 |
-| `clientId`                                                                                                                                                                                                                           | `string`                  | _Required._ The only app client whose access tokens are accepted |
-| `extraClaims`                                                                                                                                                                                                                        | `Record<string, string>?` | Map token claims to `McpAuthInfo.extra` keys                     |
-| `resourceServerUrl`, `authorizationServers`, `serveProtectedResourceMetadata`, `protectedResourceMetadataMode`, `resourceName`, `resourceDocumentationUrl`, `jwksCache`, `jwksCacheMaxAge`, `jwksRateLimit`, `jwksRequestsPerMinute` |                           | Same as in `McpAuthConfig`                                       |
+| Field                                                                                                                                                                                                                                | Type                      | Description                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `region`                                                                                                                                                                                                                             | `string`                  | _Required._ AWS region of the user pool                                                                |
+| `userPoolId`                                                                                                                                                                                                                         | `string`                  | _Required._ Cognito user pool ID                                                                       |
+| `clientId`                                                                                                                                                                                                                           | `string`                  | _Required._ The only app client whose access tokens the MCP route accepts                              |
+| `inProcessClientIds`                                                                                                                                                                                                                 | `string[]?`               | Other app clients whose access tokens `verifyInProcessAccessToken()` also accepts; never the MCP route |
+| `extraClaims`                                                                                                                                                                                                                        | `Record<string, string>?` | Map token claims to `McpAuthInfo.extra` keys                                                           |
+| `resourceServerUrl`, `authorizationServers`, `serveProtectedResourceMetadata`, `protectedResourceMetadataMode`, `resourceName`, `resourceDocumentationUrl`, `jwksCache`, `jwksCacheMaxAge`, `jwksRateLimit`, `jwksRequestsPerMinute` |                           | Same as in `McpAuthConfig`                                                                             |
 
-`audience`, `algorithms`, and `resourceIdentifier` are not available on the Cognito preset. Missing `region`, `userPoolId`, or `clientId` throws at startup.
+`audience`, `algorithms`, and `resourceIdentifier` are not available on the Cognito preset. Missing `region`, `userPoolId`, or `clientId`, or an empty entry in `inProcessClientIds`, throws at startup.
 
 ```typescript
 McpAuthModule.configureCognitoAsync({
@@ -218,6 +219,24 @@ McpAuthModule.configureCognitoAsync({
   }),
 });
 ```
+
+#### Verifying tokens for in-process callers
+
+An agentic loop inside your app may call the MCP tools in-process on behalf of a signed-in user, carrying your web app's access token. The MCP route rejects that token, since only `clientId` is accepted there. List the web app client in `inProcessClientIds` and verify such tokens with `verifyInProcessAccessToken()`, then mark the result with `markMcpAuthInfoResolved()` from `@onivoro/server-mcp` so the registry does not run the strategy again:
+
+```typescript
+McpAuthModule.configureCognito({
+  region,
+  userPoolId,
+  clientId: mcpToolingClientId,
+  inProcessClientIds: [webAppClientId],
+  resourceServerUrl: 'https://api.example.com/mcp',
+});
+
+const authInfo = markMcpAuthInfoResolved(await cognitoStrategy.verifyInProcessAccessToken(webAppAccessToken));
+```
+
+`verifyInProcessAccessToken()` runs the same signature, issuer, expiry and `token_use: 'access'` checks as the MCP route, accepts `client_id` values from `clientId` and `inProcessClientIds`, and throws `InvalidTokenError` otherwise. The MCP route's own checks (`resolveAuth()` and `verifyAccessToken()`) are unchanged. `@onivoro/server-agentic-mcp`'s `resolveAgenticMcpAuth()` wraps this flow for agentic chat.
 
 ### Auth0
 
@@ -309,7 +328,7 @@ The package test suite covers:
 - Startup fails on auth config
   That is expected for invalid PRM config. When PRM is enabled, `resourceServerUrl` and an authorization-server source (`authorizationServers` or `issuer`) are required.
 - Cognito tokens are rejected with `unexpected client_id`
-  `McpCognitoAuthStrategy` accepts access tokens from exactly one app client, the configured `clientId`. ID tokens are rejected because their `token_use` is `id`.
+  On the MCP route, `McpCognitoAuthStrategy` accepts access tokens from exactly one app client, the configured `clientId`; `inProcessClientIds` only applies to `verifyInProcessAccessToken()`. ID tokens are rejected because their `token_use` is `id`.
 - JWT validation fails for the wrong issuer or audience
   Verify `issuer`, `audience`, and `resourceIdentifier` against the provider’s actual token claims.
 

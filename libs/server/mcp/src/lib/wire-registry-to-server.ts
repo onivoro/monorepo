@@ -55,27 +55,34 @@ function wireToolToServer(
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (params: any, extra: any) =>
-      registry.executeToolWrapped(metadata.name, params, extra?.authInfo, {
-        sessionId: extra?.sessionId,
-        signal: extra?.signal,
-        sendProgress: buildSendProgress(server, extra),
-        sendLog: (level: McpLogLevel, data: unknown, logger?: string) =>
-          server.sendLoggingMessage({
-            level,
-            data,
-            ...(logger != null && { logger }),
-          }),
-        createMessage: (msgParams: Record<string, unknown>) =>
-          server.server.createMessage(msgParams as any, {
-            signal: extra?.signal,
-          }),
-        elicitInput: (elicitParams: Record<string, unknown>) =>
-          server.server.elicitInput(elicitParams as any, {
-            signal: extra?.signal,
-          }),
-        listRoots: () =>
-          server.server.listRoots(undefined, { signal: extra?.signal }),
-      }) as any,
+      registry.executeToolWrapped(
+        metadata.name,
+        params,
+        // A copy, so auth info from a transport is never trusted as already
+        // resolved (see markMcpAuthInfoResolved).
+        extra?.authInfo && { ...extra.authInfo },
+        {
+          sessionId: extra?.sessionId,
+          signal: extra?.signal,
+          sendProgress: buildSendProgress(server, extra),
+          sendLog: (level: McpLogLevel, data: unknown, logger?: string) =>
+            server.sendLoggingMessage({
+              level,
+              data,
+              ...(logger != null && { logger }),
+            }),
+          createMessage: (msgParams: Record<string, unknown>) =>
+            server.server.createMessage(msgParams as any, {
+              signal: extra?.signal,
+            }),
+          elicitInput: (elicitParams: Record<string, unknown>) =>
+            server.server.elicitInput(elicitParams as any, {
+              signal: extra?.signal,
+            }),
+          listRoots: () =>
+            server.server.listRoots(undefined, { signal: extra?.signal }),
+        },
+      ) as any,
   );
 
   registeredTools.set(metadata.name, registered as any);

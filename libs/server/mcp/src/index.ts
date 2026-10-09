@@ -51,6 +51,10 @@ export { McpPromptMetadata } from './lib/mcp-prompt-metadata';
 // Auth & guards
 export { McpAuthInfo } from './lib/mcp-auth-info';
 export { McpAuthStrategy } from './lib/mcp-auth-strategy';
+export {
+  markMcpAuthInfoResolved,
+  isMcpAuthInfoResolved,
+} from './lib/mcp-resolved-auth-info';
 export { McpCanActivate } from './lib/mcp-can-activate';
 export { McpGuardMetadata } from './lib/mcp-guard-metadata';
 

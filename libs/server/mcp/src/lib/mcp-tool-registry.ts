@@ -3,6 +3,7 @@ import type { McpToolMetadata } from './mcp-tool-metadata';
 import type { McpResourceMetadata } from './mcp-resource-metadata';
 import type { McpPromptMetadata } from './mcp-prompt-metadata';
 import type { McpAuthInfo } from './mcp-auth-info';
+import { isMcpAuthInfoResolved } from './mcp-resolved-auth-info';
 import type { McpToolContext } from './mcp-tool-context';
 import type { McpToolInterceptor } from './mcp-tool-interceptor';
 import type { McpCanActivate } from './mcp-can-activate';
@@ -305,9 +306,12 @@ export class McpToolRegistry {
 
     // -- Auth strategy (enrichment/validation) --
     // Runs before guards so all guards receive a consistently resolved authInfo.
-    const resolvedAuthInfo = this.authStrategy
-      ? await this.authStrategy.resolveAuth(authInfo)
-      : authInfo;
+    // Auth info an in-process caller marked with `markMcpAuthInfoResolved` was
+    // already verified, so only the guards below check it.
+    const resolvedAuthInfo =
+      this.authStrategy && !isMcpAuthInfoResolved(authInfo)
+        ? await this.authStrategy.resolveAuth(authInfo)
+        : authInfo;
 
     // -- Guards (authorization) --
     // Run first with raw params. Guards check auth, not input shape.
