@@ -50,7 +50,9 @@ bootstrap effect re-runs when they change identity.
 On mount it opens the route's conversation (via `ensureConversation`), else the
 id stored under `localStorageKey` (dropping it on a 404), else a new one, and
 replaces the route to match. Deleting the open conversation starts a new one.
-The list is fetched 50 at a time and refreshed after each send. A conversation
+The list is fetched 50 at a time and refreshed after each send. The open
+conversation stays in the list even when it is not among those 50; a search
+shows only the matching results. A conversation
 whose metadata has a string `workflowLabel` shows it under the heading.
 `pageShell` wraps the content in your own layout.
 
