@@ -15,13 +15,17 @@ jest.mock('jwks-rsa', () => ({
 describe('McpAuthModule + McpHttpModule integration', () => {
   async function startApp(
     metadataMode: 'root' | 'path' | 'both' = 'both',
-    requireBearerAuth: boolean | { requiredScopes?: string[]; resourceMetadataUrl?: string } = true,
+    requireBearerAuth:
+      | boolean
+      | { requiredScopes?: string[]; resourceMetadataUrl?: string } = true,
     route = 'mcp',
     globalPrefix?: string,
   ) {
     const normalizedRoute = route.replace(/^\/+|\/+$/g, '');
     const normalizedGlobalPrefix = globalPrefix?.replace(/^\/+|\/+$/g, '');
-    const resourcePath = [normalizedGlobalPrefix, normalizedRoute].filter(Boolean).join('/');
+    const resourcePath = [normalizedGlobalPrefix, normalizedRoute]
+      .filter(Boolean)
+      .join('/');
 
     @Module({
       imports: [
@@ -69,7 +73,12 @@ describe('McpAuthModule + McpHttpModule integration', () => {
       const response = await fetch(`${baseUrl}/mcp`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        }),
       });
 
       expect(response.status).toBe(401);
@@ -89,7 +98,12 @@ describe('McpAuthModule + McpHttpModule integration', () => {
       const response = await fetch(`${baseUrl}/api/mcp`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        }),
       });
 
       expect(response.status).toBe(401);
@@ -103,13 +117,23 @@ describe('McpAuthModule + McpHttpModule integration', () => {
   });
 
   it('should challenge custom global-prefixed MCP routes with matching PRM URLs', async () => {
-    const { app, baseUrl } = await startApp('both', true, 'internal/mcp', 'api');
+    const { app, baseUrl } = await startApp(
+      'both',
+      true,
+      'internal/mcp',
+      'api',
+    );
 
     try {
       const response = await fetch(`${baseUrl}/api/internal/mcp`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        }),
       });
 
       expect(response.status).toBe(401);
@@ -126,19 +150,50 @@ describe('McpAuthModule + McpHttpModule integration', () => {
     const { app, baseUrl } = await startApp('both', true, 'internal/mcp');
 
     try {
-      const rootResponse = await fetch(`${baseUrl}/.well-known/oauth-protected-resource`);
+      const rootResponse = await fetch(
+        `${baseUrl}/.well-known/oauth-protected-resource`,
+      );
       expect(rootResponse.status).toBe(200);
-      expect(await rootResponse.json()).toEqual(expect.objectContaining({
-        resource: 'http://127.0.0.1/internal/mcp',
-        authorization_servers: ['https://auth.example.com'],
-      }));
+      expect(await rootResponse.json()).toEqual(
+        expect.objectContaining({
+          resource: 'http://127.0.0.1/internal/mcp',
+          authorization_servers: ['https://auth.example.com'],
+        }),
+      );
 
-      const pathResponse = await fetch(`${baseUrl}/.well-known/oauth-protected-resource/internal/mcp`);
+      const pathResponse = await fetch(
+        `${baseUrl}/.well-known/oauth-protected-resource/internal/mcp`,
+      );
       expect(pathResponse.status).toBe(200);
-      expect(await pathResponse.json()).toEqual(expect.objectContaining({
-        resource: 'http://127.0.0.1/internal/mcp',
-        authorization_servers: ['https://auth.example.com'],
-      }));
+      expect(await pathResponse.json()).toEqual(
+        expect.objectContaining({
+          resource: 'http://127.0.0.1/internal/mcp',
+          authorization_servers: ['https://auth.example.com'],
+        }),
+      );
+    } finally {
+      await stopApp(app);
+    }
+  });
+
+  it('should ignore a trailing slash on the path-derived PRM route but not a doubled one', async () => {
+    const { app, baseUrl } = await startApp('both', true, 'internal/mcp');
+
+    try {
+      const trailingResponse = await fetch(
+        `${baseUrl}/.well-known/oauth-protected-resource/internal/mcp/`,
+      );
+      expect(trailingResponse.status).toBe(200);
+      expect(await trailingResponse.json()).toEqual(
+        expect.objectContaining({
+          resource: 'http://127.0.0.1/internal/mcp',
+        }),
+      );
+
+      const doubledResponse = await fetch(
+        `${baseUrl}/.well-known/oauth-protected-resource//internal/mcp`,
+      );
+      expect(doubledResponse.status).toBe(404);
     } finally {
       await stopApp(app);
     }
@@ -148,10 +203,14 @@ describe('McpAuthModule + McpHttpModule integration', () => {
     const { app, baseUrl } = await startApp('path', true, 'internal/mcp');
 
     try {
-      const rootResponse = await fetch(`${baseUrl}/.well-known/oauth-protected-resource`);
+      const rootResponse = await fetch(
+        `${baseUrl}/.well-known/oauth-protected-resource`,
+      );
       expect(rootResponse.status).toBe(404);
 
-      const pathResponse = await fetch(`${baseUrl}/.well-known/oauth-protected-resource/internal/mcp`);
+      const pathResponse = await fetch(
+        `${baseUrl}/.well-known/oauth-protected-resource/internal/mcp`,
+      );
       expect(pathResponse.status).toBe(200);
     } finally {
       await stopApp(app);
@@ -159,15 +218,24 @@ describe('McpAuthModule + McpHttpModule integration', () => {
   });
 
   it('should honor an explicit root PRM challenge URL override', async () => {
-    const { app, baseUrl } = await startApp('both', {
-      resourceMetadataUrl: '/.well-known/oauth-protected-resource',
-    }, 'internal/mcp');
+    const { app, baseUrl } = await startApp(
+      'both',
+      {
+        resourceMetadataUrl: '/.well-known/oauth-protected-resource',
+      },
+      'internal/mcp',
+    );
 
     try {
       const response = await fetch(`${baseUrl}/internal/mcp`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        }),
       });
 
       expect(response.status).toBe(401);

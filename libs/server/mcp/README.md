@@ -1385,6 +1385,7 @@ The package test suite covers:
 - registry discovery and execution
 - HTTP bearer challenge behavior and PRM URL derivation
 - auth strategy resolution through Nest DI
+- the PRM route helpers: wildcard syntax per Nest major, reading the installed Nest version and its fallback, and trailing-slash handling
 
 ## Troubleshooting
 
