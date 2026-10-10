@@ -90,6 +90,7 @@ export { mcpSchemaToJsonSchema } from './lib/mcp-schema-converters';
 
 // Route utilities
 export {
+  PROTECTED_RESOURCE_WILDCARD,
   protectedResourceWildcardRoute,
   wildcardParamToPath,
 } from './lib/protected-resource-wildcard-route';
