@@ -28,6 +28,7 @@
     "llm"
   ],
   "dependencies": {
+    "@onivoro/server-mcp": "^24.39.0",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {

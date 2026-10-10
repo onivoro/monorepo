@@ -119,6 +119,23 @@ describe('McpProtectedResourceController', () => {
     expect(result['resource']).toBe('https://api.example.com/api/mcp');
   });
 
+  it('should ignore a trailing slash on the request or the configured URL', () => {
+    const { controller } = createController({
+      jwksUri: 'https://example.com/jwks',
+      issuer: 'https://auth.example.com',
+      resourceServerUrl: 'https://api.example.com/api/mcp/',
+    });
+
+    expect(
+      controller.getPathProtectedResourceMetadata(['api', 'mcp', ''])[
+        'resource'
+      ],
+    ).toBe('https://api.example.com/api/mcp/');
+    expect(
+      controller.getPathProtectedResourceMetadata('api/mcp')['resource'],
+    ).toBe('https://api.example.com/api/mcp/');
+  });
+
   it('should reject path-derived metadata requests for a different resource path', () => {
     const { controller } = createController({
       jwksUri: 'https://example.com/jwks',

@@ -1,7 +1,19 @@
-import { Controller, DynamicModule, Get, Inject, Logger, Module, Options, Post, Req, Res } from '@nestjs/common';
+import {
+  Controller,
+  DynamicModule,
+  Get,
+  Inject,
+  Logger,
+  Module,
+  Options,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import type { OAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/provider.js';
+import { PROTECTED_RESOURCE_WILDCARD } from '@onivoro/server-mcp';
 import { McpOAuthConfig } from './mcp-oauth-config';
 import { McpOAuthAsyncOptions } from './mcp-oauth-async-options';
 import { MCP_OAUTH_CONFIG } from './mcp-oauth-config-token';
@@ -60,7 +72,10 @@ function createWellKnownOAuthController() {
     }
 
     @Options('oauth-authorization-server')
-    async handleWellKnownOAuthOptions(@Req() req: Request, @Res() res: Response) {
+    async handleWellKnownOAuthOptions(
+      @Req() req: Request,
+      @Res() res: Response,
+    ) {
       await this.dispatch(req, res);
     }
 
@@ -72,46 +87,40 @@ function createWellKnownOAuthController() {
   return DynamicWellKnownOAuthController;
 }
 
-/**
- * The wildcard route for path-suffixed protected resource metadata
- * (`/.well-known/oauth-protected-resource/<resource path>`, RFC 9728 §3.1).
- *
- * Nest 11 moved to path-to-regexp v8, which rejects the `:param(*)` form Nest 10
- * requires and requires the `*param` form Nest 10 misreads. No single string
- * works on both, so the syntax follows the Nest that is actually installed.
- */
-export function protectedResourceWildcardRoute(nestVersion: string): string {
-  const major = Number.parseInt(nestVersion, 10);
-  return major >= 11 ? '*resourcePath' : ':resourcePath(*)';
-}
-
-const PROTECTED_RESOURCE_WILDCARD = protectedResourceWildcardRoute(
-  // Read at load, before any route below is declared.
-  require('@nestjs/core/package.json').version,
-);
-
 function createProtectedResourceController() {
   @Controller('.well-known/oauth-protected-resource')
   class DynamicProtectedResourceController {
     constructor(@Inject(MCP_OAUTH_ROUTER) private readonly router: any) {}
 
     @Get()
-    async handleProtectedResourceGet(@Req() req: Request, @Res() res: Response) {
+    async handleProtectedResourceGet(
+      @Req() req: Request,
+      @Res() res: Response,
+    ) {
       await this.dispatch(req, res);
     }
 
     @Options()
-    async handleProtectedResourceOptions(@Req() req: Request, @Res() res: Response) {
+    async handleProtectedResourceOptions(
+      @Req() req: Request,
+      @Res() res: Response,
+    ) {
       await this.dispatch(req, res);
     }
 
     @Get(PROTECTED_RESOURCE_WILDCARD)
-    async handlePathProtectedResourceGet(@Req() req: Request, @Res() res: Response) {
+    async handlePathProtectedResourceGet(
+      @Req() req: Request,
+      @Res() res: Response,
+    ) {
       await this.dispatch(req, res);
     }
 
     @Options(PROTECTED_RESOURCE_WILDCARD)
-    async handlePathProtectedResourceOptions(@Req() req: Request, @Res() res: Response) {
+    async handlePathProtectedResourceOptions(
+      @Req() req: Request,
+      @Res() res: Response,
+    ) {
       await this.dispatch(req, res);
     }
 
@@ -162,7 +171,8 @@ export class McpOAuthModule {
 
   constructor(
     @Inject(MCP_OAUTH_CONFIG) private readonly config: McpOAuthConfig,
-    @Inject(MCP_OAUTH_SERVER_PROVIDER) private readonly provider: OAuthServerProvider,
+    @Inject(MCP_OAUTH_SERVER_PROVIDER)
+    private readonly provider: OAuthServerProvider,
     private readonly memoryClientsStore: McpMemoryClientsStore,
   ) {}
 
@@ -182,20 +192,29 @@ export class McpOAuthModule {
         McpMemoryClientsStore,
         {
           provide: MCP_OAUTH_ROUTER,
-          useFactory: (cfg: McpOAuthConfig, oauthProvider: OAuthServerProvider) =>
-            createOAuthRouter(cfg, oauthProvider),
+          useFactory: (
+            cfg: McpOAuthConfig,
+            oauthProvider: OAuthServerProvider,
+          ) => createOAuthRouter(cfg, oauthProvider),
           inject: [MCP_OAUTH_CONFIG, MCP_OAUTH_SERVER_PROVIDER],
         },
         ...(providerIsClass
           ? [
               config.provider as any,
-              { provide: MCP_OAUTH_SERVER_PROVIDER, useExisting: config.provider as any },
+              {
+                provide: MCP_OAUTH_SERVER_PROVIDER,
+                useExisting: config.provider as any,
+              },
             ]
           : [
               { provide: MCP_OAUTH_SERVER_PROVIDER, useValue: config.provider },
             ]),
       ],
-      exports: [MCP_OAUTH_CONFIG, MCP_OAUTH_SERVER_PROVIDER, McpMemoryClientsStore],
+      exports: [
+        MCP_OAUTH_CONFIG,
+        MCP_OAUTH_SERVER_PROVIDER,
+        McpMemoryClientsStore,
+      ],
     };
   }
 
@@ -211,7 +230,8 @@ export class McpOAuthModule {
       providers: [
         {
           provide: MCP_OAUTH_CONFIG,
-          useFactory: async (...args: unknown[]) => validateOAuthConfig(await options.useFactory(...args)),
+          useFactory: async (...args: unknown[]) =>
+            validateOAuthConfig(await options.useFactory(...args)),
           inject: options.inject || [],
         },
         {
@@ -226,13 +246,19 @@ export class McpOAuthModule {
         },
         {
           provide: MCP_OAUTH_ROUTER,
-          useFactory: (cfg: McpOAuthConfig, oauthProvider: OAuthServerProvider) =>
-            createOAuthRouter(cfg, oauthProvider),
+          useFactory: (
+            cfg: McpOAuthConfig,
+            oauthProvider: OAuthServerProvider,
+          ) => createOAuthRouter(cfg, oauthProvider),
           inject: [MCP_OAUTH_CONFIG, MCP_OAUTH_SERVER_PROVIDER],
         },
         McpMemoryClientsStore,
       ],
-      exports: [MCP_OAUTH_CONFIG, MCP_OAUTH_SERVER_PROVIDER, McpMemoryClientsStore],
+      exports: [
+        MCP_OAUTH_CONFIG,
+        MCP_OAUTH_SERVER_PROVIDER,
+        McpMemoryClientsStore,
+      ],
     };
   }
 
@@ -242,7 +268,11 @@ export class McpOAuthModule {
 
   private logInMemoryStoreUsage() {
     if (process.env.NODE_ENV === 'test') return;
-    if (!this.provider || (this.provider as any).clientsStore !== this.memoryClientsStore) return;
+    if (
+      !this.provider ||
+      (this.provider as any).clientsStore !== this.memoryClientsStore
+    )
+      return;
 
     this.logger.warn(
       'McpMemoryClientsStore is active. Registered OAuth clients are stored in memory and will be lost on process restart. Use a persistent OAuthRegisteredClientsStore in production.',
@@ -263,25 +293,40 @@ export class McpOAuthModule {
 function validateOAuthConfig(config: McpOAuthConfig): McpOAuthConfig {
   parseAbsoluteUrl(config.issuerUrl, 'issuerUrl');
   if (config.baseUrl) parseAbsoluteUrl(config.baseUrl, 'baseUrl');
-  if (config.resourceServerUrl) parseAbsoluteUrl(config.resourceServerUrl, 'resourceServerUrl');
-  if (config.serviceDocumentationUrl) parseAbsoluteUrl(config.serviceDocumentationUrl, 'serviceDocumentationUrl');
+  if (config.resourceServerUrl)
+    parseAbsoluteUrl(config.resourceServerUrl, 'resourceServerUrl');
+  if (config.serviceDocumentationUrl)
+    parseAbsoluteUrl(config.serviceDocumentationUrl, 'serviceDocumentationUrl');
 
   return config;
 }
 
-function createOAuthRouter(config: McpOAuthConfig, provider: OAuthServerProvider) {
+function createOAuthRouter(
+  config: McpOAuthConfig,
+  provider: OAuthServerProvider,
+) {
   return mcpAuthRouter({
     provider,
     issuerUrl: new URL(config.issuerUrl),
     ...(config.baseUrl && { baseUrl: new URL(config.baseUrl) }),
     ...(config.scopesSupported && { scopesSupported: config.scopesSupported }),
     ...(config.resourceName && { resourceName: config.resourceName }),
-    ...(config.resourceServerUrl && { resourceServerUrl: new URL(config.resourceServerUrl) }),
-    ...(config.serviceDocumentationUrl && { serviceDocumentationUrl: new URL(config.serviceDocumentationUrl) }),
-    ...(config.authorizationOptions && { authorizationOptions: config.authorizationOptions as any }),
+    ...(config.resourceServerUrl && {
+      resourceServerUrl: new URL(config.resourceServerUrl),
+    }),
+    ...(config.serviceDocumentationUrl && {
+      serviceDocumentationUrl: new URL(config.serviceDocumentationUrl),
+    }),
+    ...(config.authorizationOptions && {
+      authorizationOptions: config.authorizationOptions as any,
+    }),
     ...(config.tokenOptions && { tokenOptions: config.tokenOptions as any }),
-    ...(config.clientRegistrationOptions && { clientRegistrationOptions: config.clientRegistrationOptions as any }),
-    ...(config.revocationOptions && { revocationOptions: config.revocationOptions as any }),
+    ...(config.clientRegistrationOptions && {
+      clientRegistrationOptions: config.clientRegistrationOptions as any,
+    }),
+    ...(config.revocationOptions && {
+      revocationOptions: config.revocationOptions as any,
+    }),
   });
 }
 
@@ -305,11 +350,15 @@ function parseAbsoluteUrl(value: string, field: string): URL {
   try {
     parsed = new URL(value);
   } catch {
-    throw new Error(`McpOAuthModule ${field} must be a valid absolute URL, got "${value}".`);
+    throw new Error(
+      `McpOAuthModule ${field} must be a valid absolute URL, got "${value}".`,
+    );
   }
 
   if (!parsed.protocol || !parsed.host) {
-    throw new Error(`McpOAuthModule ${field} must be a valid absolute URL, got "${value}".`);
+    throw new Error(
+      `McpOAuthModule ${field} must be a valid absolute URL, got "${value}".`,
+    );
   }
 
   return parsed;

@@ -6,17 +6,12 @@ import {
   Param,
 } from '@nestjs/common';
 import {
-  protectedResourceWildcardRoute,
+  PROTECTED_RESOURCE_WILDCARD,
   wildcardParamToPath,
 } from '@onivoro/server-mcp';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
 import type { McpAuthConfig } from './mcp-auth-config';
 import { McpScopeRegistry } from './mcp-scope-registry';
-
-const PROTECTED_RESOURCE_WILDCARD = protectedResourceWildcardRoute(
-  // Read at load, before the route below is declared.
-  require('@nestjs/core/package.json').version,
-);
 
 /**
  * Serves the RFC 9728 OAuth 2.0 Protected Resource Metadata endpoint
@@ -40,7 +35,7 @@ export class McpProtectedResourceController {
 
   @Get(`oauth-protected-resource/${PROTECTED_RESOURCE_WILDCARD}`)
   getPathProtectedResourceMetadata(
-    @Param('resourcePath') resourcePath: string | string[],
+    @Param('resourcePath') resourcePath: string | string[] | undefined,
   ): Record<string, unknown> {
     this.assertMetadataRouteEnabled('path');
     this.assertResourcePathMatch(wildcardParamToPath(resourcePath));
@@ -107,6 +102,8 @@ export class McpProtectedResourceController {
       throw new NotFoundException();
     }
 
-    return new URL(resourceUrl).pathname.replace(/^\/+/, '');
+    return wildcardParamToPath(
+      new URL(resourceUrl).pathname.replace(/^\/+/, ''),
+    );
   }
 }
