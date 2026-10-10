@@ -12,6 +12,7 @@
     "setup:mcp:dry-run": "node scripts/setup-mcp-config.js --dry-run",
     "test": "npm run test:unit",
     "test:unit": "nx run-many -t test --passWithNoTests",
+    "smoke:nest11": "nx run-many -t build -p lib-server-mcp lib-server-mcp-auth lib-server-mcp-oauth && rm -rf tools/nest11-smoke/node_modules/@onivoro && npm --prefix tools/nest11-smoke install --install-links --ignore-scripts --no-package-lock --no-audit --no-fund && npm --prefix tools/nest11-smoke run smoke",
     "_release_comment": "1) release:patch/minor/major versions, commits, tags and builds  2) release:push, then the pushed tag makes CI publish (.github/workflows/publish.yml)",
     "release:patch": "npm run release:preflight && nx release version patch && npm run release:build",
     "release:minor": "npm run release:preflight && nx release version minor && npm run release:build",

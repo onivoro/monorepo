@@ -1,0 +1,25 @@
+{
+  "name": "nest11-smoke",
+  "private": true,
+  "description": "Serves the protected-resource metadata routes of the built MCP libraries on Nest 11. Run from the repo root with `npm run smoke:nest11`, which installs with --install-links so the libraries are copied here and resolve Nest 11 rather than the repo root's Nest 10.",
+  "scripts": {
+    "smoke": "node smoke.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@onivoro/server-mcp": "file:../../dist/libs/server/mcp",
+    "@onivoro/server-mcp-auth": "file:../../dist/libs/server/mcp-auth",
+    "@onivoro/server-mcp-oauth": "file:../../dist/libs/server/mcp-oauth",
+    "jsonwebtoken": "~9.0.2",
+    "jwks-rsa": "^3.2.0",
+    "reflect-metadata": "~0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.3.6"
+  },
+  "overrides": {
+    "@onivoro/server-mcp": "$@onivoro/server-mcp"
+  }
+}

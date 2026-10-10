@@ -7,6 +7,7 @@ Nx monorepo of publishable `@onivoro/*` libraries, grouped by runtime: `libs/ser
 ```bash
 npm run fmt                  # format (required before commits)
 npm run test                 # all unit tests
+npm run smoke:nest11         # build the MCP libs, serve their protected-resource routes on Nest 11
 npx nx test {project}
 npx nx build {project}
 npx nx run-many -t build
