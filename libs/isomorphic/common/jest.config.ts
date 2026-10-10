@@ -1,4 +1,7 @@
 /* eslint-disable */
+// The date snapshots were recorded in this zone; pin it so they pass on any machine, including CI.
+process.env.TZ = 'America/Chicago';
+
 export default {
   displayName: 'lib-isomorphic-common',
   preset: '../../../jest.preset.js',

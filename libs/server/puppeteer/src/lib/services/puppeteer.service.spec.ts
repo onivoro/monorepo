@@ -2,13 +2,16 @@ import { PuppeteerService } from './puppeteer.service';
 import { ServerPuppeteerConfig } from '../classes/server-puppeteer-config.class';
 import { launchBrowser } from '../functions/launch-browser.function';
 import { sleep } from '@onivoro/isomorphic-common';
+import { existsSync } from 'fs';
 import { writeFile } from 'fs/promises';
 
+const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
 describe(PuppeteerService.name, () => {
-  it('spawns a browser', async () => {
+  // Launches the local Chrome install, so it only runs where that exists (not in CI)
+  (existsSync(CHROME) ? it : it.skip)('spawns a browser', async () => {
     const options: ServerPuppeteerConfig = {
-      executablePath:
-        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      executablePath: CHROME,
       headless: false,
       devtools: true,
     };
