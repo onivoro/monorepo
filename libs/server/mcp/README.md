@@ -1220,28 +1220,25 @@ Route examples:
 
 ### Serving the path-derived PRM route yourself
 
-`@onivoro/server-mcp-auth` serves these routes for you. If you write your own controller for them, use the two route helpers. Nest 10 and Nest 11 need different wildcard syntax: Nest 11's path-to-regexp v8 rejects `:param(*)`, and Nest 10 misreads `*param`. No single route string works on both.
+`@onivoro/server-mcp-auth` and `@onivoro/server-mcp-oauth` serve these routes for you. If you write your own controller for them, use the route helpers. Nest 10 and Nest 11 need different wildcard syntax: Nest 11's path-to-regexp v8 rejects `:param(*)`, and Nest 10 misreads `*param`. No single route string works on both.
 
-- `protectedResourceWildcardRoute(nestVersion)` returns `'*resourcePath'` when the major version of `nestVersion` is 11 or higher, and `':resourcePath(*)'` otherwise. The parameter is always named `resourcePath`.
-- `wildcardParamToPath(value)` turns the matched parameter into a path. Nest 10 passes a string and Nest 11 an array of segments, which are joined with `/`. `undefined` becomes `''`.
+- `PROTECTED_RESOURCE_WILDCARD` is the wildcard for the installed Nest, computed once when the package loads. It reads the version of `@nestjs/core` resolved from the app's working directory first, then the one this package resolves. If neither can be read, it logs a warning and uses the Nest 11 syntax.
+- `protectedResourceWildcardRoute(nestVersion)` returns `'*resourcePath'` when the major version of `nestVersion` is 11 or higher, and `':resourcePath(*)'` otherwise. Use it to pick the syntax for a version you supply yourself. The parameter is always named `resourcePath`.
+- `wildcardParamToPath(value)` turns the matched parameter into a path. Nest 10 passes a string and Nest 11 an array of segments, which are joined with `/`. Trailing slashes are removed, so `api/mcp/` becomes `api/mcp`; leading and doubled slashes are kept. `undefined` becomes `''`.
 
 ```typescript
 import { Controller, Get, Param } from '@nestjs/common';
-import { protectedResourceWildcardRoute, wildcardParamToPath } from '@onivoro/server-mcp';
-
-const WILDCARD = protectedResourceWildcardRoute(require('@nestjs/core/package.json').version);
+import { PROTECTED_RESOURCE_WILDCARD, wildcardParamToPath } from '@onivoro/server-mcp';
 
 @Controller('.well-known')
 export class MyProtectedResourceController {
-  @Get(`oauth-protected-resource/${WILDCARD}`)
-  getMetadata(@Param('resourcePath') resourcePath: string | string[]) {
+  @Get(`oauth-protected-resource/${PROTECTED_RESOURCE_WILDCARD}`)
+  getMetadata(@Param('resourcePath') resourcePath: string | string[] | undefined) {
     const path = wildcardParamToPath(resourcePath); // e.g. 'api/mcp'
     // ...
   }
 }
 ```
-
-Compute the route when the module loads, before the decorator runs, and pass the version of the `@nestjs/core` that the app actually uses.
 
 ### Auth strategy (centralized auth enrichment)
 
@@ -1603,8 +1600,9 @@ wrapResourceResult; // Auto-wrap raw handler return → McpResourceResult
 wrapPromptResult; // Auto-wrap raw handler return → McpPromptResult
 
 // Route utilities
+PROTECTED_RESOURCE_WILDCARD; // '*resourcePath' or ':resourcePath(*)', for the installed Nest
 protectedResourceWildcardRoute; // (nestVersion) => '*resourcePath' (Nest 11+) or ':resourcePath(*)' (Nest 10)
-wildcardParamToPath; // (string | string[] | undefined) => path string; joins Nest 11 segments with '/'
+wildcardParamToPath; // (string | string[] | undefined) => path string; joins Nest 11 segments with '/', drops trailing slashes
 
 // SDK re-exports (types)
 EventStore; // Interface for SSE resumability event storage
