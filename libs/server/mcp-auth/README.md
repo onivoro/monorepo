@@ -297,7 +297,7 @@ Dynamically registered tools are picked up via `McpToolRegistry.onRegistrationCh
 When `serveProtectedResourceMetadata` is enabled, this package can serve:
 
 - Root discovery: `/.well-known/oauth-protected-resource`
-- Path-derived discovery: `/.well-known/oauth-protected-resource/<resource-path>`
+- Path-derived discovery: `/.well-known/oauth-protected-resource/<resource-path>`. A trailing slash on the request or on `resourceServerUrl` is ignored.
 
 Choose the route mode with `protectedResourceMetadataMode`:
 
@@ -316,6 +316,7 @@ The package test suite covers:
 - JWT validation and enrichment
 - `resourceIdentifier` enforcement
 - Protected Resource Metadata route modes
+- the path-derived PRM route over real HTTP on Nest 10, including a trailing slash. Nest 11 is checked by the repository's `npm run smoke:nest11`, which runs locally, not in CI
 - config validation
 - composition with `McpHttpModule` for real HTTP `401` challenges
 

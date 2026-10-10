@@ -107,7 +107,31 @@ describe('AgenticChatPageShell', () => {
       expect(props.navigate).not.toHaveBeenCalled();
       expect(localStorage.getItem(STORAGE_KEY)).toBe('route-1');
       expect(useAgenticChat).toHaveBeenCalledWith('route-1');
+      expect(
+        (await screen.findAllByText('Title route-1')).length,
+      ).toBeGreaterThan(0);
+    });
+
+    it('keeps the opened conversation when the list loads after it', async () => {
+      let resolveList: (items: AgenticConversationListItem[]) => void = () =>
+        undefined;
+      const { props } = arrange({
+        conversationId: 'route-1',
+        listConversations: jest.fn(
+          () => new Promise((resolve) => (resolveList = resolve)),
+        ),
+      });
+
+      await ready();
+      expect(
+        (await screen.findAllByText('Title route-1')).length,
+      ).toBeGreaterThan(0);
+
+      await waitFor(() => expect(props.listConversations).toHaveBeenCalled());
+      await act(async () => resolveList([conversation('other')]));
+
       expect(screen.queryAllByText('Title route-1').length).toBeGreaterThan(0);
+      expect(screen.queryAllByText('Untitled chat').length).toBeGreaterThan(0);
     });
 
     it('reopens the stored conversation and puts it in the route', async () => {

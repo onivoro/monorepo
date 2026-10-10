@@ -99,11 +99,16 @@ export const AgenticChatPageShell: FC<AgenticChatPageShellProps> = ({
   const loadConversations = useCallback(async () => {
     setIsLoadingConversations(true);
     try {
-      setConversations(
-        await listConversations({
-          limit: 50,
-          search: search.trim() || undefined,
-        }),
+      const query = search.trim() || undefined;
+      const items = await listConversations({ limit: 50, search: query });
+      setConversations((current) =>
+        query
+          ? items
+          : withOpenedConversation(
+              items,
+              current,
+              readyConversationIdRef.current,
+            ),
       );
     } finally {
       setIsLoadingConversations(false);
@@ -608,6 +613,20 @@ function upsertConversation(
   return items.map((item) =>
     item.id === conversation.id ? { ...item, ...conversation } : item,
   );
+}
+
+/**
+ * The list can load after the opened conversation was added to it, or leave
+ * that conversation off its first page; keep it rather than drop it.
+ */
+function withOpenedConversation(
+  items: AgenticConversationListItem[],
+  current: AgenticConversationListItem[],
+  openedId: string | undefined,
+): AgenticConversationListItem[] {
+  if (!openedId || items.some((item) => item.id === openedId)) return items;
+  const opened = current.find((item) => item.id === openedId);
+  return opened ? [opened, ...items] : items;
 }
 
 function errorMessage(error: unknown): string {

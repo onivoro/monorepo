@@ -19,6 +19,8 @@ npm install @onivoro/server-mcp-oauth
 
 **Peer dependencies:** `@modelcontextprotocol/sdk`, `@nestjs/common`, `@nestjs/core`
 
+`@onivoro/server-mcp` is a regular dependency and is installed automatically.
+
 ## Quick start
 
 `McpOAuthModule` mounts authorization-server endpoints. It does **not** protect your MCP route by itself.
@@ -311,7 +313,7 @@ The package test suite covers the following, using a mocked SDK router (the SDK'
 - `configureAsync()` with DI-resolved class providers
 - composition with unprotected and protected MCP routes
 - config URL validation
-- the Nest 10 / Nest 11 wildcard syntax for the path-based PRM route
+- the path-based PRM route on Nest 10. Nest 11 (GET and OPTIONS) is checked by the repository's `npm run smoke:nest11`, which runs locally, not in CI
 
 ## Troubleshooting
 
