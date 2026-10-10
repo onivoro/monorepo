@@ -87,7 +87,7 @@ Naming the package limits the run to it: approve reading its trust settings, add
 
 ## Checks
 
-`.github/workflows/ci.yml` runs on every pull request into `main` and on `main` after each merge. It checks the formatting of the changed files (`nx format:check`), runs every project's unit tests, and builds every published library. Like `publish.yml`, it installs with no install scripts, has a read-only token and no secrets, and pins its actions to commit SHAs. The checks are not yet required for merging. The Nest 11 smoke test (`npm run smoke:nest11`) runs only locally.
+`.github/workflows/ci.yml` runs on every pull request into `main` and on `main` after each merge. It checks the formatting of the changed files (`nx format:check`), runs every project's unit tests, and builds every published library. Like `publish.yml`, it installs with no install scripts, has a read-only token and no secrets, and pins its actions to commit SHAs. The `check` job must pass before a pull request can merge (see the `main` ruleset below). The Nest 11 smoke test (`npm run smoke:nest11`) runs only locally.
 
 ## Repository settings
 
@@ -95,7 +95,7 @@ Naming the package limits the run to it: approve reading its trust settings, add
 
 - **`npm-publish` environment**: deployments limited to `v*` tags.
 - **`release tags` ruleset**: only repository admins can create, move or delete `v*` tags.
-- **`main` ruleset**: blocks deleting and force-pushing `main`, and requires a pull request with one approval, plus code owner review for the build and release files in `.github/CODEOWNERS`. Admins can bypass it, which `release:push` needs.
+- **`main` ruleset**: blocks deleting and force-pushing `main`, and requires a pull request with one approval, plus code owner review for the build and release files in `.github/CODEOWNERS`, and a passing `check` job from `ci.yml`. Admins can bypass it, which `release:push` needs.
 - **Actions**: only GitHub-owned actions are allowed, they must be pinned to full commit SHAs, and the default `GITHUB_TOKEN` is read-only. Dependabot (`.github/dependabot.yml`) opens a weekly pull request that updates the pinned SHAs and their version comments.
 - **Security**: secret scanning with push protection, Dependabot alerts and security updates, and private vulnerability reporting (see `SECURITY.md`).
 

@@ -8,7 +8,8 @@ name: ci.yml
 # - dependencies install with no install scripts
 # - actions are pinned to commit SHAs
 #
-# The Nest 11 smoke test (npm run smoke:nest11) stays local and is not run here.
+# The `check` job is required to merge into main (tools/github-settings.sh); renaming it means updating
+# that rule. The Nest 11 smoke test (npm run smoke:nest11) stays local and is not run here.
 
 on:
   pull_request:

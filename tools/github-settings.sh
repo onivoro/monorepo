@@ -34,13 +34,16 @@ ruleset 'release tags' '{"name":"release tags","target":"tag","enforcement":"act
   "rules":[{"type":"creation"},{"type":"update"},{"type":"deletion"}]}'
 
 # main: no deletion or force-push, and changes arrive by pull request with one approval, plus code owner
-# review for build and release files (.github/CODEOWNERS). Admins bypass, so release:push can push directly.
+# review for build and release files (.github/CODEOWNERS), and the `check` job of ci.yml must pass
+# (15368 is the GitHub Actions app). Admins bypass, so release:push can push directly.
 ruleset 'main' '{"name":"main","target":"branch","enforcement":"active",
   "bypass_actors":[{"actor_id":'$ADMIN_ROLE',"actor_type":"RepositoryRole","bypass_mode":"always"}],
   "conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
   "rules":[{"type":"deletion"},{"type":"non_fast_forward"},
     {"type":"pull_request","parameters":{"required_approving_review_count":1,"require_code_owner_review":true,
-      "dismiss_stale_reviews_on_push":true,"require_last_push_approval":true,"required_review_thread_resolution":false}}]}'
+      "dismiss_stale_reviews_on_push":true,"require_last_push_approval":true,"required_review_thread_resolution":false}},
+    {"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":false,"do_not_enforce_on_create":false,
+      "required_status_checks":[{"context":"check","integration_id":15368}]}}]}'
 
 # Only GitHub-owned actions, pinned to full commit SHAs
 gh api -X PUT "$R/actions/permissions" -F enabled=true -f allowed_actions=selected -F sha_pinning_required=true --silent
