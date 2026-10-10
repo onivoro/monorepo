@@ -1,15 +1,14 @@
 import { Test } from '@nestjs/testing';
 import { Injectable, Module, RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA } from '@nestjs/common/constants';
-import {
-  McpOAuthModule,
-  protectedResourceWildcardRoute,
-} from './mcp-oauth.module';
+import { McpOAuthModule } from './mcp-oauth.module';
 import { MCP_OAUTH_CONFIG } from './mcp-oauth-config-token';
 import { MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth-server-provider-token';
 import { McpMemoryClientsStore } from './mcp-memory-clients-store';
 
-const mockMcpAuthRouter = jest.fn().mockReturnValue((_req: any, _res: any, next: any) => next());
+const mockMcpAuthRouter = jest
+  .fn()
+  .mockReturnValue((_req: any, _res: any, next: any) => next());
 
 jest.mock('@modelcontextprotocol/sdk/server/auth/router.js', () => ({
   mcpAuthRouter: (...args: any[]) => mockMcpAuthRouter(...args),
@@ -131,7 +130,9 @@ describe('McpOAuthModule', () => {
       ],
     }).compile();
 
-    expect(module.get(MCP_OAUTH_SERVER_PROVIDER)).toBe(module.get(AsyncProvider));
+    expect(module.get(MCP_OAUTH_SERVER_PROVIDER)).toBe(
+      module.get(AsyncProvider),
+    );
   });
 
   it('should export McpMemoryClientsStore', async () => {
@@ -181,45 +182,46 @@ describe('McpOAuthModule', () => {
       provider: mockProvider as any,
       issuerUrl: 'https://auth.example.com',
     });
-    const requestMethods = (dynamicModule.controllers || []).flatMap((controller) =>
-      getControllerRequestMethods(controller as any),
+    const requestMethods = (dynamicModule.controllers || []).flatMap(
+      (controller) => getControllerRequestMethods(controller as any),
     );
 
-    expect(requestMethods).toEqual(expect.arrayContaining([
-      RequestMethod.GET,
-      RequestMethod.OPTIONS,
-      RequestMethod.POST,
-    ]));
+    expect(requestMethods).toEqual(
+      expect.arrayContaining([
+        RequestMethod.GET,
+        RequestMethod.OPTIONS,
+        RequestMethod.POST,
+      ]),
+    );
     expect(requestMethods).not.toContain(RequestMethod.ALL);
     expect(requestMethods).not.toContain(RequestMethod.SEARCH);
   });
 
   it('should reject invalid issuer URLs', () => {
-    expect(() => McpOAuthModule.configure({
-      provider: mockProvider as any,
-      issuerUrl: 'not-a-url',
-    })).toThrow(/issuerUrl/);
+    expect(() =>
+      McpOAuthModule.configure({
+        provider: mockProvider as any,
+        issuerUrl: 'not-a-url',
+      }),
+    ).toThrow(/issuerUrl/);
   });
 
   it('should reject invalid optional URLs', () => {
-    expect(() => McpOAuthModule.configure({
-      provider: mockProvider as any,
-      issuerUrl: 'https://auth.example.com',
-      resourceServerUrl: 'not-a-url',
-    })).toThrow(/resourceServerUrl/);
+    expect(() =>
+      McpOAuthModule.configure({
+        provider: mockProvider as any,
+        issuerUrl: 'https://auth.example.com',
+        resourceServerUrl: 'not-a-url',
+      }),
+    ).toThrow(/resourceServerUrl/);
   });
 });
 
 function getControllerRequestMethods(controller: any): RequestMethod[] {
   return Object.getOwnPropertyNames(controller.prototype)
     .filter((name) => name !== 'constructor')
-    .map((name) => Reflect.getMetadata(METHOD_METADATA, controller.prototype[name]))
+    .map((name) =>
+      Reflect.getMetadata(METHOD_METADATA, controller.prototype[name]),
+    )
     .filter((method) => typeof method === 'number');
 }
-
-describe('protectedResourceWildcardRoute', () => {
-  it('uses the form each Nest major accepts', () => {
-    expect(protectedResourceWildcardRoute('10.4.20')).toBe(':resourcePath(*)');
-    expect(protectedResourceWildcardRoute('11.2.1')).toBe('*resourcePath');
-  });
-});

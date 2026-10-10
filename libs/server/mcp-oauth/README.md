@@ -19,6 +19,8 @@ npm install @onivoro/server-mcp-oauth
 
 **Peer dependencies:** `@modelcontextprotocol/sdk`, `@nestjs/common`, `@nestjs/core`
 
+`@onivoro/server-mcp` is a regular dependency and is installed automatically.
+
 ## Quick start
 
 `McpOAuthModule` mounts authorization-server endpoints. It does **not** protect your MCP route by itself.

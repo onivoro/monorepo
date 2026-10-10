@@ -297,7 +297,7 @@ Dynamically registered tools are picked up via `McpToolRegistry.onRegistrationCh
 When `serveProtectedResourceMetadata` is enabled, this package can serve:
 
 - Root discovery: `/.well-known/oauth-protected-resource`
-- Path-derived discovery: `/.well-known/oauth-protected-resource/<resource-path>`
+- Path-derived discovery: `/.well-known/oauth-protected-resource/<resource-path>`. A trailing slash on the request or on `resourceServerUrl` is ignored.
 
 Choose the route mode with `protectedResourceMetadataMode`:
 
