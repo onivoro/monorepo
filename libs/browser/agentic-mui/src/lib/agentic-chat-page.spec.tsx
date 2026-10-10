@@ -107,7 +107,9 @@ describe('AgenticChatPageShell', () => {
       expect(props.navigate).not.toHaveBeenCalled();
       expect(localStorage.getItem(STORAGE_KEY)).toBe('route-1');
       expect(useAgenticChat).toHaveBeenCalledWith('route-1');
-      expect(screen.queryAllByText('Title route-1').length).toBeGreaterThan(0);
+      expect(
+        (await screen.findAllByText('Title route-1')).length,
+      ).toBeGreaterThan(0);
     });
 
     it('reopens the stored conversation and puts it in the route', async () => {
