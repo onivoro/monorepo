@@ -85,6 +85,10 @@ Naming the package limits the run to it: approve reading its trust settings, add
 
 `npm run release:minor` and `npm run release:push`. CI now publishes the new package with the others.
 
+## Checks
+
+`.github/workflows/ci.yml` runs on every pull request into `main` and on `main` after each merge. It checks the formatting of the changed files (`nx format:check`), runs every project's unit tests, and builds every published library. Like `publish.yml`, it installs with no install scripts, has a read-only token and no secrets, and pins its actions to commit SHAs. The checks are not yet required for merging. The Nest 11 smoke test (`npm run smoke:nest11`) runs only locally.
+
 ## Repository settings
 
 `publish.yml` relies on these GitHub settings for `onivoro/monorepo`. `npm run release:github-settings` applies them (as a repo admin with `gh` logged in) and can be run again at any time:

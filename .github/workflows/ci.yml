@@ -1,0 +1,59 @@
+name: ci.yml
+
+# Checks every pull request into main, and main itself after each merge: formatting of the changed
+# files, unit tests for every project, and a build of every published library.
+#
+# Hardening, as in publish.yml:
+# - read-only token and no secrets, so pull request code can't publish or write to the repository
+# - dependencies install with no install scripts
+# - actions are pinned to commit SHAs
+#
+# The Nest 11 smoke test (npm run smoke:nest11) stays local and is not run here.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  NODE_VERSION: 24.20.0 # same as publish.yml
+  NX_DAEMON: 'false'
+  NX_NO_CLOUD: 'true'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Only the files this change touches; the repo predates formatting on every file
+      - name: Format
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npx nx format:check --base="$BASE" --head=HEAD
+
+      - name: Test
+        run: npx nx run-many -t test --passWithNoTests --skip-nx-cache
+
+      - name: Build
+        run: npx nx run-many -t build --projects='lib-server-*,lib-isomorphic-*,lib-browser-*' --skip-nx-cache
