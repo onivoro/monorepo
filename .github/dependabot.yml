@@ -8,3 +8,17 @@ updates:
     groups:
       actions:
         patterns: ['*']
+
+  # Only shapes security update pull requests: the limit of 0 turns off routine version updates.
+  # Nx stays on 21.x: Dependabot won't bump nx or @nx/* to 22 or later, even to fix a vulnerable
+  # transitive dependency. Upgrade Nx deliberately, with `nx migrate`.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: nx
+        versions: ['>=22.0.0']
+      - dependency-name: '@nx/*'
+        versions: ['>=22.0.0']
