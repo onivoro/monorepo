@@ -1658,7 +1658,7 @@ MCP_CORS_CONFIG; // Complete CORS config object (methods, allowedHeaders, expose
 
 ```json
 {
-  "@modelcontextprotocol/sdk": "^1.28.0",
+  "@modelcontextprotocol/sdk": "^1.31.0",
   "@nestjs/common": "^10.0.0 || ^11.0.0",
   "@nestjs/core": "^10.0.0 || ^11.0.0",
   "zod": "^4.0.0"
