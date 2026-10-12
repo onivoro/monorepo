@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Nx monorepo of publishable `@onivoro/*` libraries, grouped by runtime: `libs/server` (NestJS), `libs/browser` (React), `libs/isomorphic` (both). Project names follow `lib-<runtime>-<name>` (e.g. `lib-server-common`); `apps/cli` holds tooling.
+Nx monorepo of publishable `@onivoro/*` libraries, grouped by runtime: `libs/server` (NestJS), `libs/browser` (React), `libs/isomorphic` (both). Project names follow `lib-<runtime>-<name>` (e.g. `lib-server-common`).
 
 ## Commands
 

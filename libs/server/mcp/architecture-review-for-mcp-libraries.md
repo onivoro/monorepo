@@ -41,7 +41,7 @@ No other package depends on it. Its only remaining consumers in the repository a
 - The README opens with a deprecation notice, the reasons above, and a migration path: run a dedicated authorization server (hosted, such as Amazon Cognito, Auth0, Entra ID or Okta, or self-operated, such as Keycloak or Ory Hydra) and validate its tokens with `McpAuthModule` from `@onivoro/server-mcp-auth`.
 - `package.json`'s description starts with "DEPRECATED"; `McpOAuthModule`, `McpOAuthConfig`, the clients stores and the package entry point carry `@deprecated` JSDoc; the module logs a one-time deprecation warning at startup (outside `NODE_ENV=test`).
 - The `server-mcp` README and the package guide mark it deprecated.
-- `@onivoro/create-mcp-server` no longer offers it: the `--oauth` option (which added the package and a commented-out stub to generated projects) and its prompt are removed, and passing `--oauth` stops the CLI with a message pointing to `--auth` and a dedicated authorization server.
+- The `@onivoro/create-mcp-server` scaffolder, whose `--oauth` option added this package to generated projects, has been deleted. It was never published: it sat outside both the `nx release` projects and the `publish.yml` package list, so `npx @onivoro/create-mcp-server` never worked.
 - Still to do at release: `npm deprecate @onivoro/server-mcp-oauth "<message>"`. Removal can follow in a later major release, no later than the SDK's removal of `server-legacy`.
 
 ---
