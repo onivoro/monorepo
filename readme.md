@@ -87,7 +87,7 @@ Naming the package limits the run to it: approve reading its trust settings, add
 
 ## Checks
 
-`.github/workflows/ci.yml` runs on every pull request into `main` and on `main` after each merge. It checks the formatting of the changed files (`nx format:check`), runs every project's unit tests, and builds every published library. Like `publish.yml`, it installs with no install scripts, has a read-only token and no secrets, and pins its actions to commit SHAs. The `check` job must pass before a pull request can merge (see the `main` ruleset below). The Nest 11 smoke test (`npm run smoke:nest11`) runs only locally.
+`.github/workflows/ci.yml` runs on every pull request into `main` and on `main` after each merge. It checks the formatting of the changed files (`nx format:check`; locally, a Husky pre-commit hook runs Prettier on staged files through lint-staged), runs every project's unit tests, and builds every published library. Like `publish.yml`, it installs with no install scripts, has a read-only token and no secrets, and pins its actions to commit SHAs. The `check` job must pass before a pull request can merge (see the `main` ruleset below). The Nest 11 smoke test (`npm run smoke:nest11`) runs only locally.
 
 ## Repository settings
 
