@@ -6,10 +6,15 @@
 # leaked npm token can't publish it; trusted publishing still works.
 # Run once after `npm login`, and again whenever a new library is added; packages already trusted are skipped.
 #
+# A new trust expires unless a publish uses it within about 48 hours, and `npm trust list` doesn't show that
+# it expired (the package's settings page on npmjs.com does). CI then fails with "OIDC token exchange error -
+# package not found". --renew replaces each package's trust of the workflow with a new one; release right after.
+#
 #   bash tools/npm-trust.sh                            # every package in libs/
 #   bash tools/npm-trust.sh @onivoro/server-foo        # only the packages named
+#   bash tools/npm-trust.sh --renew                    # replace expired trust
 #
-# Arguments starting with - go to npm, e.g. --dry-run or --otp=<code>.
+# Other arguments starting with - go to npm, e.g. --dry-run or --otp=<code>.
 set -euo pipefail
 
 REPO=onivoro/monorepo
@@ -31,11 +36,18 @@ list_trust() {
   fi
 }
 
+# Prints the id of each entry in a recorded `npm trust list` that trusts $WORKFLOW
+trust_ids() {
+  tr -d '\r' < "$1" | awk -v file="$WORKFLOW" -v RS= '$0 ~ "file: " file "(\n|$)" { match($0, /id: [^\n]+/); print substr($0, RSTART + 4, RLENGTH - 4) }'
+}
+
 dry_run=false
+renew=false
 names=()
 flags=()
 for arg in "$@"; do
   case $arg in
+    --renew) renew=true ;;
     --dry-run) dry_run=true; flags+=("$arg") ;;
     -*) flags+=("$arg") ;;
     *) names+=("$arg") ;;
@@ -50,6 +62,17 @@ for name in "${names[@]}"; do
   # npm only asks for it when stdin and stdout are a terminal, so run it under `script`, which gives it one,
   # shows its prompts and records its output for the check below
   list_trust "$name" "$log" || { echo "ERROR: couldn't read the trust settings of $name"; exit 1; }
+  if $renew; then
+    for id in $(trust_ids "$log"); do
+      if $dry_run; then
+        echo "would revoke: $name trust $id"
+      else
+        echo "revoke: $name trust $id"
+        npm trust revoke "$name" --id="$id" ${flags[@]+"${flags[@]}"}
+      fi
+    done
+    : > "$log"
+  fi
   if grep -q "$WORKFLOW" "$log"; then
     echo "skip: $name already trusts $WORKFLOW"
   else

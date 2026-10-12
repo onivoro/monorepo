@@ -36,6 +36,8 @@ npm run release:trust                     # pass -- --dry-run to preview, or -- 
 
 `release:trust` runs `npm trust github` for every package that doesn't trust the workflow yet. It then sets every package to "Require two-factor authentication and disallow tokens" (`npm access set mfa=publish`), so a leaked npm token can't publish it; trusted publishing still works. Finally it lists the npm org's members and your npm tokens for you to review. npm asks for a one-time password for each change.
 
+New trust starts out "Pending validation" and expires unless a publish uses it within about 48 hours, so release soon after adding it. `npm trust list` doesn't show that trust expired; the package's settings page on npmjs.com does. Expired trust makes the `publish` job fail with `OIDC token exchange error - package not found` (visible because the job logs npm at verbose level) and then `404 Not Found - PUT`. To replace it, run `npm run release:trust -- --renew` (optionally naming packages), then release or rerun the failed job within the 48 hours.
+
 A brand-new package needs a few extra steps before CI can publish it; see [Adding a package](#adding-a-package).
 
 ## Adding a package
@@ -81,9 +83,9 @@ npm run release:trust -- @onivoro/<runtime>-<name>
 
 Naming the package limits the run to it: approve reading its trust settings, adding trust, and setting it to two-factor-only publishing. Without a name the script walks all packages and asks for about three approvals each.
 
-### 5. Release as usual
+### 5. Release as usual, within 48 hours
 
-`npm run release:minor` and `npm run release:push`. CI now publishes the new package with the others.
+`npm run release:minor` and `npm run release:push`. CI now publishes the new package with the others. Release within about 48 hours of step 4, or the new trust expires; see [Trusted publishing setup](#trusted-publishing-setup).
 
 ## Checks
 
