@@ -34,7 +34,7 @@ npm login
 npm run release:trust                     # pass -- --dry-run to preview, or -- @onivoro/<name> for one package
 ```
 
-`release:trust` runs `npm trust github` for every package that doesn't trust the workflow yet. It then sets every package to "Require two-factor authentication and disallow tokens" (`npm access set mfa=publish`), so a leaked npm token can't publish it; trusted publishing still works. Finally it lists the npm org's members and your npm tokens for you to review. npm asks for a one-time password for each change.
+`release:trust` runs `npm trust github` for every package that doesn't trust the workflow yet. It then sets every package to "Require two-factor authentication and disallow tokens" (`npm access set mfa=publish`), so a leaked npm token can't publish it; trusted publishing still works. Finally it lists the npm org's members and your npm tokens for you to review. Every npm call needs a one-time password, so the script asks for a code from your authenticator app and reuses it until npm rejects it: expect a new code about every 30 seconds, not one per call.
 
 New trust starts out "Pending validation" and expires unless a publish uses it within about 48 hours, so release soon after adding it. `npm trust list` doesn't show that trust expired; the package's settings page on npmjs.com does. Expired trust makes the `publish` job fail with `OIDC token exchange error - package not found` (visible because the job logs npm at verbose level) and then `404 Not Found - PUT`. To replace it, run `npm run release:trust -- --renew` (optionally naming packages), then release or rerun the failed job within the 48 hours.
 
@@ -81,7 +81,7 @@ Run this in your own terminal app, because npm only asks for two-factor approval
 npm run release:trust -- @onivoro/<runtime>-<name>
 ```
 
-Naming the package limits the run to it: approve reading its trust settings, adding trust, and setting it to two-factor-only publishing. Without a name the script walks all packages and asks for about three approvals each.
+Naming the package limits the run to it: it reads the package's trust settings, adds trust and sets two-factor-only publishing, usually on a single one-time password. Without a name the script walks all packages.
 
 ### 5. Release as usual, within 48 hours
 
