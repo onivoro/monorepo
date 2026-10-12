@@ -2,20 +2,17 @@ import { Logger } from '@nestjs/common';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { wireRegistryToServer } from './wire-registry-to-server';
 
-jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+jest.mock('@modelcontextprotocol/server', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server'),
   McpServer: jest.fn(),
   ResourceTemplate: jest
     .fn()
     .mockImplementation((uri: string, opts: unknown) => ({ uri, opts })),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
-  SubscribeRequestSchema: { method: 'resources/subscribe' },
-  UnsubscribeRequestSchema: { method: 'resources/unsubscribe' },
-}));
-
 function createMockServer() {
   return {
+    isConnected: jest.fn().mockReturnValue(false),
     registerTool: jest
       .fn()
       .mockReturnValue({ enable: jest.fn(), disable: jest.fn() }),
@@ -24,6 +21,10 @@ function createMockServer() {
     sendLoggingMessage: jest.fn().mockResolvedValue(undefined),
     server: {
       setRequestHandler: jest.fn(),
+      registerCapabilities: jest.fn(),
+      getClientCapabilities: jest
+        .fn()
+        .mockReturnValue({ sampling: {}, elicitation: {}, roots: {} }),
       sendResourceUpdated: jest.fn().mockResolvedValue(undefined),
       notification: jest.fn().mockResolvedValue(undefined),
       createMessage: jest.fn().mockResolvedValue({ role: 'assistant' }),
@@ -46,105 +47,170 @@ describe('wireRegistryToServer tool context', () => {
     jest.restoreAllMocks();
   });
 
-  async function invokeWithContext(
-    use: (ctx: any) => Promise<unknown>,
-    extra: Record<string, unknown> = {},
-  ) {
-    const server = createMockServer();
-    registry.registerTool(
-      { name: 'ctx-tool', description: 'd' },
-      async (_params: unknown, ctx?: any) => use(ctx),
-    );
-    wireRegistryToServer(registry, server);
-    const callback = server.registerTool.mock.calls[0][2];
-    const result = await callback({}, extra);
-    return { server, result };
+  /** A v2 handler context whose server-to-client requests answer like a client would. */
+  function ctxOf(overrides: Record<string, any> = {}) {
+    return {
+      mcpReq: {
+        id: 1,
+        method: 'tools/call',
+        signal: new AbortController().signal,
+        notify: jest.fn().mockResolvedValue(undefined),
+        log: jest.fn().mockResolvedValue(undefined),
+        requestSampling: jest.fn().mockResolvedValue({ role: 'assistant' }),
+        elicitInput: jest.fn().mockResolvedValue({ action: 'accept' }),
+        send: jest.fn().mockResolvedValue({ roots: [{ uri: 'file:///' }] }),
+        ...overrides,
+      },
+    };
   }
 
-  it('should forward createMessage to the low-level server with the request signal', async () => {
-    const signal = new AbortController().signal;
+  async function invokeWithContext(
+    use: (ctx: any) => Promise<unknown>,
+    options: Parameters<typeof wireRegistryToServer>[2] = {},
+    server = createMockServer(),
+  ) {
+    let seen: any;
+    registry.registerTool(
+      { name: 'ctx-tool', description: 'd' },
+      async (_params: unknown, ctx?: any) => {
+        seen = ctx;
+        return use(ctx);
+      },
+    );
+    wireRegistryToServer(registry, server, options);
+    const sdkCtx = ctxOf();
+    const result = await server.registerTool.mock.calls[0][2]({}, sdkCtx);
+    return { sdkCtx, result, seen };
+  }
+
+  it('should send sampling requests through the request context', async () => {
     const params = { messages: [], maxTokens: 10 };
 
-    const { server, result } = await invokeWithContext(
-      (ctx) => ctx.createMessage(params),
-      { signal },
+    const { sdkCtx, result } = await invokeWithContext((ctx) =>
+      ctx.createMessage(params),
     );
 
-    expect(server.server.createMessage).toHaveBeenCalledWith(params, {
-      signal,
-    });
+    expect(sdkCtx.mcpReq.requestSampling).toHaveBeenCalledWith(params);
     expect(result.content[0].text).toContain('assistant');
   });
 
-  it('should forward elicitInput to the low-level server with the request signal', async () => {
-    const signal = new AbortController().signal;
+  it('should send elicitation requests through the request context', async () => {
     const params = { message: 'Name?', requestedSchema: {} };
 
-    const { server, result } = await invokeWithContext(
-      (ctx) => ctx.elicitInput(params),
-      { signal },
+    const { sdkCtx, result } = await invokeWithContext((ctx) =>
+      ctx.elicitInput(params),
     );
 
-    expect(server.server.elicitInput).toHaveBeenCalledWith(params, { signal });
+    expect(sdkCtx.mcpReq.elicitInput).toHaveBeenCalledWith(params);
     expect(result.content[0].text).toContain('accept');
   });
 
-  it('should forward listRoots to the low-level server with the request signal', async () => {
-    const signal = new AbortController().signal;
-
-    const { server, result } = await invokeWithContext(
-      (ctx) => ctx.listRoots(),
-      { signal },
+  it('should send roots requests through the request context', async () => {
+    const { sdkCtx, result } = await invokeWithContext((ctx) =>
+      ctx.listRoots(),
     );
 
-    expect(server.server.listRoots).toHaveBeenCalledWith(undefined, {
-      signal,
-    });
+    expect(sdkCtx.mcpReq.send).toHaveBeenCalledWith({ method: 'roots/list' });
     expect(result.content[0].text).toContain('file:///');
   });
 
-  it('should tolerate a missing extra argument', async () => {
+  it('should tolerate a missing context', async () => {
     const server = createMockServer();
     registry.registerTool(
-      { name: 'no-extra', description: 'd' },
-      async (_params: unknown, ctx?: any) => {
-        await ctx.listRoots();
-        return {
-          sessionId: ctx.sessionId ?? null,
-          hasProgress: !!ctx.sendProgress,
-        };
-      },
+      { name: 'no-ctx', description: 'd' },
+      async (_params: unknown, ctx?: any) => ({
+        sessionId: ctx.sessionId ?? null,
+        hasProgress: !!ctx.sendProgress,
+        hasRoots: !!ctx.listRoots,
+      }),
     );
     wireRegistryToServer(registry, server);
 
     const result = await server.registerTool.mock.calls[0][2]({});
 
-    expect(server.server.listRoots).toHaveBeenCalledWith(undefined, {
-      signal: undefined,
-    });
     expect(JSON.parse(result.content[0].text)).toEqual({
       sessionId: null,
       hasProgress: false,
+      hasRoots: false,
     });
   });
 
   it('should surface rejections from client requests as tool errors', async () => {
     const server = createMockServer();
-    server.server.elicitInput.mockRejectedValueOnce(
-      new Error('client does not support elicitation'),
-    );
     registry.registerTool(
       { name: 'elicit', description: 'd' },
       async (_params: unknown, ctx?: any) => ctx.elicitInput({ message: 'x' }),
     );
     wireRegistryToServer(registry, server);
 
-    const result = await server.registerTool.mock.calls[0][2]({});
+    const sdkCtx = ctxOf({
+      elicitInput: jest
+        .fn()
+        .mockRejectedValue(new Error('client does not support elicitation')),
+    });
+    const result = await server.registerTool.mock.calls[0][2]({}, sdkCtx);
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain(
-      'client does not support elicitation',
+    expect(result.content[0].text).toBe(
+      'Error executing elicit: Internal error',
     );
+  });
+
+  it('should leave out client requests the client did not declare', async () => {
+    const server = createMockServer();
+    server.server.getClientCapabilities.mockReturnValue({ roots: {} });
+
+    const { seen } = await invokeWithContext(async () => 'ok', {}, server);
+
+    expect(seen.createMessage).toBeUndefined();
+    expect(seen.elicitInput).toBeUndefined();
+    expect(seen.listRoots).toBeDefined();
+  });
+
+  it('should leave out client requests before the client initialized (stateless HTTP)', async () => {
+    const server = createMockServer();
+    server.server.getClientCapabilities.mockReturnValue(undefined);
+
+    const { seen } = await invokeWithContext(async () => 'ok', {}, server);
+
+    expect(seen.createMessage).toBeUndefined();
+    expect(seen.elicitInput).toBeUndefined();
+    expect(seen.listRoots).toBeUndefined();
+  });
+
+  it('should leave out client requests on 2026-07-28 servers, which ask with inputRequired', async () => {
+    const { seen } = await invokeWithContext(async () => 'ok', {
+      era: 'modern',
+    });
+
+    expect(seen.era).toBe('modern');
+    expect(seen.createMessage).toBeUndefined();
+    expect(seen.elicitInput).toBeUndefined();
+    expect(seen.listRoots).toBeUndefined();
+    expect(seen.sendLog).toBeDefined();
+  });
+
+  it('should leave out everything request-scoped when the transport drops it (JSON responses)', async () => {
+    const { seen } = await invokeWithContext(async () => 'ok', {
+      requestScopedMessages: false,
+    });
+
+    expect(seen.sendProgress).toBeUndefined();
+    expect(seen.sendLog).toBeUndefined();
+    expect(seen.createMessage).toBeUndefined();
+    expect(seen.elicitInput).toBeUndefined();
+    expect(seen.listRoots).toBeUndefined();
+  });
+
+  it('should pass an inputRequired result through to the SDK', async () => {
+    const asked = {
+      resultType: 'input_required',
+      inputRequests: { confirm: { method: 'elicitation/create', params: {} } },
+    };
+
+    const { result } = await invokeWithContext(async () => asked);
+
+    expect(result).toBe(asked);
   });
 });
 
@@ -220,7 +286,9 @@ describe('wireRegistryToServer dynamic registration', () => {
     );
     wireRegistryToServer(registry, server);
 
-    const subscribe = server.server.setRequestHandler.mock.calls[0][1];
+    const subscribe = server.server.setRequestHandler.mock.calls.find(
+      (c: any[]) => c[0] === 'resources/subscribe',
+    )[1];
     subscribe({ params: { uri: 'app://x' } }, { sessionId: 's1' });
 
     const unhandled = jest.fn();

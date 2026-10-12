@@ -230,29 +230,127 @@ describe(`${StandardMcpClientAgenticToolProvider.name} (name resolution)`, () =>
     });
   });
 
-  it('falls back to the unprefixed sanitized name when no tool matches', async () => {
+  it('reports a name that matches no tool as a tool error, after listing again', async () => {
     const { client, provider } = setup([]);
-    await provider.executeTool(
+    const result = await provider.executeTool(
       { id: '1', name: 'mcp__mcp__ghost', input: {} },
       context,
     );
-    expect(client.callTool).toHaveBeenCalledWith({
-      name: 'ghost',
-      arguments: {},
+    expect(client.callTool).not.toHaveBeenCalled();
+    expect(client.listTools).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      toolCallId: '1',
+      isError: true,
+      resultText: 'Unknown tool "mcp__mcp__ghost".',
     });
   });
 
   it('accepts an unprefixed name when namespaces are exposed', async () => {
     const { client, provider } = setup([{ name: 'raw' }]);
     await provider.executeTool({ id: '1', name: 'raw', input: {} }, context);
-    await provider.executeTool(
+    const unknown = await provider.executeTool(
       { id: '2', name: 'unknown', input: {} },
       context,
     );
     expect(client.callTool.mock.calls.map(([params]) => params.name)).toEqual([
       'raw',
-      'unknown',
     ]);
+    expect(unknown.isError).toBe(true);
+  });
+
+  it('resolves calls from the listed tools without listing again', async () => {
+    const { client, provider } = setup([{ name: 'x' }]);
+    await provider.listTools();
+    await provider.executeTool(
+      { id: '1', name: 'mcp__mcp__x', input: {} },
+      context,
+    );
+    await provider.executeTool(
+      { id: '2', name: 'mcp__mcp__x', input: {} },
+      context,
+    );
+    expect(client.listTools).toHaveBeenCalledTimes(1);
+    expect(client.callTool).toHaveBeenCalledTimes(2);
+  });
+
+  it('lists again to find a tool the server added since', async () => {
+    const { client, provider } = setup([{ name: 'old' }]);
+    await provider.listTools();
+    client.listTools.mockResolvedValue({
+      tools: [{ name: 'old' }, { name: 'new' }],
+    });
+
+    await provider.executeTool(
+      { id: '1', name: 'mcp__mcp__new', input: {} },
+      context,
+    );
+
+    expect(client.listTools).toHaveBeenCalledTimes(2);
+    expect(client.callTool).toHaveBeenCalledWith({
+      name: 'new',
+      arguments: {},
+    });
+  });
+
+  it('follows nextCursor across every page of tools', async () => {
+    const client = {
+      listTools: jest
+        .fn()
+        .mockResolvedValueOnce({ tools: [{ name: 'a' }], nextCursor: 'p2' })
+        .mockResolvedValueOnce({ tools: [{ name: 'b' }], nextCursor: 'p3' })
+        .mockResolvedValueOnce({ tools: [{ name: 'c' }] }),
+      callTool: jest.fn(),
+    };
+    const provider = new StandardMcpClientAgenticToolProvider(client);
+
+    const tools = await provider.listTools();
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'mcp__mcp__a',
+      'mcp__mcp__b',
+      'mcp__mcp__c',
+    ]);
+    expect(client.listTools.mock.calls).toEqual([
+      [undefined],
+      [{ cursor: 'p2' }],
+      [{ cursor: 'p3' }],
+    ]);
+  });
+
+  it('stops paging after a bounded number of pages', async () => {
+    const client = {
+      listTools: jest
+        .fn()
+        .mockResolvedValue({ tools: [], nextCursor: 'again' }),
+      callTool: jest.fn(),
+    };
+    const provider = new StandardMcpClientAgenticToolProvider(client);
+
+    await provider.listTools();
+
+    expect(client.listTools).toHaveBeenCalledTimes(100);
+  });
+
+  it('marks a result the server reported as an error, with its text', async () => {
+    const failure = {
+      content: [
+        { type: 'text', text: 'Repository not found' },
+        { type: 'text', text: 'Check the name' },
+      ],
+      isError: true,
+    };
+    const { provider } = setup([{ name: 'x' }], {}, failure);
+
+    const result = await provider.executeTool(
+      { id: '1', name: 'mcp__mcp__x', input: {} },
+      context,
+    );
+
+    expect(result).toMatchObject({
+      result: failure,
+      resultText: 'Repository not found\nCheck the name',
+      isError: true,
+    });
   });
 
   it('lists raw names when namespaces are not exposed', async () => {
@@ -264,16 +362,14 @@ describe(`${StandardMcpClientAgenticToolProvider.name} (name resolution)`, () =>
     ]);
   });
 
-  it('passes an unknown name through when namespaces are not exposed', async () => {
+  it('reports an unknown name as a tool error when namespaces are not exposed', async () => {
     const { client, provider } = setup([], { exposeNamespace: false });
-    await provider.executeTool(
+    const result = await provider.executeTool(
       { id: '1', name: 'whatever', input: {} },
       context,
     );
-    expect(client.callTool).toHaveBeenCalledWith({
-      name: 'whatever',
-      arguments: {},
-    });
+    expect(client.callTool).not.toHaveBeenCalled();
+    expect(result.isError).toBe(true);
   });
 
   it('stringifies object results and falls back to String() for circular ones', async () => {

@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
-import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import { OAuthError } from '@modelcontextprotocol/server';
+import { invalidTokenError } from './invalid-token-error';
 import { McpAuthModule } from './mcp-auth.module';
 import type { McpCognitoAuthConfig } from './mcp-cognito-auth-config';
 import { McpCognitoAuthStrategy } from './mcp-cognito-auth-strategy';
@@ -59,7 +60,7 @@ describe('McpCognitoAuthStrategy.verifyInProcessAccessToken', () => {
     );
     await expect(
       strategy.resolveAuth({ token: webToken, clientId: '', scopes: [] }),
-    ).rejects.toBeInstanceOf(InvalidTokenError);
+    ).rejects.toBeInstanceOf(OAuthError);
   });
 
   it('accepts only clientId when inProcessClientIds is unset', async () => {
@@ -85,7 +86,7 @@ describe('McpCognitoAuthStrategy.verifyInProcessAccessToken', () => {
   ])('rejects %s', async (_label, token) => {
     await expect(
       createStrategy().verifyInProcessAccessToken(token),
-    ).rejects.toBeInstanceOf(InvalidTokenError);
+    ).rejects.toBeInstanceOf(OAuthError);
   });
 });
 

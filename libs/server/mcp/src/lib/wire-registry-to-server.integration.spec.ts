@@ -1,0 +1,281 @@
+import { Logger } from '@nestjs/common';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import { McpServer } from '@modelcontextprotocol/server';
+import { z } from 'zod';
+import { buildCapabilities } from './build-capabilities';
+import { McpToolRegistry } from './mcp-tool-registry';
+import { McpToolError } from './mcp-tool-error';
+import {
+  wireRegistryToServer,
+  WireRegistryToServerOptions,
+} from './wire-registry-to-server';
+
+/**
+ * Wires the registry onto a real SDK server and connects a real client to it, in memory.
+ * In-memory pairs speak the 2025 protocol; mcp-http.e2e.spec covers 2026-07-28.
+ */
+async function connect(
+  registry: McpToolRegistry,
+  options: WireRegistryToServerOptions & {
+    clientCapabilities?: Record<string, unknown>;
+  } = {},
+) {
+  const server = new McpServer(
+    { name: 'test', version: '1.0.0' },
+    {
+      capabilities: buildCapabilities(registry, {
+        logging: options.requestScopedMessages !== false,
+        notifications: options.unsolicitedMessages !== false,
+      }),
+    },
+  );
+  wireRegistryToServer(registry, server, options);
+
+  const client = new Client(
+    { name: 'client', version: '1.0.0' },
+    {
+      capabilities: options.clientCapabilities ?? {},
+      versionNegotiation: { mode: 'legacy' },
+    },
+  );
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  await Promise.all([
+    server.connect(serverTransport),
+    client.connect(clientTransport),
+  ]);
+  return { server, client };
+}
+
+describe('wireRegistryToServer against the MCP SDK', () => {
+  let registry: McpToolRegistry;
+
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    registry = new McpToolRegistry();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('completes prompt arguments through the completeStrategy', async () => {
+    class LanguageCompleter {
+      complete(argName: string, value: string) {
+        return argName === 'language'
+          ? ['typescript', 'python', 'rust'].filter((l) => l.startsWith(value))
+          : [];
+      }
+    }
+    registry.setProviderResolver(() => new LanguageCompleter());
+    registry.registerPrompt(
+      {
+        name: 'generate-code',
+        description: 'Generate code',
+        argsSchema: { language: z.string(), task: z.string() },
+        completeStrategy: LanguageCompleter,
+      },
+      async () => 'prompt',
+    );
+
+    const { client } = await connect(registry);
+
+    expect(client.getServerCapabilities()?.completions).toEqual({});
+    const result = await client.complete({
+      ref: { type: 'ref/prompt', name: 'generate-code' },
+      argument: { name: 'language', value: 'py' },
+    });
+    expect(result.completion.values).toEqual(['python']);
+  });
+
+  it('delivers progress and honors the log level the client sets', async () => {
+    registry.registerTool(
+      { name: 'work', description: 'd' },
+      async (_params: unknown, ctx?: any) => {
+        await ctx.sendProgress(1, 2, 'half');
+        await ctx.sendLog('debug', 'noise');
+        await ctx.sendLog('warning', 'heads up');
+        return 'done';
+      },
+    );
+
+    const { client } = await connect(registry);
+    const logs: unknown[] = [];
+    client.setNotificationHandler('notifications/message', (n) => {
+      logs.push(n.params.data);
+    });
+    await client.setLoggingLevel('info');
+
+    const progress: unknown[] = [];
+    const result = await client.callTool(
+      { name: 'work', arguments: {} },
+      { onprogress: (p) => progress.push(p) },
+    );
+
+    expect(result).toEqual({ content: [{ type: 'text', text: 'done' }] });
+    expect(progress).toEqual([{ progress: 1, total: 2, message: 'half' }]);
+    expect(logs).toEqual(['heads up']);
+  });
+
+  it('sends sampling requests to a client that declared sampling', async () => {
+    registry.registerTool(
+      { name: 'ask', description: 'd' },
+      async (_params: unknown, ctx?: any) => {
+        const reply = await ctx.createMessage({
+          messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }],
+          maxTokens: 5,
+        });
+        return reply.content.text;
+      },
+    );
+
+    const { client } = await connect(registry, {
+      clientCapabilities: { sampling: {} },
+    });
+    client.setRequestHandler('sampling/createMessage', async () => ({
+      role: 'assistant',
+      model: 'm',
+      content: { type: 'text', text: 'hello back' },
+    }));
+
+    const result = await client.callTool({ name: 'ask', arguments: {} });
+    expect(result.content).toEqual([{ type: 'text', text: 'hello back' }]);
+  });
+
+  it('returns a plain object from a tool with an output schema as structured content', async () => {
+    registry.registerTool(
+      {
+        name: 'count',
+        description: 'd',
+        outputSchema: z.object({ count: z.number() }),
+      },
+      async () => ({ count: 3 }),
+    );
+
+    const { client } = await connect(registry);
+    const result = await client.callTool({ name: 'count', arguments: {} });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toEqual({ count: 3 });
+  });
+
+  it('shows the client messages written for it, and hides others', async () => {
+    registry.registerTool({ name: 'safe', description: 'd' }, async () => {
+      throw new McpToolError('No invoice 42');
+    });
+    registry.registerTool({ name: 'leaky', description: 'd' }, async () => {
+      throw new Error('connect ECONNREFUSED 10.0.0.5:5432');
+    });
+    registry.registerTool(
+      { name: 'typed', description: 'd', schema: z.object({ n: z.number() }) },
+      async () => 'ok',
+    );
+
+    const { client } = await connect(registry);
+
+    const safe = await client.callTool({ name: 'safe', arguments: {} });
+    const leaky = await client.callTool({ name: 'leaky', arguments: {} });
+    const typed = await client.callTool({
+      name: 'typed',
+      arguments: { n: 'x' },
+    });
+
+    expect(safe.content).toEqual([
+      { type: 'text', text: 'Error executing safe: No invoice 42' },
+    ]);
+    expect(leaky.content).toEqual([
+      { type: 'text', text: 'Error executing leaky: Internal error' },
+    ]);
+    expect(typed.isError).toBe(true);
+  });
+
+  it('advertises the input schema, and runs guards before validating arguments', async () => {
+    class DenyGuard {
+      canActivate() {
+        return false;
+      }
+    }
+    registry.setGuardResolver(() => new DenyGuard());
+    const schema = z.object({ n: z.number() });
+    registry.registerTool(
+      { name: 'guarded', description: 'd', schema },
+      async () => 'ok',
+      [{ guardClass: DenyGuard }],
+    );
+
+    const { client } = await connect(registry);
+    const tools = await client.listTools();
+    const result = await client.callTool({
+      name: 'guarded',
+      arguments: { n: 'not a number' },
+    });
+
+    expect(tools.tools[0].inputSchema).toEqual(
+      expect.objectContaining({
+        type: 'object',
+        properties: { n: { type: 'number' } },
+        required: ['n'],
+      }),
+    );
+    // Denied before validation: the caller doesn't learn about the schema.
+    expect(result.content).toEqual([
+      {
+        type: 'text',
+        text: 'Error executing guarded: Access denied by DenyGuard for tool "guarded".',
+      },
+    ]);
+  });
+
+  it('applies transforms once', async () => {
+    const seen: unknown[] = [];
+    registry.registerTool(
+      {
+        name: 'double',
+        description: 'd',
+        schema: z.object({ n: z.number().transform((n) => n * 2) }),
+      },
+      async (params: any) => {
+        seen.push(params.n);
+        return 'ok';
+      },
+    );
+
+    const { client } = await connect(registry);
+    await client.callTool({ name: 'double', arguments: { n: 2 } });
+
+    expect(seen).toEqual([4]);
+  });
+
+  it('passes auth and request context to a tool without an input schema', async () => {
+    let seen: any;
+    registry.registerTool(
+      { name: 'bare', description: 'd' },
+      async (params: unknown, ctx?: any) => {
+        seen = { params, signal: ctx.signal };
+        return 'ok';
+      },
+    );
+
+    const { client } = await connect(registry);
+    await client.callTool({ name: 'bare', arguments: { anything: 1 } });
+
+    expect(seen.params).toEqual({ anything: 1 });
+    expect(seen.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('advertises no list changes or subscriptions without a stream for them', async () => {
+    registry.registerTool({ name: 't', description: 'd' }, async () => 'ok');
+    registry.registerResource(
+      { name: 'r', uri: 'app://r' },
+      async () => 'data',
+    );
+
+    const { client } = await connect(registry, { unsolicitedMessages: false });
+
+    expect(client.getServerCapabilities()).toEqual(
+      expect.objectContaining({
+        tools: { listChanged: false },
+        resources: { subscribe: false, listChanged: false },
+      }),
+    );
+  });
+});

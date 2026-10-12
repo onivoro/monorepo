@@ -1,5 +1,8 @@
-import type { ServerOptions } from '@modelcontextprotocol/sdk/server/index.js';
-import type { EventStore } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import type {
+  AuthInfo,
+  EventStore,
+  ServerOptions,
+} from '@modelcontextprotocol/server';
 import type { McpServerMetadata } from './mcp-server-metadata';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
 
@@ -20,6 +23,15 @@ export interface McpHttpSessionConfig {
    * from the point they left off.
    */
   eventStore?: EventStore;
+  /**
+   * Who owns a session, from the authenticated request that opened it. Later requests for the
+   * session must come from the same principal, or they get 404 as if it didn't exist.
+   * Only applies when requests are authenticated (`requireBearerAuth`).
+   *
+   * Default: the token's `clientId` plus `extra.sub` (the JWT subject, which
+   * `@onivoro/server-mcp-auth` provides).
+   */
+  principal?: (authInfo: AuthInfo) => string | undefined;
 }
 
 export interface McpModuleConfig {
@@ -44,20 +56,34 @@ export interface McpModuleConfig {
    */
   session?: McpHttpSessionConfig;
   /**
-   * Allowed Origin header values for DNS rebinding protection (MCP spec 2025-03-26+).
+   * Allowed `Origin` header values, for DNS rebinding protection (the spec requires servers
+   * to validate `Origin`). Requests whose `Origin` is not listed get 403. `'*'` allows any.
    *
-   * When set, requests with an `Origin` header not in this list are rejected with 403.
+   * When not set, a request with an `Origin` header is only allowed from the server's own
+   * origin: the origin's host (and port) must match the request's (`X-Forwarded-Host`, else
+   * `Host`).
    * Requests without an `Origin` header (non-browser MCP clients like Claude Desktop,
-   * Claude Code, curl) are always allowed regardless of this setting.
-   *
-   * When not set, Origin validation is disabled (backward-compatible default).
+   * Claude Code, curl) are always allowed.
    *
    * @example ['http://localhost:3000', 'https://my-app.example.com']
    */
   allowedOrigins?: string[];
   /**
-   * When `true`, the transport returns JSON responses instead of SSE streams.
-   * Default: `true` (current behavior). Set to `false` for SSE-only mode.
+   * Allowed `Host` header values (`host` or `host:port`, as clients send them). Requests for
+   * any other host get 403.
+   *
+   * When not set, a request that arrives on a loopback address (`127.0.0.1`, `::1`) without
+   * proxy headers must name `localhost`, `127.0.0.1` or `[::1]` as its host, which stops a
+   * DNS-rebound web page from reaching a local server. Other requests aren't checked.
+   */
+  allowedHosts?: string[];
+  /**
+   * When `true`, the transport answers each POST with a single JSON response.
+   * Default: `false`, which answers with an SSE stream.
+   *
+   * JSON responses can't carry anything sent while a tool runs, so with `true` the server
+   * doesn't advertise `logging`, and tool handlers get no `sendProgress`, `sendLog`,
+   * `createMessage`, `elicitInput` or `listRoots`.
    */
   enableJsonResponse?: boolean;
   /**
@@ -81,15 +107,22 @@ export interface McpModuleConfig {
    * `true` uses default behavior with no required scopes. Pass an object to require
    * specific scopes in the HTTP auth challenge.
    */
-  requireBearerAuth?: boolean | {
-    requiredScopes?: string[];
-    /**
-     * Protected Resource Metadata URL advertised in the HTTP bearer challenge.
-     *
-     * Absolute URLs are used as-is. Root-relative paths are resolved against the incoming
-     * request origin. When omitted, the transport derives the path-specific RFC 9728 URL
-     * from the MCP route being served.
-     */
-    resourceMetadataUrl?: string;
-  };
+  requireBearerAuth?:
+    | boolean
+    | {
+        requiredScopes?: string[];
+        /**
+         * Protected Resource Metadata URL advertised in the HTTP bearer challenge.
+         *
+         * Absolute URLs are used as-is. Root-relative paths are resolved against the incoming
+         * request origin. When omitted, the transport derives the path-specific RFC 9728 URL
+         * from the MCP route being served.
+         */
+        resourceMetadataUrl?: string;
+        /**
+         * The canonical URL of this MCP server. When set, tokens whose `resource` doesn't match
+         * are rejected with 401, on top of whatever audience check the verifier does.
+         */
+        expectedResource?: string;
+      };
 }

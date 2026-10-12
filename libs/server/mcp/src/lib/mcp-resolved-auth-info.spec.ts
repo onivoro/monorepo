@@ -8,14 +8,10 @@ import {
 } from './mcp-resolved-auth-info';
 import { wireRegistryToServer } from './wire-registry-to-server';
 
-jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+jest.mock('@modelcontextprotocol/server', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server'),
   McpServer: jest.fn(),
   ResourceTemplate: jest.fn(),
-}));
-
-jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
-  SubscribeRequestSchema: { method: 'resources/subscribe' },
-  UnsubscribeRequestSchema: { method: 'resources/unsubscribe' },
 }));
 
 const authInfo = (): McpAuthInfo => ({
@@ -125,13 +121,20 @@ describe('wireRegistryToServer with resolved auth info', () => {
       sendLoggingMessage: jest.fn(),
       server: {
         setRequestHandler: jest.fn(),
+        registerCapabilities: jest.fn(),
+        getClientCapabilities: jest.fn().mockReturnValue({}),
         sendResourceUpdated: jest.fn(),
         notification: jest.fn(),
       },
     } as any);
 
     const transportAuthInfo = markMcpAuthInfoResolved(authInfo());
-    await registerTool.mock.calls[0][2]({}, { authInfo: transportAuthInfo });
+    await registerTool.mock.calls[0][2](
+      {},
+      {
+        http: { authInfo: transportAuthInfo },
+      },
+    );
 
     expect(resolveAuth).toHaveBeenCalledWith(transportAuthInfo);
     expect(resolveAuth.mock.calls[0][0]).not.toBe(transportAuthInfo);

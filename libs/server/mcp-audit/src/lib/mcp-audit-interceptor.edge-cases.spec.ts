@@ -50,7 +50,11 @@ describe(`${McpAuditInterceptor.name} edge cases`, () => {
     await interceptor.intercept(context, async () => ['a', 'b']);
 
     expect(resolveEmail).toHaveBeenCalledWith(context);
-    expect(resolveAuditEvent).toHaveBeenCalledWith(context, ['a', 'b']);
+    expect(resolveAuditEvent).toHaveBeenCalledWith(
+      context,
+      ['a', 'b'],
+      'success',
+    );
   });
 
   it('does not write when the event resolver returns undefined', async () => {

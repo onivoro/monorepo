@@ -2,13 +2,47 @@
 
 **Date**: 2026-04-21
 **Libraries Analyzed**:
+
 1. `@onivoro/server-mcp` v24.33.21 — MCP protocol server for NestJS
 2. `@onivoro/server-mcp-llm-adapter` v24.33.21 — LLM provider tool format adapter
 3. `@onivoro/server-mcp-auth` v24.33.21 — Resource server auth (JWT validation, JWKS, scope registry, PRM)
-4. `@onivoro/server-mcp-oauth` v24.33.21 — Embedded OAuth 2.1 authorization server
+4. `@onivoro/server-mcp-oauth` v24.33.21 — Embedded OAuth 2.1 authorization server (**deprecated since 2026-10-11**; see below)
 
 **MCP Spec Version**: 2025-11-25 (third major revision)
 **SDK Version Installed**: `@modelcontextprotocol/sdk ^1.28.0` (latest stable: 1.29.0)
+
+> **Update 2026-10-11.** This audit describes the libraries as of its date. They have since moved to v2 of the MCP TypeScript SDK (`@modelcontextprotocol/server` and friends) and serve spec revision 2026-07-28 alongside 2025-era clients; each package's README is current. The section below records why `@onivoro/server-mcp-oauth` was deprecated as part of that work.
+
+---
+
+## Deprecation of `@onivoro/server-mcp-oauth` (2026-10-11)
+
+`@onivoro/server-mcp-oauth` embeds an OAuth 2.1 authorization server in the MCP server by wrapping the SDK's `mcpAuthRouter` and `OAuthServerProvider`. It is deprecated because the parts of the SDK and the spec it is built on appear to have no future.
+
+### Reasons
+
+1. **The SDK has frozen the code it wraps.** In v2 of the MCP TypeScript SDK, the authorization-server helpers (`mcpAuthRouter`, `OAuthServerProvider`, `ProxyOAuthServerProvider`, `OAuthRegisteredClientsStore`) exist only in `@modelcontextprotocol/server-legacy`. npm marks that package deprecated: "a frozen copy of v1's SSE transport and OAuth Authorization Server helpers for migration purposes only. Use StreamableHTTP from @modelcontextprotocol/server and a dedicated OAuth server in production. Will not receive new features." Its README says it "is planned for removal in v3". Nothing in the v2 server packages replaces it, so once `server-legacy` is removed there is nothing left for this package to wrap.
+2. **The spec treats MCP servers as resource servers, not authorization servers.** Revision 2025-06-18 classified MCP servers as OAuth resource servers that point clients to a separate authorization server through protected resource metadata (RFC 9728) ([changelog](https://modelcontextprotocol.io/specification/2025-06-18/changelog)). An embedded authorization server isn't forbidden, but the spec's model and the SDK's guidance both assume a dedicated one.
+3. **The spec has deprecated the registration method the router implements.** Revision 2026-07-28 deprecates OAuth 2.0 Dynamic Client Registration (RFC 7591), which the SDK router serves at `/register`, in favour of Client ID Metadata Documents ([changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog)). Under the spec's new feature lifecycle policy, deprecated features are scheduled for removal after a window of at least twelve months.
+
+The package added Client ID Metadata Document support itself, addressing reason 3 for its own users, but it cannot address reason 1: it depends on SDK code that is frozen and scheduled for removal.
+
+### Impact in this repository
+
+No other package depends on it. Its only remaining consumers in the repository are:
+
+- the workspace's `smoke:nest11` script and `tools/nest11-smoke`, which check its protected-resource route on Nest 11;
+- the `tsconfig.base.json` path alias for the package itself.
+
+`@onivoro/server-mcp-auth` does not depend on it; the dependency runs the other way only in an `mcp-oauth` integration spec that composes the two modules.
+
+### What was done
+
+- The README opens with a deprecation notice, the reasons above, and a migration path: run a dedicated authorization server (hosted, such as Amazon Cognito, Auth0, Entra ID or Okta, or self-operated, such as Keycloak or Ory Hydra) and validate its tokens with `McpAuthModule` from `@onivoro/server-mcp-auth`.
+- `package.json`'s description starts with "DEPRECATED"; `McpOAuthModule`, `McpOAuthConfig`, the clients stores and the package entry point carry `@deprecated` JSDoc; the module logs a one-time deprecation warning at startup (outside `NODE_ENV=test`).
+- The `server-mcp` README and the package guide mark it deprecated.
+- `@onivoro/create-mcp-server` no longer offers it: the `--oauth` option (which added the package and a commented-out stub to generated projects) and its prompt are removed, and passing `--oauth` stops the CLI with a message pointing to `--auth` and a dedicated authorization server.
+- Still to do at release: `npm deprecate @onivoro/server-mcp-oauth "<message>"`. Removal can follow in a later major release, no later than the SDK's removal of `server-legacy`.
 
 ---
 
@@ -66,73 +100,73 @@ The name map is now cached and automatically invalidated when the registry fires
 
 ### HIGH PRIORITY
 
-| Gap | Spec Requirement | Status |
-|-----|-----------------|--------|
-| ~~**Prompt argument completions**~~ | `completion/complete` with `ref: { type: "ref/prompt" }` allows clients to get autocomplete suggestions for prompt arguments | **RESOLVED** — `McpPromptMetadata.completeCallbacks` added, wired to SDK's `registerPrompt` as `complete` config. |
-| ~~**`icons` field**~~ | Tools, resources, and prompts can have `icons: Array<{ url, mediaType?, size? }>` for client UI rendering | **RESOLVED** — `McpIcon` interface added. `icons` supported on `McpToolMetadata`, `McpResourceMetadata`, `McpPromptMetadata`, and `McpToolOptions`. All wired through to SDK registration. |
-| ~~**Async module factories**~~ | Production configs often come from environment/secrets at runtime | **RESOLVED** — `registerAndServeHttpAsync()` and `registerAndServeStdioAsync()` added with `{ imports, inject, useFactory }` pattern. `McpModuleAsyncOptions` and `McpStdioAsyncOptions` exported. |
+| Gap                                 | Spec Requirement                                                                                                             | Status                                                                                                                                                                                             |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~**Prompt argument completions**~~ | `completion/complete` with `ref: { type: "ref/prompt" }` allows clients to get autocomplete suggestions for prompt arguments | **RESOLVED** — `McpPromptMetadata.completeCallbacks` added, wired to SDK's `registerPrompt` as `complete` config.                                                                                  |
+| ~~**`icons` field**~~               | Tools, resources, and prompts can have `icons: Array<{ url, mediaType?, size? }>` for client UI rendering                    | **RESOLVED** — `McpIcon` interface added. `icons` supported on `McpToolMetadata`, `McpResourceMetadata`, `McpPromptMetadata`, and `McpToolOptions`. All wired through to SDK registration.         |
+| ~~**Async module factories**~~      | Production configs often come from environment/secrets at runtime                                                            | **RESOLVED** — `registerAndServeHttpAsync()` and `registerAndServeStdioAsync()` added with `{ imports, inject, useFactory }` pattern. `McpModuleAsyncOptions` and `McpStdioAsyncOptions` exported. |
 
 ### MEDIUM PRIORITY
 
-| Gap | Spec Requirement | Status |
-|-----|-----------------|--------|
-| ~~**Resource `annotations`**~~ | Resources can have `audience`, `priority`, and `lastModified` annotations | **RESOLVED** — `McpResourceAnnotations` interface added to `McpResourceMetadata`. Wired through to SDK resource config. |
-| **Tasks (experimental)** | Long-running tools return `CreateTaskResult`. Status polling, cancellation, notifications via `ExperimentalServerTasks`. | Not implemented. Experimental in SDK — defer until stable. |
-| ~~**Resumability config**~~ | SSE streams can have event IDs. Client reconnects with `Last-Event-ID` for replay. SDK supports with event store config. | **RESOLVED** — `McpModuleConfig` now accepts `session.eventStore`, `session.idGenerator`, and `enableJsonResponse`. Forwarded to `StreamableHTTPServerTransport`. `EventStore`, `StreamId`, `EventId` re-exported from barrel. |
-| **Sampling with tools** | `sampling/createMessage` can include a `tools` array and `toolChoice` for multi-turn agentic loops | `createMessage` is a raw passthrough (`Record<string, unknown>`), which works but provides no typed helper. |
-| **`MCP-Protocol-Version` validation** | After init, clients include `MCP-Protocol-Version` header. Server should validate. | Header is in CORS allowed list but not validated by `McpHttpService`. SDK transport likely handles this internally. |
+| Gap                                   | Spec Requirement                                                                                                         | Status                                                                                                                                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ~~**Resource `annotations`**~~        | Resources can have `audience`, `priority`, and `lastModified` annotations                                                | **RESOLVED** — `McpResourceAnnotations` interface added to `McpResourceMetadata`. Wired through to SDK resource config.                                                                                                        |
+| **Tasks (experimental)**              | Long-running tools return `CreateTaskResult`. Status polling, cancellation, notifications via `ExperimentalServerTasks`. | Not implemented. Experimental in SDK — defer until stable.                                                                                                                                                                     |
+| ~~**Resumability config**~~           | SSE streams can have event IDs. Client reconnects with `Last-Event-ID` for replay. SDK supports with event store config. | **RESOLVED** — `McpModuleConfig` now accepts `session.eventStore`, `session.idGenerator`, and `enableJsonResponse`. Forwarded to `StreamableHTTPServerTransport`. `EventStore`, `StreamId`, `EventId` re-exported from barrel. |
+| **Sampling with tools**               | `sampling/createMessage` can include a `tools` array and `toolChoice` for multi-turn agentic loops                       | `createMessage` is a raw passthrough (`Record<string, unknown>`), which works but provides no typed helper.                                                                                                                    |
+| **`MCP-Protocol-Version` validation** | After init, clients include `MCP-Protocol-Version` header. Server should validate.                                       | Header is in CORS allowed list but not validated by `McpHttpService`. SDK transport likely handles this internally.                                                                                                            |
 
 ### LOW PRIORITY
 
-| Gap | Spec Requirement | Status |
-|-----|-----------------|--------|
-| **URL-mode elicitation notifications** | `notifications/elicitation/complete` for URL-mode flows | Passthrough via `elicitInput` callback; SDK handles internally. |
-| **Error code `-32002`** | `ResourceNotFound` for unknown resource URIs | Delegated to SDK. |
-| **`ping`** | Server responds to `ping` requests | Handled by SDK's low-level `Server` automatically. |
-| **Cancellation notification** | Client sends `notifications/cancelled` with `requestId` | Handled by SDK via `AbortSignal`. Correctly exposed as `signal` on `McpToolContext`. |
+| Gap                                    | Spec Requirement                                        | Status                                                                               |
+| -------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **URL-mode elicitation notifications** | `notifications/elicitation/complete` for URL-mode flows | Passthrough via `elicitInput` callback; SDK handles internally.                      |
+| **Error code `-32002`**                | `ResourceNotFound` for unknown resource URIs            | Delegated to SDK.                                                                    |
+| **`ping`**                             | Server responds to `ping` requests                      | Handled by SDK's low-level `Server` automatically.                                   |
+| **Cancellation notification**          | Client sends `notifications/cancelled` with `requestId` | Handled by SDK via `AbortSignal`. Correctly exposed as `signal` on `McpToolContext`. |
 
 ---
 
 ## Features Confirmed Working
 
-| Feature | Implementation |
-|---------|---------------|
-| Tools (input schema, output schema, annotations, aliases, icons) | `@McpTool` decorator + registry |
-| Resources (static + templates with completion, icons, annotations) | `@McpResource` decorator + `completeCallbacks` |
-| Prompts (with argument completions and icons) | `@McpPrompt` decorator + `completeCallbacks` |
-| Progress reporting | `sendProgress` on `McpToolContext` |
-| Logging | `sendLog` on `McpToolContext` |
-| Sampling | `createMessage` on `McpToolContext` |
-| Elicitation | `elicitInput` on `McpToolContext` |
-| Roots listing | `listRoots` on `McpToolContext` |
-| Resource subscriptions | `subscribeResource` / `notifyResourceUpdated` |
-| Tool enable/disable | `setToolEnabled` + delegate pattern |
-| OAuth 2.1 auth flow | `McpAuthInfo` with scopes, resource indicator |
-| Cancellation | `AbortSignal` forwarding |
-| DNS rebinding protection | `allowedOrigins` config |
-| Dynamic registration | `onRegistrationChange` + `listChanged` capability |
-| Pagination | Delegated to SDK (handles internally) |
-| Guards (authorization) | `@McpGuard` decorator, `McpScopeGuard` built-in |
-| Interceptors | Onion-model `McpToolInterceptor` chain |
-| Multiple content types | `McpContentBlock` union (text, image, audio, resource, resource_link) |
-| Structured output | `outputSchema` + `structuredContent` in results |
-| Server instructions | `metadata.instructions` merged into `ServerOptions` |
-| Server description | `metadata.description` forwarded to SDK `ServerInfo` |
-| Async module config | `registerAndServeHttpAsync` / `registerAndServeStdioAsync` |
-| Auth strategy | `McpAuthStrategy` interface — DI-resolved `@Injectable()` service, runs before guards for centralized token validation/enrichment |
-| JWT validation (auth library) | `McpJwtAuthStrategy` — JWKS-backed JWT verification, issuer/audience/expiry checks, configurable claims extraction |
-| JWKS fetching + caching (auth library) | `McpJwksService` — wraps `jwks-rsa` with configurable cache TTL and rate limiting |
-| Scope auto-discovery (auth library) | `McpScopeRegistry` — scans `@McpGuard(McpScopeGuard, { scopes })` metadata, subscribes to dynamic registration changes |
-| Protected Resource Metadata (auth library) | `McpProtectedResourceController` — serves `/.well-known/oauth-protected-resource` per RFC 9728 |
-| Auth enrichment (auth library) | Extracts `clientId`, `scopes`, `expiresAt`, `extra` claims into `McpAuthInfo` from JWT payload |
-| Provider-agnostic JWT config (auth library) | Configurable `clientIdClaim`, `scopeClaim`, `scopeFormat`, `extraClaims` — supports Cognito, Auth0, Entra ID out of the box |
-| SDK token verifier bridge (auth library) | `McpJwtAuthStrategy` implements both `McpAuthStrategy` and SDK's `OAuthTokenVerifier` |
-| Auth testing utilities (auth library) | `McpTestAuthStrategy`, `createMockAuthInfo()`, `createMockJwt()` for integration and unit tests |
-| Embedded OAuth 2.1 server (oauth library) | `McpOAuthModule` — mounts SDK's `mcpAuthRouter` as Express middleware via NestJS `MiddlewareConsumer` |
-| OAuth endpoints (oauth library) | `/.well-known/oauth-authorization-server`, `/authorize`, `/token`, `/register`, `/revoke` |
-| OAuth strategy DI (oauth library) | Accepts `OAuthServerProvider` as class reference (DI-resolved) or instance (e.g. `ProxyOAuthServerProvider`) |
-| Memory clients store (oauth library) | `McpMemoryClientsStore` — in-memory `OAuthRegisteredClientsStore` with `seedClient()` for dev/testing |
-| Async module config (auth + oauth) | Both libraries support `registerAsync()` with `{ imports, inject, useFactory }` pattern |
+| Feature                                                            | Implementation                                                                                                                    |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Tools (input schema, output schema, annotations, aliases, icons)   | `@McpTool` decorator + registry                                                                                                   |
+| Resources (static + templates with completion, icons, annotations) | `@McpResource` decorator + `completeCallbacks`                                                                                    |
+| Prompts (with argument completions and icons)                      | `@McpPrompt` decorator + `completeCallbacks`                                                                                      |
+| Progress reporting                                                 | `sendProgress` on `McpToolContext`                                                                                                |
+| Logging                                                            | `sendLog` on `McpToolContext`                                                                                                     |
+| Sampling                                                           | `createMessage` on `McpToolContext`                                                                                               |
+| Elicitation                                                        | `elicitInput` on `McpToolContext`                                                                                                 |
+| Roots listing                                                      | `listRoots` on `McpToolContext`                                                                                                   |
+| Resource subscriptions                                             | `subscribeResource` / `notifyResourceUpdated`                                                                                     |
+| Tool enable/disable                                                | `setToolEnabled` + delegate pattern                                                                                               |
+| OAuth 2.1 auth flow                                                | `McpAuthInfo` with scopes, resource indicator                                                                                     |
+| Cancellation                                                       | `AbortSignal` forwarding                                                                                                          |
+| DNS rebinding protection                                           | `allowedOrigins` config                                                                                                           |
+| Dynamic registration                                               | `onRegistrationChange` + `listChanged` capability                                                                                 |
+| Pagination                                                         | Delegated to SDK (handles internally)                                                                                             |
+| Guards (authorization)                                             | `@McpGuard` decorator, `McpScopeGuard` built-in                                                                                   |
+| Interceptors                                                       | Onion-model `McpToolInterceptor` chain                                                                                            |
+| Multiple content types                                             | `McpContentBlock` union (text, image, audio, resource, resource_link)                                                             |
+| Structured output                                                  | `outputSchema` + `structuredContent` in results                                                                                   |
+| Server instructions                                                | `metadata.instructions` merged into `ServerOptions`                                                                               |
+| Server description                                                 | `metadata.description` forwarded to SDK `ServerInfo`                                                                              |
+| Async module config                                                | `registerAndServeHttpAsync` / `registerAndServeStdioAsync`                                                                        |
+| Auth strategy                                                      | `McpAuthStrategy` interface — DI-resolved `@Injectable()` service, runs before guards for centralized token validation/enrichment |
+| JWT validation (auth library)                                      | `McpJwtAuthStrategy` — JWKS-backed JWT verification, issuer/audience/expiry checks, configurable claims extraction                |
+| JWKS fetching + caching (auth library)                             | `McpJwksService` — wraps `jwks-rsa` with configurable cache TTL and rate limiting                                                 |
+| Scope auto-discovery (auth library)                                | `McpScopeRegistry` — scans `@McpGuard(McpScopeGuard, { scopes })` metadata, subscribes to dynamic registration changes            |
+| Protected Resource Metadata (auth library)                         | `McpProtectedResourceController` — serves `/.well-known/oauth-protected-resource` per RFC 9728                                    |
+| Auth enrichment (auth library)                                     | Extracts `clientId`, `scopes`, `expiresAt`, `extra` claims into `McpAuthInfo` from JWT payload                                    |
+| Provider-agnostic JWT config (auth library)                        | Configurable `clientIdClaim`, `scopeClaim`, `scopeFormat`, `extraClaims` — supports Cognito, Auth0, Entra ID out of the box       |
+| SDK token verifier bridge (auth library)                           | `McpJwtAuthStrategy` implements both `McpAuthStrategy` and SDK's `OAuthTokenVerifier`                                             |
+| Auth testing utilities (auth library)                              | `McpTestAuthStrategy`, `createMockAuthInfo()`, `createMockJwt()` for integration and unit tests                                   |
+| Embedded OAuth 2.1 server (oauth library, **deprecated**)          | `McpOAuthModule` — mounts SDK's `mcpAuthRouter` as Express middleware via NestJS `MiddlewareConsumer`                             |
+| OAuth endpoints (oauth library, **deprecated**)                    | `/.well-known/oauth-authorization-server`, `/authorize`, `/token`, `/register`, `/revoke`                                         |
+| OAuth strategy DI (oauth library, **deprecated**)                  | Accepts `OAuthServerProvider` as class reference (DI-resolved) or instance (e.g. `ProxyOAuthServerProvider`)                      |
+| Memory clients store (oauth library, **deprecated**)               | `McpMemoryClientsStore` — in-memory `OAuthRegisteredClientsStore` with `seedClient()` for dev/testing                             |
+| Async module config (auth + oauth)                                 | Both libraries support `registerAsync()` with `{ imports, inject, useFactory }` pattern (the oauth library is deprecated)         |
 
 ---
 
@@ -161,14 +195,14 @@ The name map is now cached and automatically invalidated when the registry fires
 
 ## LLM Adapter Gaps
 
-| Issue | Detail | Status |
-|-------|--------|--------|
-| ~~**No output schema forwarding**~~ | Some LLM APIs support structured output validation. Adapter only forwarded `inputSchema`. | **RESOLVED** — `formatToolWithOutput` optional callback added to `LlmAdapterConfig`. `getOutputSchemas()` method exposes converted output JSON Schemas. Built-in configs unchanged (no current provider API supports per-tool output schema). |
-| **No streaming support** | `executeToolForProvider` returns a complete string. No incremental path for streaming tool results. | **Deferred** — requires core registry streaming primitive. `executeToolRaw` returns `Promise<unknown>`, interceptor chain is synchronous. MCP tool results are single-shot JSON-RPC responses. Progress reporting available via `sendProgress`. |
-| ~~**No tool-call-id handling**~~ | LLM APIs (OpenAI, Claude) require correlating tool calls to responses via IDs. | **RESOLVED** — `executeToolsForProvider` (batch) passes through `id`. New `executeToolCallForProvider` provides the same for single calls with `ProviderToolCallResult` return type. |
-| ~~**No batch execution**~~ | LLMs can request multiple tool calls in one turn. No `executeMultiple` method. | **RESOLVED** — `executeToolsForProvider(toolCalls, authInfo?)` added with `Promise.allSettled` for independent per-call error handling and `id` passthrough for provider correlation. |
-| ~~**Bedrock name sanitization too narrow**~~ | `replace(/-/g, '_')` handles hyphens but not dots, colons, or spaces. Bedrock requires `[a-zA-Z0-9_]+`. | **RESOLVED** — sanitization now uses `replace(/[^a-zA-Z0-9_]/g, '_')` for both Bedrock and Gemini configs. |
-| ~~**Name map not cached**~~ | `buildNameMap()` is O(n) on every call. Should cache and invalidate on registration change. | **RESOLVED** — cached with automatic invalidation via `onRegistrationChange` subscription. |
+| Issue                                        | Detail                                                                                                  | Status                                                                                                                                                                                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~**No output schema forwarding**~~          | Some LLM APIs support structured output validation. Adapter only forwarded `inputSchema`.               | **RESOLVED** — `formatToolWithOutput` optional callback added to `LlmAdapterConfig`. `getOutputSchemas()` method exposes converted output JSON Schemas. Built-in configs unchanged (no current provider API supports per-tool output schema).   |
+| **No streaming support**                     | `executeToolForProvider` returns a complete string. No incremental path for streaming tool results.     | **Deferred** — requires core registry streaming primitive. `executeToolRaw` returns `Promise<unknown>`, interceptor chain is synchronous. MCP tool results are single-shot JSON-RPC responses. Progress reporting available via `sendProgress`. |
+| ~~**No tool-call-id handling**~~             | LLM APIs (OpenAI, Claude) require correlating tool calls to responses via IDs.                          | **RESOLVED** — `executeToolsForProvider` (batch) passes through `id`. New `executeToolCallForProvider` provides the same for single calls with `ProviderToolCallResult` return type.                                                            |
+| ~~**No batch execution**~~                   | LLMs can request multiple tool calls in one turn. No `executeMultiple` method.                          | **RESOLVED** — `executeToolsForProvider(toolCalls, authInfo?)` added with `Promise.allSettled` for independent per-call error handling and `id` passthrough for provider correlation.                                                           |
+| ~~**Bedrock name sanitization too narrow**~~ | `replace(/-/g, '_')` handles hyphens but not dots, colons, or spaces. Bedrock requires `[a-zA-Z0-9_]+`. | **RESOLVED** — sanitization now uses `replace(/[^a-zA-Z0-9_]/g, '_')` for both Bedrock and Gemini configs.                                                                                                                                      |
+| ~~**Name map not cached**~~                  | `buildNameMap()` is O(n) on every call. Should cache and invalidate on registration change.             | **RESOLVED** — cached with automatic invalidation via `onRegistrationChange` subscription.                                                                                                                                                      |
 
 ---
 
@@ -212,4 +246,4 @@ The name map is now cached and automatically invalidated when the registry fires
 - All 163 `lib-server-mcp` tests pass
 - All 38 `lib-server-mcp-llm-adapter` tests pass
 - All 52 `lib-server-mcp-auth` tests pass (JWT validation, JWKS service, scope registry, PRM controller, module integration, test utilities)
-- All 12 `lib-server-mcp-oauth` tests pass (module register/registerAsync, config forwarding, memory clients store, McpMemoryClientsStore exports)
+- All 12 `lib-server-mcp-oauth` tests pass (module register/registerAsync, config forwarding, memory clients store, McpMemoryClientsStore exports). The library is deprecated as of 2026-10-11; see above.

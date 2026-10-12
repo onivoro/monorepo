@@ -1,4 +1,4 @@
-import { McpToolContext } from '@onivoro/server-mcp';
+import { McpAccessDeniedError, McpToolContext } from '@onivoro/server-mcp';
 import { McpAuditInterceptor } from './mcp-audit-interceptor.service';
 
 describe(McpAuditInterceptor.name, () => {
@@ -41,7 +41,9 @@ describe(McpAuditInterceptor.name, () => {
       resourceType: 'invoice',
       resourceIds: [1, '2'],
       toolName: 'get-invoice-by-id',
-      context,
+      outcome: 'success',
+      // The bearer token never reaches the sink.
+      context: { ...context, authInfo: { clientId: 'client', scopes: [] } },
     });
   });
 
@@ -85,24 +87,90 @@ describe(McpAuditInterceptor.name, () => {
     ).resolves.toBe('ok');
   });
 
-  it('rethrows tool failures without writing an audit event', async () => {
+  function auditing() {
     const sink = { writeAuditEvent: jest.fn() };
-    const error = new Error('tool failed');
+    const resolveAuditEvent = jest.fn().mockReturnValue({
+      accessType: 'read',
+      resourceType: 'invoice',
+      resourceIds: [1],
+    });
     const interceptor = new McpAuditInterceptor(
       { resolveEmail: jest.fn().mockReturnValue('user@example.com') },
-      {
-        resolveAuditEvent: jest.fn().mockReturnValue({
-          accessType: 'read',
-          resourceType: 'invoice',
-          resourceIds: [1],
-        }),
-      },
+      { resolveAuditEvent },
       sink,
     );
+    return { sink, resolveAuditEvent, interceptor };
+  }
+
+  it('records a tool that throws as an error, then rethrows', async () => {
+    const { sink, resolveAuditEvent, interceptor } = auditing();
+    const error = new Error('tool failed');
 
     await expect(
       interceptor.intercept(context, jest.fn().mockRejectedValue(error)),
     ).rejects.toBe(error);
+
+    expect(resolveAuditEvent).toHaveBeenCalledWith(context, undefined, 'error');
+    expect(sink.writeAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'error', error: 'tool failed' }),
+    );
+  });
+
+  it('records a returned isError result as an error', async () => {
+    const { sink, interceptor } = auditing();
+    const result = {
+      content: [{ type: 'text', text: 'Invoice is locked' }],
+      isError: true,
+    };
+
+    await expect(
+      interceptor.intercept(context, jest.fn().mockResolvedValue(result)),
+    ).resolves.toBe(result);
+
+    expect(sink.writeAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'error', error: 'Invoice is locked' }),
+    );
+  });
+
+  it('does not record a round that asks the client for input', async () => {
+    const { sink, interceptor } = auditing();
+    const result = { resultType: 'input_required', inputRequests: {} };
+
+    await expect(
+      interceptor.intercept(context, jest.fn().mockResolvedValue(result)),
+    ).resolves.toBe(result);
+
     expect(sink.writeAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('records a guard denial as denied', async () => {
+    const { sink, resolveAuditEvent, interceptor } = auditing();
+
+    await interceptor.onRejected(
+      context,
+      new McpAccessDeniedError('Access denied', 'McpScopeGuard'),
+    );
+
+    expect(resolveAuditEvent).toHaveBeenCalledWith(
+      context,
+      undefined,
+      'denied',
+    );
+    expect(sink.writeAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'denied', error: 'Access denied' }),
+    );
+  });
+
+  it('records other rejections, such as invalid arguments, as rejected', async () => {
+    const { sink, interceptor } = auditing();
+
+    await interceptor.onRejected(context, new Error('Expected number'));
+
+    expect(sink.writeAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'rejected',
+        error: 'Expected number',
+      }),
+    );
   });
 });

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
+import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/server-legacy/auth';
 import * as crypto from 'crypto';
 
 /**
@@ -8,6 +8,8 @@ import * as crypto from 'crypto';
  * Stores registered OAuth clients in a `Map`. Data is lost on process restart.
  * For production, implement `OAuthRegisteredClientsStore` with a persistent backend
  * (database, Redis, etc.).
+ *
+ * @deprecated Part of the deprecated `@onivoro/server-mcp-oauth`; see its README.
  */
 @Injectable()
 export class McpMemoryClientsStore implements OAuthRegisteredClientsStore {
@@ -47,7 +49,8 @@ export class McpMemoryClientsStore implements OAuthRegisteredClientsStore {
   }
 
   private warnIfPotentiallyUnsafe(): void {
-    if (this.warnedAboutProductionUsage || process.env.NODE_ENV === 'test') return;
+    if (this.warnedAboutProductionUsage || process.env.NODE_ENV === 'test')
+      return;
     this.warnedAboutProductionUsage = true;
     this.logger.warn(
       'Using McpMemoryClientsStore. Registered OAuth clients are stored in memory and will be lost on process restart.',

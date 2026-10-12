@@ -1,4 +1,17 @@
-import { Controller, Delete, DynamicModule, Get, Inject, Logger, Module, OnModuleInit, Options, Post, Req, Res } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  DynamicModule,
+  Get,
+  Inject,
+  Logger,
+  Module,
+  OnModuleInit,
+  Options,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
 import { Request, Response } from 'express';
@@ -9,7 +22,7 @@ import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
-import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
+import type { OAuthTokenVerifier } from '@modelcontextprotocol/server';
 import { normalizeMcpHttpRoute } from './mcp-http-route';
 
 function createMcpController(configuredRoute?: string) {
@@ -45,7 +58,8 @@ function createMcpController(configuredRoute?: string) {
           jsonrpc: '2.0',
           error: {
             code: -32603,
-            message: 'Request body not parsed. McpHttpModule requires Express platform with body-parsing middleware.',
+            message:
+              'Request body not parsed. McpHttpModule requires Express platform with body-parsing middleware.',
           },
           id: null,
         });
@@ -93,14 +107,18 @@ export class McpHttpModule implements OnModuleInit {
       imports: [DiscoveryModule],
       controllers: [createMcpController(route)],
       providers: [
-        McpToolRegistry, McpHttpService, McpScopeGuard,
+        McpToolRegistry,
+        McpHttpService,
+        McpScopeGuard,
         { provide: MCP_MODULE_CONFIG, useValue: { ...config, route } },
       ],
       exports: [McpHttpService, McpToolRegistry],
     };
   }
 
-  static registerAndServeHttpAsync(options: McpModuleAsyncOptions): DynamicModule {
+  static registerAndServeHttpAsync(
+    options: McpModuleAsyncOptions,
+  ): DynamicModule {
     const route = normalizeMcpHttpRoute(options.route);
 
     return {
@@ -138,12 +156,14 @@ export class McpHttpModule implements OnModuleInit {
       this.moduleRef.get(cls, { strict: false }),
     );
     if (this.config.authStrategy) {
-      const provider = this.moduleRef.get(this.config.authStrategy, { strict: false });
+      const provider = this.moduleRef.get(this.config.authStrategy, {
+        strict: false,
+      });
       if (this.config.requireBearerAuth) {
         if (!this.isOAuthTokenVerifier(provider)) {
           throw new Error(
             `authStrategy ${this.config.authStrategy.name} does not implement OAuthTokenVerifier, ` +
-            'so it cannot be used with requireBearerAuth.',
+              'so it cannot be used with requireBearerAuth.',
           );
         }
 
@@ -156,16 +176,43 @@ export class McpHttpModule implements OnModuleInit {
             ? this.config.requireBearerAuth.resourceMetadataUrl
             : undefined;
 
+        const expectedResource =
+          typeof this.config.requireBearerAuth === 'object' &&
+          this.config.requireBearerAuth.expectedResource
+            ? this.parseExpectedResource(
+                this.config.requireBearerAuth.expectedResource,
+              )
+            : undefined;
+
         this.assertValidResourceMetadataUrl(resourceMetadataUrl);
 
-        this.httpService.setBearerAuthVerifier(provider, { requiredScopes, resourceMetadataUrl });
+        this.httpService.setBearerAuthVerifier(provider as OAuthTokenVerifier, {
+          requiredScopes,
+          resourceMetadataUrl,
+          expectedResource,
+        });
       }
       this.registry.setAuthStrategy(provider);
     }
   }
 
-  private isOAuthTokenVerifier(provider: unknown): provider is OAuthTokenVerifier {
-    return !!provider && typeof (provider as OAuthTokenVerifier).verifyAccessToken === 'function';
+  private isOAuthTokenVerifier(
+    provider: unknown,
+  ): provider is OAuthTokenVerifier {
+    return (
+      !!provider &&
+      typeof (provider as OAuthTokenVerifier).verifyAccessToken === 'function'
+    );
+  }
+
+  private parseExpectedResource(expectedResource: string): URL {
+    try {
+      return new URL(expectedResource);
+    } catch {
+      throw new Error(
+        `requireBearerAuth.expectedResource must be an absolute URL, got "${expectedResource}".`,
+      );
+    }
   }
 
   private assertValidResourceMetadataUrl(resourceMetadataUrl?: string) {

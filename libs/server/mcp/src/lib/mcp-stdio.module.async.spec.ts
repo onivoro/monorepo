@@ -1,7 +1,10 @@
 import { Injectable, Logger, Module } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import {
+  serveStdio,
+  StdioServerTransport,
+} from '@modelcontextprotocol/server/stdio';
 import { PassThrough } from 'node:stream';
 import { McpStdioModule } from './mcp-stdio.module';
 import { McpToolRegistry } from './mcp-tool-registry';
@@ -14,8 +17,10 @@ const mockServerConnect = jest.fn().mockResolvedValue(undefined);
 const mockServerClose = jest.fn().mockResolvedValue(undefined);
 const mockTransportClose = jest.fn().mockResolvedValue(undefined);
 
-jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+jest.mock('@modelcontextprotocol/server', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server'),
   McpServer: jest.fn().mockImplementation(() => ({
+    isConnected: jest.fn().mockReturnValue(false),
     registerTool: jest.fn().mockReturnValue({
       enable: jest.fn(),
       disable: jest.fn(),
@@ -26,6 +31,8 @@ jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
     close: mockServerClose,
     server: {
       setRequestHandler: jest.fn(),
+      registerCapabilities: jest.fn(),
+      getClientCapabilities: jest.fn().mockReturnValue({}),
       sendResourceUpdated: jest.fn().mockResolvedValue(undefined),
       notification: jest.fn().mockResolvedValue(undefined),
     },
@@ -34,15 +41,24 @@ jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   ResourceTemplate: jest.fn(),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
-  SubscribeRequestSchema: { method: 'resources/subscribe' },
-  UnsubscribeRequestSchema: { method: 'resources/unsubscribe' },
-}));
-
-jest.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
+jest.mock('@modelcontextprotocol/server/stdio', () => ({
   StdioServerTransport: jest.fn().mockImplementation(() => ({
     close: mockTransportClose,
   })),
+  // Builds the server at once, as the client's first message would, and closes the
+  // transport and the server on close, like the SDK's handle.
+  serveStdio: jest.fn().mockImplementation((factory: any, options: any) => {
+    const server = factory({ era: 'legacy' });
+    return {
+      close: async () => {
+        try {
+          await options.transport.close();
+        } finally {
+          await server.close();
+        }
+      },
+    };
+  }),
 }));
 
 @Injectable()
@@ -118,7 +134,7 @@ describe('McpStdioModule (async registration and lifecycle)', () => {
         expect.objectContaining({ capabilities: expect.any(Object) }),
       );
       expect(StdioServerTransport).toHaveBeenCalledWith(stdin, stdout);
-      expect(mockServerConnect).toHaveBeenCalledTimes(1);
+      expect(serveStdio).toHaveBeenCalledTimes(1);
       expect(module.get(McpToolRegistry).hasTool('echo')).toBe(true);
     });
 
@@ -134,7 +150,7 @@ describe('McpStdioModule (async registration and lifecycle)', () => {
 
       module = await Test.createTestingModule({ imports: [dyn] }).compile();
       await module.init();
-      expect(mockServerConnect).toHaveBeenCalled();
+      expect(serveStdio).toHaveBeenCalled();
     });
   });
 
@@ -261,7 +277,7 @@ describe('McpStdioModule (async registration and lifecycle)', () => {
       module = undefined;
 
       expect(errorSpy).toHaveBeenCalledWith(
-        'Error closing stdio transport:',
+        'Error closing MCP stdio server:',
         failure,
       );
       expect(mockServerClose).toHaveBeenCalledTimes(1);
@@ -277,7 +293,7 @@ describe('McpStdioModule (async registration and lifecycle)', () => {
 
       expect(mockTransportClose).toHaveBeenCalledTimes(1);
       expect(errorSpy).toHaveBeenCalledWith(
-        'Error closing MCP server:',
+        'Error closing MCP stdio server:',
         failure,
       );
     });

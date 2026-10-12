@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { McpToolContext, McpToolInterceptor } from '@onivoro/server-mcp';
+import {
+  McpAccessDeniedError,
+  McpToolContext,
+  McpToolInterceptor,
+} from '@onivoro/server-mcp';
 import {
   MCP_AUDIT_EMAIL_RESOLVER,
   MCP_AUDIT_EVENT_RESOLVER,
@@ -7,7 +11,11 @@ import {
 } from './mcp-audit.tokens';
 import { McpAuditEmailResolver } from './mcp-audit-email-resolver.interface';
 import { McpAuditEventResolver } from './mcp-audit-event-resolver.interface';
-import { McpAuditSink } from './mcp-audit-sink.interface';
+import {
+  McpAuditContext,
+  McpAuditOutcome,
+  McpAuditSink,
+} from './mcp-audit-sink.interface';
 
 @Injectable()
 export class McpAuditInterceptor implements McpToolInterceptor {
@@ -26,18 +34,53 @@ export class McpAuditInterceptor implements McpToolInterceptor {
     context: McpToolContext,
     next: () => Promise<unknown>,
   ): Promise<unknown> {
-    const result = await next();
+    let result: unknown;
+    try {
+      result = await next();
+    } catch (error) {
+      await this.writeAuditEvent(
+        context,
+        undefined,
+        'error',
+        errorMessage(error),
+      );
+      throw error;
+    }
 
-    await this.writeAuditEvent(context, result);
+    // An `inputRequired(...)` round isn't the end of the call: the client answers and calls
+    // again, and that call is audited.
+    if (isInputRequiredResult(result)) return result;
+
+    const failure = isErrorResult(result) ? errorResultText(result) : undefined;
+    await this.writeAuditEvent(
+      context,
+      result,
+      failure === undefined ? 'success' : 'error',
+      failure,
+    );
 
     return result;
   }
 
-  private async writeAuditEvent(context: McpToolContext, result: unknown) {
+  async onRejected(context: McpToolContext, error: unknown): Promise<void> {
+    await this.writeAuditEvent(
+      context,
+      undefined,
+      error instanceof McpAccessDeniedError ? 'denied' : 'rejected',
+      errorMessage(error),
+    );
+  }
+
+  private async writeAuditEvent(
+    context: McpToolContext,
+    result: unknown,
+    outcome: McpAuditOutcome,
+    error?: string,
+  ) {
     try {
       const [accessEmail, resolvedEvent] = await Promise.all([
         this.emailResolver.resolveEmail(context),
-        this.eventResolver.resolveAuditEvent(context, result),
+        this.eventResolver.resolveAuditEvent(context, result, outcome),
       ]);
 
       if (!accessEmail || !resolvedEvent) {
@@ -50,10 +93,13 @@ export class McpAuditInterceptor implements McpToolInterceptor {
         resourceType: resolvedEvent.resourceType,
         resourceIds: this.cleanResourceIds(resolvedEvent.resourceIds),
         toolName: context.toolName,
-        context,
+        outcome,
+        ...(error !== undefined && { error }),
+        context: withoutToken(context),
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+    } catch (sinkError) {
+      const message =
+        sinkError instanceof Error ? sinkError.message : 'Unknown error';
 
       this.logger.warn(
         `MCP audit logging failed for ${context.toolName}: ${message}`,
@@ -69,4 +115,45 @@ export class McpAuditInterceptor implements McpToolInterceptor {
         typeof resourceId === 'string' || typeof resourceId === 'number',
     );
   }
+}
+
+/** The context without the bearer token, which an audit record must never hold. */
+function withoutToken(context: McpToolContext): McpAuditContext {
+  if (!context.authInfo) return context;
+  const { token: _token, ...authInfo } = context.authInfo;
+  return { ...context, authInfo };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isInputRequiredResult(result: unknown): boolean {
+  return (
+    !!result &&
+    typeof result === 'object' &&
+    (result as { resultType?: unknown }).resultType === 'input_required'
+  );
+}
+
+function isErrorResult(result: unknown): boolean {
+  return (
+    !!result &&
+    typeof result === 'object' &&
+    (result as { isError?: unknown }).isError === true
+  );
+}
+
+function errorResultText(result: unknown): string {
+  const content = (result as { content?: unknown }).content;
+  const text = Array.isArray(content)
+    ? content
+        .filter(
+          (block): block is { type: 'text'; text: string } =>
+            !!block && block.type === 'text' && typeof block.text === 'string',
+        )
+        .map((block) => block.text)
+        .join('\n')
+    : '';
+  return text || 'Tool execution failed';
 }

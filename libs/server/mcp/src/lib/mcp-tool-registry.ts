@@ -10,11 +10,14 @@ import type { McpCanActivate } from './mcp-can-activate';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
 import type { McpGuardMetadata } from './mcp-guard-metadata';
 import type { McpToolResult } from './mcp-tool-result';
-import type { McpLogLevel } from './mcp-log-level';
+import type { McpToolExecutionExtra } from './mcp-tool-execution-extra';
+import { isInputRequiredResult } from './is-input-required-result';
 import type { McpRegistrationChangeType } from './mcp-registration-change-type';
 import type { McpRegistrationChangeListener } from './mcp-registration-change-listener';
 import type { McpResourceUpdateListener } from './mcp-resource-update-listener';
 import { mcpSchemaToJsonSchema } from './mcp-schema-converters';
+import { McpAccessDeniedError, McpToolError } from './mcp-tool-error';
+import { ZodError } from 'zod';
 
 interface ToolEntry {
   metadata: McpToolMetadata;
@@ -281,90 +284,76 @@ export class McpToolRegistry {
     name: string,
     params: Record<string, unknown>,
     authInfo?: McpAuthInfo,
-    extra?: {
-      sessionId?: string;
-      signal?: AbortSignal;
-      sendProgress?: (
-        progress: number,
-        total?: number,
-        message?: string,
-      ) => Promise<void>;
-      sendLog?: (
-        level: McpLogLevel,
-        data: unknown,
-        logger?: string,
-      ) => Promise<void>;
-      createMessage?: (params: Record<string, unknown>) => Promise<unknown>;
-      elicitInput?: (params: Record<string, unknown>) => Promise<unknown>;
-      listRoots?: () => Promise<unknown>;
-    },
+    extra?: McpToolExecutionExtra,
   ): Promise<unknown> {
     const entry = this.tools.get(name);
     if (!entry) {
-      throw new Error(`MCP tool "${name}" is not registered.`);
+      throw new McpToolError(`MCP tool "${name}" is not registered.`);
     }
 
-    // -- Auth strategy (enrichment/validation) --
-    // Runs before guards so all guards receive a consistently resolved authInfo.
-    // Auth info an in-process caller marked with `markMcpAuthInfoResolved` was
-    // already verified, so only the guards below check it.
-    const resolvedAuthInfo =
-      this.authStrategy && !isMcpAuthInfoResolved(authInfo)
-        ? await this.authStrategy.resolveAuth(authInfo)
-        : authInfo;
-
-    // -- Guards (authorization) --
-    // Run first with raw params. Guards check auth, not input shape.
-    const guardContext: McpToolContext = {
+    // Context for interceptors' `onRejected`, until the call gets past auth, guards and validation.
+    const rejectionContext: McpToolContext = {
       toolName: name,
       params,
       metadata: entry.metadata,
-      authInfo: resolvedAuthInfo,
+      authInfo,
+      era: extra?.era,
       sessionId: extra?.sessionId,
       signal: extra?.signal,
-      sendProgress: extra?.sendProgress,
-      sendLog: extra?.sendLog,
-      createMessage: extra?.createMessage,
-      elicitInput: extra?.elicitInput,
-      listRoots: extra?.listRoots,
     };
 
-    if (entry.guards?.length) {
-      if (!this.guardResolver) {
-        throw new Error(
-          `Tool "${name}" has guards configured but no guard resolver is set. ` +
-            'Ensure the module supports guard resolution.',
-        );
-      }
-      for (const { guardClass, config } of entry.guards) {
-        const guard = this.guardResolver(guardClass);
-        const allowed = await guard.canActivate(guardContext, config);
-        if (!allowed) {
+    let context: McpToolContext;
+    let validatedParams: Record<string, unknown>;
+    try {
+      // -- Auth strategy (enrichment/validation) --
+      // Runs before guards so all guards receive a consistently resolved authInfo.
+      // Auth info an in-process caller marked with `markMcpAuthInfoResolved` was
+      // already verified, so only the guards below check it.
+      const resolvedAuthInfo =
+        this.authStrategy && !isMcpAuthInfoResolved(authInfo)
+          ? await this.authStrategy.resolveAuth(authInfo)
+          : authInfo;
+      rejectionContext.authInfo = resolvedAuthInfo;
+
+      // -- Guards (authorization) --
+      // Run first with raw params. Guards check auth, not input shape.
+      const guardContext: McpToolContext = {
+        toolName: name,
+        params,
+        metadata: entry.metadata,
+        authInfo: resolvedAuthInfo,
+        ...extra,
+      };
+
+      if (entry.guards?.length) {
+        if (!this.guardResolver) {
           throw new Error(
-            `Access denied by ${guardClass.name} for tool "${name}".`,
+            `Tool "${name}" has guards configured but no guard resolver is set. ` +
+              'Ensure the module supports guard resolution.',
           );
         }
+        for (const { guardClass, config } of entry.guards) {
+          const guard = this.guardResolver(guardClass);
+          const allowed = await guard.canActivate(guardContext, config);
+          if (!allowed) {
+            throw new McpAccessDeniedError(
+              `Access denied by ${guardClass.name} for tool "${name}".`,
+              guardClass.name,
+            );
+          }
+        }
       }
+
+      // -- Pipes (validation/transformation) --
+      validatedParams = entry.metadata.schema
+        ? entry.metadata.schema.parse(params)
+        : params;
+
+      context = { ...guardContext, params: validatedParams };
+    } catch (error) {
+      await this.notifyRejected(rejectionContext, error);
+      throw error;
     }
-
-    // -- Pipes (validation/transformation) --
-    const validatedParams = entry.metadata.schema
-      ? entry.metadata.schema.parse(params)
-      : params;
-
-    const context: McpToolContext = {
-      toolName: name,
-      params: validatedParams,
-      metadata: entry.metadata,
-      authInfo: resolvedAuthInfo,
-      sessionId: extra?.sessionId,
-      signal: extra?.signal,
-      sendProgress: extra?.sendProgress,
-      sendLog: extra?.sendLog,
-      createMessage: extra?.createMessage,
-      elicitInput: extra?.elicitInput,
-      listRoots: extra?.listRoots,
-    };
 
     // -- Interceptors --
     // Build the chain from the inside out: the innermost `next` calls the handler,
@@ -383,23 +372,7 @@ export class McpToolRegistry {
     name: string,
     params: Record<string, unknown>,
     authInfo?: McpAuthInfo,
-    extra?: {
-      sessionId?: string;
-      signal?: AbortSignal;
-      sendProgress?: (
-        progress: number,
-        total?: number,
-        message?: string,
-      ) => Promise<void>;
-      sendLog?: (
-        level: McpLogLevel,
-        data: unknown,
-        logger?: string,
-      ) => Promise<void>;
-      createMessage?: (params: Record<string, unknown>) => Promise<unknown>;
-      elicitInput?: (params: Record<string, unknown>) => Promise<unknown>;
-      listRoots?: () => Promise<unknown>;
-    },
+    extra?: McpToolExecutionExtra,
   ): Promise<McpToolResult> {
     try {
       const result = await this.executeToolRaw(name, params, authInfo, extra);
@@ -407,6 +380,19 @@ export class McpToolRegistry {
       if (result && typeof result === 'object' && (result as any).content) {
         return result as McpToolResult;
       }
+
+      // `inputRequired(...)`: the SDK asks the client and calls the tool again.
+      if (isInputRequiredResult(result)) {
+        return result as McpToolResult;
+      }
+
+      // A tool with an output schema must return structured content; a plain object
+      // result is that content, with its JSON as the text for clients that ignore it.
+      const structured =
+        !!this.tools.get(name)?.metadata.outputSchema &&
+        !!result &&
+        typeof result === 'object' &&
+        !Array.isArray(result);
 
       return {
         content: [
@@ -418,6 +404,9 @@ export class McpToolRegistry {
                 : JSON.stringify(result, null, 2),
           },
         ],
+        ...(structured && {
+          structuredContent: result as Record<string, unknown>,
+        }),
       };
     } catch (error) {
       this.logger.error(`Error executing tool ${name}:`, error);
@@ -425,11 +414,28 @@ export class McpToolRegistry {
         content: [
           {
             type: 'text',
-            text: `Error executing ${name}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            text: `Error executing ${name}: ${clientErrorMessage(error)}`,
           },
         ],
         isError: true,
       };
+    }
+  }
+
+  private async notifyRejected(
+    context: McpToolContext,
+    error: unknown,
+  ): Promise<void> {
+    for (const interceptor of this.interceptors) {
+      if (!interceptor.onRejected) continue;
+      try {
+        await interceptor.onRejected(context, error);
+      } catch (hookError) {
+        this.logger.error(
+          `Interceptor onRejected failed for tool ${context.toolName}:`,
+          hookError,
+        );
+      }
     }
   }
 
@@ -446,4 +452,23 @@ export class McpToolRegistry {
       jsonSchema: mcpSchemaToJsonSchema(entry.metadata.schema),
     }));
   }
+}
+
+/**
+ * What the client may see of a failed tool call. Messages written for the client
+ * (`McpToolError`) and argument validation failures, which the model needs to correct its
+ * call, pass through; anything else could carry internal details and is replaced.
+ */
+function clientErrorMessage(error: unknown): string {
+  if (error instanceof McpToolError) return error.message;
+  if (error instanceof ZodError) {
+    return `Invalid arguments: ${error.issues
+      .map((issue) =>
+        issue.path.length
+          ? `${issue.path.join('.')}: ${issue.message}`
+          : issue.message,
+      )
+      .join('; ')}`;
+  }
+  return 'Internal error';
 }

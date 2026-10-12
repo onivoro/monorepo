@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
-import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import { OAuthError } from '@modelcontextprotocol/server';
+import { invalidTokenError } from './invalid-token-error';
 import { McpJwksService } from './mcp-jwks.service';
 import { McpCognitoAuthStrategy } from './mcp-cognito-auth-strategy';
 import type { McpCognitoAuthConfig } from './mcp-cognito-auth-config';
@@ -80,7 +81,7 @@ describe('McpCognitoAuthStrategy', () => {
     });
 
     await expect(provider.verifyAccessToken(token)).rejects.toBeInstanceOf(
-      InvalidTokenError,
+      OAuthError,
     );
   });
 
@@ -94,7 +95,7 @@ describe('McpCognitoAuthStrategy', () => {
     });
 
     await expect(provider.verifyAccessToken(token)).rejects.toBeInstanceOf(
-      InvalidTokenError,
+      OAuthError,
     );
   });
 
@@ -123,7 +124,7 @@ describe('McpCognitoAuthStrategy', () => {
 
       const error = await provider.verifyAccessToken(token).catch((e) => e);
 
-      expect(error).toBeInstanceOf(InvalidTokenError);
+      expect(error).toBeInstanceOf(OAuthError);
       expect(error.message).toBe(message);
     });
 
@@ -131,7 +132,7 @@ describe('McpCognitoAuthStrategy', () => {
       provider = createProvider();
 
       await expect(provider.verifyAccessToken('')).rejects.toThrow(
-        new InvalidTokenError('Invalid access token'),
+        invalidTokenError('Invalid access token'),
       );
     });
   });

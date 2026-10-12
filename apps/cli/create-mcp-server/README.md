@@ -13,7 +13,6 @@ You'll be prompted for:
 1. **Project name** — kebab-case npm package name
 2. **Transport** — `http` (Streamable HTTP), `stdio`, or `both`
 3. **JWT auth** — include [`@onivoro/server-mcp-auth`](https://www.npmjs.com/package/@onivoro/server-mcp-auth) (only for HTTP/both)
-4. **OAuth server** — include [`@onivoro/server-mcp-oauth`](https://www.npmjs.com/package/@onivoro/server-mcp-oauth) (only when auth is enabled)
 
 ## CLI flags
 
@@ -30,22 +29,23 @@ npx @onivoro/create-mcp-server --name my-server
 # Choose transport
 npx @onivoro/create-mcp-server --transport stdio
 
-# Enable auth and OAuth
-npx @onivoro/create-mcp-server --auth --oauth
+# Enable JWT auth
+npx @onivoro/create-mcp-server --auth
 
 # Combine flags
 npx @onivoro/create-mcp-server -y --name my-server --transport both --auth
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--yes`, `-y` | Skip prompts, use defaults |
-| `--name <name>` | Set project name |
-| `--transport <http\|stdio\|both>` | Set transport type |
-| `--auth` | Include JWT auth module |
-| `--oauth` | Include OAuth module (implies `--auth`) |
+| Flag                              | Description                |
+| --------------------------------- | -------------------------- |
+| `--yes`, `-y`                     | Skip prompts, use defaults |
+| `--name <name>`                   | Set project name           |
+| `--transport <http\|stdio\|both>` | Set transport type         |
+| `--auth`                          | Include JWT auth module    |
 
 A positional argument is treated as the project name: `npx @onivoro/create-mcp-server my-app`.
+
+`--oauth` has been removed, along with the embedded OAuth server it added (`@onivoro/server-mcp-oauth`, which is deprecated). Passing it stops the CLI with an explanation. Use `--auth` instead, with a dedicated authorization server whose tokens `@onivoro/server-mcp-auth` validates.
 
 ## Generated project structure
 
@@ -71,7 +71,7 @@ my-server/
 ### `main.ts`
 
 - **HTTP / both**: `NestFactory.create()` with CORS enabled, listens on port 3000
-- **stdio**: `NestFactory.createApplicationContext()` for subprocess usage
+- **stdio**: `NestFactory.createApplicationContext()` for subprocess usage, with `McpStderrLogger` so logs stay off the protocol stream on stdout
 
 ### `app.module.ts`
 
@@ -88,20 +88,24 @@ import { ExamplePromptService } from './prompts/example.prompt';
 
 @Module({
   imports: [
-    McpAuthModule.register({
+    McpAuthModule.configureJwt({
       jwksUri: process.env.JWKS_URI!,
-      issuer: process.env.JWT_ISSUER,
-      audience: process.env.JWT_AUDIENCE,
+      issuer: process.env.JWT_ISSUER!,
+      audience: process.env.JWT_AUDIENCE!,
+      resourceServerUrl: process.env.MCP_RESOURCE_URL!,
     }),
     McpHttpModule.registerAndServeHttp({
       metadata: { name: 'my-server', version: '0.0.1' },
       authStrategy: McpJwtAuthStrategy,
+      requireBearerAuth: true,
     }),
   ],
   providers: [ExampleToolService, ExampleResourceService, ExamplePromptService],
 })
 export class AppModule {}
 ```
+
+With stdio only, there is no HTTP route to describe, so the generated `McpAuthModule` sets `serveProtectedResourceMetadata: false` instead of `resourceServerUrl`, and there is no `requireBearerAuth`.
 
 ### `example.tool.ts`
 
@@ -132,7 +136,7 @@ cd my-server
 npm install
 
 # If auth is enabled:
-cp .env.example .env   # configure JWKS_URI, JWT_ISSUER, JWT_AUDIENCE
+cp .env.example .env   # configure JWKS_URI, JWT_ISSUER, JWT_AUDIENCE, MCP_RESOURCE_URL
 
 # HTTP transport:
 npm run start:dev
@@ -146,5 +150,4 @@ npm run build
 
 - [`@onivoro/server-mcp`](https://www.npmjs.com/package/@onivoro/server-mcp) — Core MCP library with decorators, transports, and registry
 - [`@onivoro/server-mcp-auth`](https://www.npmjs.com/package/@onivoro/server-mcp-auth) — JWT authentication for MCP HTTP servers
-- [`@onivoro/server-mcp-oauth`](https://www.npmjs.com/package/@onivoro/server-mcp-oauth) — Embedded OAuth 2.1 authorization server
 - [`@onivoro/server-mcp-llm-adapter`](https://www.npmjs.com/package/@onivoro/server-mcp-llm-adapter) — LLM provider adapters (Bedrock, OpenAI, Anthropic)

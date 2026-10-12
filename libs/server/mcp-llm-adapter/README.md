@@ -115,7 +115,7 @@ for (const r of results) {
 }
 ```
 
-Each tool call goes through the full `@onivoro/server-mcp` execution pipeline independently (auth strategy, guards, validation, interceptors, handler) via `registry.executeToolRaw()`. Non-string results are `JSON.stringify`-ed. An unknown provider name or a thrown error becomes `{ success: false, error: message }` for that call only. The core MCP library is unchanged — the batch coordination lives entirely in the adapter.
+Each tool call goes through the full `@onivoro/server-mcp` execution pipeline independently (auth strategy, guards, validation, interceptors, handler) via `registry.executeToolRaw()`. Non-string results are `JSON.stringify`-ed. An unknown provider name, a thrown error, a result the tool marked `isError: true`, or a tool asking for user input with `inputRequired(...)` (which needs an MCP client to answer it) becomes `{ success: false, error: message }` for that call only. For an `isError` result, `message` is the result's text content (or `Tool execution failed` when it has none). Error messages are passed on as thrown: unlike an MCP transport, the adapter runs in your process, so it does not hide them. The core MCP library is unchanged — the batch coordination lives entirely in the adapter.
 
 ## Output schemas
 
@@ -182,14 +182,14 @@ McpLlmAdapterModule.forProvider(MY_CONFIG);
 
 ## McpLlmToolAdapter API
 
-| Method                                                            | Description                                                                                                                  |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `toProviderTools()`                                               | Returns `T[]` — tool definitions in the provider's format                                                                    |
-| `getOutputSchemas()`                                              | Returns `Map<string, Record<string, unknown>>` — provider tool names to output JSON Schemas (only tools with `outputSchema`) |
-| `resolveProviderToolName(providerName)`                           | Maps a provider-specific tool name back to the MCP tool name, or `undefined`                                                 |
-| `executeToolForProvider(providerName, params, authInfo?, extra?)` | Resolves name, executes tool, returns stringified result. Throws if the name is unknown or the tool throws                   |
-| `executeToolCallForProvider(toolCall, authInfo?, extra?)`         | Executes a single `ProviderToolCall`, returns `ProviderToolCallResult` with id passthrough (never throws)                    |
-| `executeToolsForProvider(toolCalls, authInfo?, extra?)`           | Executes multiple tool calls in parallel. Returns `ProviderToolCallResult[]` with per-call success/error                     |
+| Method                                                            | Description                                                                                                                                                     |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toProviderTools()`                                               | Returns `T[]` — tool definitions in the provider's format                                                                                                       |
+| `getOutputSchemas()`                                              | Returns `Map<string, Record<string, unknown>>` — provider tool names to output JSON Schemas (only tools with `outputSchema`)                                    |
+| `resolveProviderToolName(providerName)`                           | Maps a provider-specific tool name back to the MCP tool name, or `undefined`                                                                                    |
+| `executeToolForProvider(providerName, params, authInfo?, extra?)` | Resolves name, executes tool, returns stringified result. Throws if the name is unknown, the tool throws, or it returns `isError: true` or `inputRequired(...)` |
+| `executeToolCallForProvider(toolCall, authInfo?, extra?)`         | Executes a single `ProviderToolCall`, returns `ProviderToolCallResult` with id passthrough (never throws)                                                       |
+| `executeToolsForProvider(toolCalls, authInfo?, extra?)`           | Executes multiple tool calls in parallel. Returns `ProviderToolCallResult[]` with per-call success/error                                                        |
 
 The provider-name map is cached and rebuilt when the registry reports a registration change.
 

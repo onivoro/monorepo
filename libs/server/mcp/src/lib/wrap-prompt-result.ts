@@ -1,7 +1,13 @@
+import { isInputRequiredResult } from './is-input-required-result';
 import type { McpPromptResult } from './mcp-prompt-result';
 
 export function wrapPromptResult(raw: unknown): McpPromptResult {
   if (raw && typeof raw === 'object' && Array.isArray((raw as any).messages)) {
+    return raw as McpPromptResult;
+  }
+
+  // `inputRequired(...)`: the SDK asks the client and runs the handler again.
+  if (isInputRequiredResult(raw)) {
     return raw as McpPromptResult;
   }
 

@@ -1,7 +1,7 @@
 {
   "name": "@onivoro/server-mcp-oauth",
   "version": "24.39.0",
-  "description": "Embedded OAuth 2.1 authorization server for MCP — wraps the MCP SDK auth router into NestJS",
+  "description": "DEPRECATED: use a dedicated authorization server with @onivoro/server-mcp-auth. Embedded OAuth 2.1 authorization server for MCP — wraps the MCP SDK auth router into NestJS",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -32,7 +32,7 @@
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/server-legacy": "^2.3.1",
     "@nestjs/common": "^10.0.0 || ^11.0.0",
     "@nestjs/core": "^10.0.0 || ^11.0.0",
     "express": "^4.0.0 || ^5.0.0"

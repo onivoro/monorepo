@@ -10,8 +10,10 @@ import { McpScopeGuard } from './mcp-scope-guard';
 import type { McpAuthInfo } from './mcp-auth-info';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
 
-jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+jest.mock('@modelcontextprotocol/server', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server'),
   McpServer: jest.fn().mockImplementation(() => ({
+    isConnected: jest.fn().mockReturnValue(false),
     registerTool: jest.fn(),
     registerResource: jest.fn(),
     registerPrompt: jest.fn(),
@@ -21,8 +23,9 @@ jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   ResourceTemplate: jest.fn(),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
-  StreamableHTTPServerTransport: jest.fn().mockImplementation(() => ({
+jest.mock('@modelcontextprotocol/node', () => ({
+  ...jest.requireActual('@modelcontextprotocol/node'),
+  NodeStreamableHTTPServerTransport: jest.fn().mockImplementation(() => ({
     handleRequest: jest.fn().mockResolvedValue(undefined),
     close: jest.fn().mockResolvedValue(undefined),
   })),

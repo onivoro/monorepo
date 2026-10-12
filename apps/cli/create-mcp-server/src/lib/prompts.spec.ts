@@ -1,9 +1,9 @@
 import { buildPrompts } from './prompts';
 
 describe('buildPrompts', () => {
-  it('should return 4 prompt definitions', () => {
+  it('should return 3 prompt definitions', () => {
     const result = buildPrompts({ projectName: 'test', transport: 'http' });
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(3);
   });
 
   it('should set projectName initial value from defaults', () => {
@@ -46,24 +46,17 @@ describe('buildPrompts', () => {
     });
   });
 
-  describe('oauth prompt conditional type', () => {
-    it('should show oauth prompt when auth is true', () => {
-      const result = buildPrompts({ projectName: 'test', transport: 'http' });
-      const typeFn = result[3].type as Function;
-      expect(typeFn(undefined, { auth: true })).toBe('confirm');
-    });
-
-    it('should hide oauth prompt when auth is false', () => {
-      const result = buildPrompts({ projectName: 'test', transport: 'http' });
-      const typeFn = result[3].type as Function;
-      expect(typeFn(undefined, { auth: false })).toBeNull();
-    });
+  it('should not offer the deprecated OAuth server', () => {
+    const result = buildPrompts({ projectName: 'test', transport: 'http' });
+    expect(result.map((prompt) => prompt.name)).not.toContain('oauth');
   });
 
   describe('projectName validation', () => {
     it('should accept valid npm package names', () => {
       const result = buildPrompts({ projectName: 'test', transport: 'http' });
-      const validate = result[0].validate as (value: string) => boolean | string;
+      const validate = result[0].validate as (
+        value: string,
+      ) => boolean | string;
       expect(validate('my-app')).toBe(true);
       expect(validate('app123')).toBe(true);
       expect(validate('my.app')).toBe(true);
@@ -71,7 +64,9 @@ describe('buildPrompts', () => {
 
     it('should reject invalid names', () => {
       const result = buildPrompts({ projectName: 'test', transport: 'http' });
-      const validate = result[0].validate as (value: string) => boolean | string;
+      const validate = result[0].validate as (
+        value: string,
+      ) => boolean | string;
       expect(validate('My App')).not.toBe(true);
       expect(validate('')).not.toBe(true);
       expect(validate('UPPERCASE')).not.toBe(true);

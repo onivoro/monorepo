@@ -5,7 +5,9 @@ import type { McpToolInterceptor } from './mcp-tool-interceptor';
 import type { McpCanActivate } from './mcp-can-activate';
 import type { McpGuardMetadata } from './mcp-guard-metadata';
 import { McpScopeGuard } from './mcp-scope-guard';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
+import { Logger } from '@nestjs/common';
+import { McpAccessDeniedError, McpToolError } from './mcp-tool-error';
 
 const MOCK_AUTH: McpAuthInfo = {
   token: 'tok_123',
@@ -248,14 +250,74 @@ describe('McpToolRegistry', () => {
       expect((result.content[0] as any).text).toContain('"key": "value"');
     });
 
-    it('should catch errors and return error content with isError flag', async () => {
+    it('should catch errors and return a generic error with isError flag', async () => {
       const handler = jest.fn().mockRejectedValue(new Error('boom'));
       registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
       const result = await registry.executeToolWrapped('tool', {});
-      expect((result.content[0] as any).text).toContain('Error executing tool');
-      expect((result.content[0] as any).text).toContain('boom');
+      expect((result.content[0] as any).text).toBe(
+        'Error executing tool: Internal error',
+      );
       expect(result.isError).toBe(true);
+    });
+
+    it('should return the message of an McpToolError', async () => {
+      const handler = jest
+        .fn()
+        .mockRejectedValue(new McpToolError('No item 7'));
+      registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+      const result = await registry.executeToolWrapped('tool', {});
+      expect((result.content[0] as any).text).toBe(
+        'Error executing tool: No item 7',
+      );
+    });
+
+    it('should return guard denials and validation failures', async () => {
+      registry.setGuardResolver(() => ({ canActivate: () => false }));
+      class DenyGuard {
+        canActivate() {
+          return false;
+        }
+      }
+      registry.registerTool({ name: 'guarded', description: 'd' }, jest.fn(), [
+        { guardClass: DenyGuard },
+      ]);
+      registry.registerTool(
+        {
+          name: 'typed',
+          description: 'd',
+          schema: z.object({ count: z.number() }),
+        },
+        jest.fn(),
+      );
+
+      const denied = await registry.executeToolWrapped('guarded', {});
+      const invalid = await registry.executeToolWrapped('typed', {
+        count: 'x',
+      });
+
+      expect((denied.content[0] as any).text).toBe(
+        'Error executing guarded: Access denied by DenyGuard for tool "guarded".',
+      );
+      expect((invalid.content[0] as any).text).toMatch(
+        /^Error executing typed: Invalid arguments: count: /,
+      );
+    });
+
+    it('should return a plain object as structured content when the tool has an output schema', async () => {
+      registry.registerTool(
+        {
+          name: 'structured',
+          description: 'd',
+          outputSchema: z.object({ n: z.number() }),
+        },
+        jest.fn().mockResolvedValue({ n: 1 }),
+      );
+
+      const result = await registry.executeToolWrapped('structured', {});
+      expect(result.structuredContent).toEqual({ n: 1 });
+      expect((result.content[0] as any).text).toContain('"n": 1');
     });
 
     it('should not set isError on successful results', async () => {
@@ -268,6 +330,60 @@ describe('McpToolRegistry', () => {
   });
 
   describe('interceptors', () => {
+    it('should call onRejected when a guard denies the call, without running intercept', async () => {
+      class DenyGuard {
+        canActivate() {
+          return false;
+        }
+      }
+      registry.setGuardResolver(() => new DenyGuard());
+      registry.registerTool({ name: 'guarded', description: 'd' }, jest.fn(), [
+        { guardClass: DenyGuard },
+      ]);
+      const interceptor: McpToolInterceptor = {
+        intercept: jest.fn(),
+        onRejected: jest.fn(),
+      };
+      registry.registerInterceptor(interceptor);
+      const authInfo = { token: 't', clientId: 'c', scopes: [] };
+
+      await expect(
+        registry.executeToolRaw('guarded', { a: 1 }, authInfo),
+      ).rejects.toBeInstanceOf(McpAccessDeniedError);
+
+      expect(interceptor.intercept).not.toHaveBeenCalled();
+      expect(interceptor.onRejected).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolName: 'guarded',
+          params: { a: 1 },
+          authInfo,
+        }),
+        expect.any(McpAccessDeniedError),
+      );
+    });
+
+    it('should call onRejected when validation fails, and survive a failing hook', async () => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      registry.registerTool(
+        {
+          name: 'typed',
+          description: 'd',
+          schema: z.object({ n: z.number() }),
+        },
+        jest.fn(),
+      );
+      const onRejected = jest.fn().mockRejectedValue(new Error('sink down'));
+      registry.registerInterceptor({ intercept: jest.fn(), onRejected });
+
+      await expect(
+        registry.executeToolRaw('typed', { n: 'x' }),
+      ).rejects.toBeInstanceOf(ZodError);
+      expect(onRejected).toHaveBeenCalledWith(
+        expect.objectContaining({ toolName: 'typed' }),
+        expect.any(ZodError),
+      );
+    });
+
     it('should wrap the handler — before and after logic runs in order', async () => {
       const order: string[] = [];
       const handler = jest.fn().mockImplementation(async () => {

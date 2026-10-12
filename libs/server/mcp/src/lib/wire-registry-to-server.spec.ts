@@ -2,6 +2,7 @@ import { McpToolRegistry } from './mcp-tool-registry';
 import { buildCapabilities } from './build-capabilities';
 import { wireRegistryToServer } from './wire-registry-to-server';
 import { z } from 'zod';
+import { completable, isCompletable } from '@modelcontextprotocol/server';
 
 const mockEnable = jest.fn();
 const mockDisable = jest.fn();
@@ -13,24 +14,23 @@ const mockRegisterPrompt = jest.fn();
 const mockSetRequestHandler = jest.fn();
 const mockSendResourceUpdated = jest.fn().mockResolvedValue(undefined);
 
-jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+jest.mock('@modelcontextprotocol/server', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server'),
   McpServer: jest.fn(),
   ResourceTemplate: jest.fn().mockImplementation((uri: string) => ({ uri })),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
-  SubscribeRequestSchema: { method: 'resources/subscribe' },
-  UnsubscribeRequestSchema: { method: 'resources/unsubscribe' },
-}));
-
 function createMockServer() {
   return {
+    isConnected: jest.fn().mockReturnValue(false),
     registerTool: mockRegisterTool,
     registerResource: mockRegisterResource,
     registerPrompt: mockRegisterPrompt,
     sendLoggingMessage: jest.fn().mockResolvedValue(undefined),
     server: {
       setRequestHandler: mockSetRequestHandler,
+      registerCapabilities: jest.fn(),
+      getClientCapabilities: jest.fn().mockReturnValue({}),
       sendResourceUpdated: mockSendResourceUpdated,
       notification: jest.fn().mockResolvedValue(undefined),
       createMessage: jest.fn().mockResolvedValue({}),
@@ -38,6 +38,11 @@ function createMockServer() {
       listRoots: jest.fn().mockResolvedValue({ roots: [] }),
     },
   } as any;
+}
+
+/** The completer `completable()` attached (the SDK keeps its own getter internal). */
+function getCompleter(schema: unknown): ((...args: any[]) => any) | undefined {
+  return (schema as any)?.[Symbol.for('mcp.completable')]?.complete;
 }
 
 describe('buildCapabilities', () => {
@@ -105,11 +110,13 @@ describe('wireRegistryToServer', () => {
     wireRegistryToServer(registry, createMockServer());
 
     expect(mockRegisterTool).toHaveBeenCalledTimes(1);
-    expect(mockRegisterTool).toHaveBeenCalledWith(
-      'my-tool',
-      { description: 'A tool', inputSchema: schema },
-      expect.any(Function),
-    );
+    const [name, config] = mockRegisterTool.mock.calls[0];
+    expect(name).toBe('my-tool');
+    expect(config.description).toBe('A tool');
+    // Advertised with the tool's own JSON Schema, but validated by the registry.
+    const standard = config.inputSchema['~standard'];
+    expect(standard.jsonSchema).toBe((schema as any)['~standard'].jsonSchema);
+    expect(standard.validate({ text: 42 })).toEqual({ value: { text: 42 } });
   });
 
   it('should pass tool annotations to the server when present', () => {
@@ -195,7 +202,26 @@ describe('wireRegistryToServer', () => {
     );
   });
 
-  it('should forward authInfo from MCP SDK extra parameter', async () => {
+  /** A v2 handler context with the fields the wiring reads. */
+  function ctxOf(overrides: Record<string, any> = {}) {
+    const { authInfo, sessionId, signal, _meta, notify, log, ...mcpReq } =
+      overrides;
+    return {
+      sessionId,
+      http: authInfo ? { authInfo } : undefined,
+      mcpReq: {
+        id: 1,
+        method: 'tools/call',
+        signal: signal ?? new AbortController().signal,
+        _meta,
+        notify: notify ?? jest.fn().mockResolvedValue(undefined),
+        log: log ?? jest.fn().mockResolvedValue(undefined),
+        ...mcpReq,
+      },
+    };
+  }
+
+  it('should forward authInfo from the SDK context', async () => {
     const handler = jest.fn().mockResolvedValue('result');
     registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
@@ -203,10 +229,7 @@ describe('wireRegistryToServer', () => {
 
     const callback = mockRegisterTool.mock.calls[0][2];
     const mockAuthInfo = { token: 'abc', clientId: 'c1', scopes: ['read'] };
-    await callback(
-      { text: 'hi' },
-      { authInfo: mockAuthInfo, signal: new AbortController().signal },
-    );
+    await callback({ text: 'hi' }, ctxOf({ authInfo: mockAuthInfo }));
 
     expect(handler).toHaveBeenCalledWith(
       { text: 'hi' },
@@ -214,7 +237,7 @@ describe('wireRegistryToServer', () => {
     );
   });
 
-  it('should forward sessionId and signal from MCP SDK extra parameter', async () => {
+  it('should forward era, sessionId, signal and input responses from the SDK context', async () => {
     const handler = jest.fn().mockResolvedValue('result');
     registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
@@ -222,116 +245,97 @@ describe('wireRegistryToServer', () => {
 
     const callback = mockRegisterTool.mock.calls[0][2];
     const abortController = new AbortController();
+    const requestState = jest.fn().mockReturnValue('state');
     await callback(
       { text: 'hi' },
-      {
-        authInfo: undefined,
+      ctxOf({
         sessionId: 'sess-42',
         signal: abortController.signal,
-      },
-    );
-
-    expect(handler).toHaveBeenCalledWith(
-      { text: 'hi' },
-      expect.objectContaining({
-        sessionId: 'sess-42',
-        signal: abortController.signal,
+        inputResponses: { confirm: { action: 'accept' } },
+        requestState,
       }),
-    );
-  });
-
-  it('should provide sendProgress when extra has _meta.progressToken', async () => {
-    const handler = jest.fn().mockResolvedValue('result');
-    registry.registerTool({ name: 'tool', description: 'd' }, handler);
-
-    const mockNotification = jest.fn().mockResolvedValue(undefined);
-    const server = createMockServer();
-    server.server.notification = mockNotification;
-
-    wireRegistryToServer(registry, server);
-
-    const callback = mockRegisterTool.mock.calls[0][2];
-    await callback(
-      {},
-      {
-        _meta: { progressToken: 'tok-1' },
-        signal: new AbortController().signal,
-      },
     );
 
     const context = handler.mock.calls[0][1];
-    expect(context.sendProgress).toBeDefined();
-
-    await context.sendProgress(50, 100, 'halfway');
-    expect(mockNotification).toHaveBeenCalledWith(
+    expect(context).toEqual(
       expect.objectContaining({
-        method: 'notifications/progress',
-        params: expect.objectContaining({
-          progressToken: 'tok-1',
-          progress: 50,
-          total: 100,
-          message: 'halfway',
-        }),
+        era: 'legacy',
+        sessionId: 'sess-42',
+        signal: abortController.signal,
+        inputResponses: { confirm: { action: 'accept' } },
       }),
     );
+    expect(context.requestState()).toBe('state');
   });
 
-  it('should not provide sendProgress when extra has no progressToken', async () => {
+  it("should send progress on the request's own channel when the request has a progressToken", async () => {
+    const handler = jest.fn().mockResolvedValue('result');
+    registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const notify = jest.fn().mockResolvedValue(undefined);
+    const callback = mockRegisterTool.mock.calls[0][2];
+    await callback({}, ctxOf({ _meta: { progressToken: 'tok-1' }, notify }));
+
+    const context = handler.mock.calls[0][1];
+    await context.sendProgress(50, 100, 'halfway');
+    expect(notify).toHaveBeenCalledWith({
+      method: 'notifications/progress',
+      params: {
+        progressToken: 'tok-1',
+        progress: 50,
+        total: 100,
+        message: 'halfway',
+      },
+    });
+  });
+
+  it('should not provide sendProgress when the request has no progressToken', async () => {
     const handler = jest.fn().mockResolvedValue('result');
     registry.registerTool({ name: 'tool', description: 'd' }, handler);
 
     wireRegistryToServer(registry, createMockServer());
 
     const callback = mockRegisterTool.mock.calls[0][2];
-    await callback({}, { signal: new AbortController().signal });
+    await callback({}, ctxOf());
+
+    expect(handler.mock.calls[0][1].sendProgress).toBeUndefined();
+  });
+
+  it("should log through the SDK, which applies the client's level", async () => {
+    const handler = jest.fn().mockResolvedValue('result');
+    registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const log = jest.fn().mockResolvedValue(undefined);
+    const callback = mockRegisterTool.mock.calls[0][2];
+    await callback({}, ctxOf({ log }));
+
+    const context = handler.mock.calls[0][1];
+    await context.sendLog('info', { message: 'test' }, 'my-tool');
+    await context.sendLog('error', 'something broke');
+    expect(log.mock.calls).toEqual([
+      ['info', { message: 'test' }, 'my-tool'],
+      ['error', 'something broke', undefined],
+    ]);
+  });
+
+  it('should leave out progress and logging when the transport drops request-scoped messages', async () => {
+    const handler = jest.fn().mockResolvedValue('result');
+    registry.registerTool({ name: 'tool', description: 'd' }, handler);
+
+    wireRegistryToServer(registry, createMockServer(), {
+      requestScopedMessages: false,
+    });
+
+    const callback = mockRegisterTool.mock.calls[0][2];
+    await callback({}, ctxOf({ _meta: { progressToken: 't' } }));
 
     const context = handler.mock.calls[0][1];
     expect(context.sendProgress).toBeUndefined();
-  });
-
-  it('should provide sendLog that delegates to server.sendLoggingMessage', async () => {
-    const handler = jest.fn().mockResolvedValue('result');
-    registry.registerTool({ name: 'tool', description: 'd' }, handler);
-
-    const mockSendLoggingMessage = jest.fn().mockResolvedValue(undefined);
-    const server = createMockServer();
-    server.sendLoggingMessage = mockSendLoggingMessage;
-
-    wireRegistryToServer(registry, server);
-
-    const callback = mockRegisterTool.mock.calls[0][2];
-    await callback({}, { signal: new AbortController().signal });
-
-    const context = handler.mock.calls[0][1];
-    expect(context.sendLog).toBeDefined();
-
-    await context.sendLog('info', { message: 'test' }, 'my-tool');
-    expect(mockSendLoggingMessage).toHaveBeenCalledWith({
-      level: 'info',
-      data: { message: 'test' },
-      logger: 'my-tool',
-    });
-  });
-
-  it('should omit logger from sendLog when not provided', async () => {
-    const handler = jest.fn().mockResolvedValue('result');
-    registry.registerTool({ name: 'tool', description: 'd' }, handler);
-
-    const mockSendLoggingMessage = jest.fn().mockResolvedValue(undefined);
-    const server = createMockServer();
-    server.sendLoggingMessage = mockSendLoggingMessage;
-
-    wireRegistryToServer(registry, server);
-
-    const callback = mockRegisterTool.mock.calls[0][2];
-    await callback({}, { signal: new AbortController().signal });
-
-    const context = handler.mock.calls[0][1];
-    await context.sendLog('error', 'something broke');
-    expect(mockSendLoggingMessage).toHaveBeenCalledWith({
-      level: 'error',
-      data: 'something broke',
-    });
+    expect(context.sendLog).toBeUndefined();
   });
 
   it('should register static resources with URI string', () => {
@@ -391,9 +395,7 @@ describe('wireRegistryToServer', () => {
   });
 
   it('should resolve listStrategy and pass list callback to ResourceTemplate', () => {
-    const {
-      ResourceTemplate,
-    } = require('@modelcontextprotocol/sdk/server/mcp.js');
+    const { ResourceTemplate } = require('@modelcontextprotocol/server');
     const mockList = jest
       .fn()
       .mockResolvedValue([{ uri: 'item://1', name: 'Item 1' }]);
@@ -426,9 +428,7 @@ describe('wireRegistryToServer', () => {
   });
 
   it('should resolve completeStrategy and create Proxy-based complete for ResourceTemplate', () => {
-    const {
-      ResourceTemplate,
-    } = require('@modelcontextprotocol/sdk/server/mcp.js');
+    const { ResourceTemplate } = require('@modelcontextprotocol/server');
     const mockComplete = jest.fn().mockReturnValue(['item-1', 'item-2']);
 
     class TestCompleter {
@@ -461,9 +461,7 @@ describe('wireRegistryToServer', () => {
   });
 
   it('should omit complete from ResourceTemplate when completeStrategy not provided', () => {
-    const {
-      ResourceTemplate,
-    } = require('@modelcontextprotocol/sdk/server/mcp.js');
+    const { ResourceTemplate } = require('@modelcontextprotocol/server');
 
     registry.registerResource(
       { name: 'item', uri: 'item://{id}', isTemplate: true },
@@ -503,11 +501,11 @@ describe('wireRegistryToServer', () => {
     wireRegistryToServer(registry, createMockServer());
 
     expect(mockRegisterPrompt).toHaveBeenCalledTimes(1);
-    expect(mockRegisterPrompt).toHaveBeenCalledWith(
-      'summarize',
-      { description: 'Summarize', argsSchema },
-      expect.any(Function),
-    );
+    const [name, config] = mockRegisterPrompt.mock.calls[0];
+    expect(name).toBe('summarize');
+    expect(config.description).toBe('Summarize');
+    // The argument shape, as the object schema the SDK takes.
+    expect(config.argsSchema.shape).toEqual(argsSchema);
   });
 
   it('should handle empty registry without errors', () => {
@@ -561,15 +559,43 @@ describe('wireRegistryToServer', () => {
     const server = createMockServer();
     wireRegistryToServer(registry, server);
 
+    // `logging/setLevel` is the SDK's own, installed with the `logging` capability.
     expect(mockSetRequestHandler).toHaveBeenCalledTimes(2);
     expect(mockSetRequestHandler).toHaveBeenCalledWith(
-      { method: 'resources/subscribe' },
+      'resources/subscribe',
       expect.any(Function),
     );
     expect(mockSetRequestHandler).toHaveBeenCalledWith(
-      { method: 'resources/unsubscribe' },
+      'resources/unsubscribe',
       expect.any(Function),
     );
+  });
+
+  it('should not handle subscriptions or advertise list changes without a stream for them (stateless HTTP)', () => {
+    registry.registerTool({ name: 't', description: 'd' }, jest.fn());
+    registry.registerResource({ name: 'r', uri: 'app://r' }, jest.fn());
+    registry.registerPrompt({ name: 'p', description: 'd' }, jest.fn());
+    const server = createMockServer();
+    wireRegistryToServer(registry, server, { unsolicitedMessages: false });
+
+    expect(mockSetRequestHandler).not.toHaveBeenCalledWith(
+      'resources/subscribe',
+      expect.any(Function),
+    );
+    expect(server.server.registerCapabilities).toHaveBeenCalledWith({
+      tools: { listChanged: false },
+      resources: { subscribe: false, listChanged: false },
+      prompts: { listChanged: false },
+    });
+  });
+
+  it('should leave capabilities alone on a server that is already connected', () => {
+    registry.registerTool({ name: 't', description: 'd' }, jest.fn());
+    const server = createMockServer();
+    server.isConnected.mockReturnValue(true);
+    wireRegistryToServer(registry, server, { unsolicitedMessages: false });
+
+    expect(server.server.registerCapabilities).not.toHaveBeenCalled();
   });
 
   it('should track subscriptions via subscribe handler', () => {
@@ -578,7 +604,7 @@ describe('wireRegistryToServer', () => {
 
     // Find the subscribe handler
     const subscribeCall = mockSetRequestHandler.mock.calls.find(
-      (c: any[]) => c[0].method === 'resources/subscribe',
+      (c: any[]) => c[0] === 'resources/subscribe',
     );
     const subscribeHandler = subscribeCall[1];
 
@@ -601,7 +627,7 @@ describe('wireRegistryToServer', () => {
 
     // Find the unsubscribe handler
     const unsubscribeCall = mockSetRequestHandler.mock.calls.find(
-      (c: any[]) => c[0].method === 'resources/unsubscribe',
+      (c: any[]) => c[0] === 'resources/unsubscribe',
     );
     const unsubscribeHandler = unsubscribeCall[1];
 
@@ -619,7 +645,7 @@ describe('wireRegistryToServer', () => {
     server.server.sendResourceUpdated = jest.fn().mockResolvedValue(undefined);
     const handler = (method: string) =>
       server.server.setRequestHandler.mock.calls.find(
-        (c: any[]) => c[0].method === method,
+        (c: any[]) => c[0] === method,
       )[1];
     return { server, handler };
   }
@@ -784,7 +810,7 @@ describe('wireRegistryToServer', () => {
 
   it('should pass icons to tool config when present', () => {
     const icons = [
-      { url: 'https://example.com/icon.svg', mediaType: 'image/svg+xml' },
+      { src: 'https://example.com/icon.svg', mimeType: 'image/svg+xml' },
     ];
     registry.registerTool(
       { name: 'icon-tool', description: 'Has icons', icons },
@@ -807,7 +833,7 @@ describe('wireRegistryToServer', () => {
   });
 
   it('should pass icons and annotations to resource config when present', () => {
-    const icons = [{ url: 'https://example.com/res.png' }];
+    const icons = [{ src: 'https://example.com/res.png' }];
     const annotations = { audience: ['user' as const], priority: 0.8 };
     registry.registerResource(
       { name: 'annotated', uri: 'app://annotated', icons, annotations },
@@ -822,7 +848,7 @@ describe('wireRegistryToServer', () => {
   });
 
   it('should pass icons to prompt config when present', () => {
-    const icons = [{ url: 'https://example.com/prompt.png' }];
+    const icons = [{ src: 'https://example.com/prompt.png' }];
     registry.registerPrompt(
       { name: 'icon-prompt', description: 'Has icons', icons },
       jest.fn(),
@@ -834,18 +860,57 @@ describe('wireRegistryToServer', () => {
     expect(config.icons).toEqual(icons);
   });
 
-  it('should resolve prompt completeStrategy and create Proxy-based complete config', () => {
+  it('should attach the prompt completeStrategy to each argument the way the SDK reads it', async () => {
     const mockComplete = jest.fn().mockReturnValue(['typescript', 'python']);
 
     class TestCompleter {
       complete = mockComplete;
     }
 
+    const language = z.string();
     registry.setProviderResolver(() => new TestCompleter());
     registry.registerPrompt(
       {
         name: 'code-prompt',
         description: 'Generate code',
+        argsSchema: { language, task: z.string() },
+        completeStrategy: TestCompleter as any,
+      },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterPrompt.mock.calls[0][1];
+    expect(config).not.toHaveProperty('complete');
+    expect(isCompletable(config.argsSchema.shape.language)).toBe(true);
+    expect(isCompletable(config.argsSchema.shape.task)).toBe(true);
+    // The author's schema is left unmarked, and a second server reuses the same copy.
+    expect(isCompletable(language)).toBe(false);
+    expect(mockRegisterPrompt.mock.calls[1][1].argsSchema.shape.language).toBe(
+      config.argsSchema.shape.language,
+    );
+
+    const complete = getCompleter(config.argsSchema.shape.language)!;
+    await expect(
+      Promise.resolve(complete('type', { arguments: { task: 'x' } })),
+    ).resolves.toEqual(['typescript', 'python']);
+    expect(mockComplete).toHaveBeenCalledWith('language', 'type', {
+      arguments: { task: 'x' },
+    });
+  });
+
+  it('should keep a completer the author attached to an argument', () => {
+    class TestCompleter {
+      complete = jest.fn();
+    }
+    const own = completable(z.string(), () => ['mine']);
+    registry.setProviderResolver(() => new TestCompleter());
+    registry.registerPrompt(
+      {
+        name: 'own-prompt',
+        argsSchema: { own },
         completeStrategy: TestCompleter as any,
       },
       jest.fn(),
@@ -853,10 +918,7 @@ describe('wireRegistryToServer', () => {
 
     wireRegistryToServer(registry, createMockServer());
 
-    const config = mockRegisterPrompt.mock.calls[0][1];
-    expect(config.complete).toBeDefined();
-    config.complete.language('type');
-    expect(mockComplete).toHaveBeenCalledWith('language', 'type', undefined);
+    expect(mockRegisterPrompt.mock.calls[0][1].argsSchema.shape.own).toBe(own);
   });
 
   it('should omit complete from prompt config when completeStrategy not provided', () => {
@@ -877,7 +939,7 @@ describe('wireRegistryToServer', () => {
     wireRegistryToServer(registry, server);
 
     const subscribeCall = mockSetRequestHandler.mock.calls.find(
-      (c: any[]) => c[0].method === 'resources/subscribe',
+      (c: any[]) => c[0] === 'resources/subscribe',
     );
     const subscribeHandler = subscribeCall[1];
 
@@ -905,7 +967,7 @@ describe('wireRegistryToServer', () => {
     registry.subscribeResource('app://config', 'sess-1');
 
     const unsubscribeCall = mockSetRequestHandler.mock.calls.find(
-      (c: any[]) => c[0].method === 'resources/unsubscribe',
+      (c: any[]) => c[0] === 'resources/unsubscribe',
     );
     const unsubscribeHandler = unsubscribeCall[1];
 

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { McpAuthModule } from './mcp-auth.module';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
@@ -47,9 +48,66 @@ describe('McpAuthModule validation', () => {
     expect(dynamicModule.controllers).toEqual([]);
   });
 
+  it('configureJwt rejects a config that would accept tokens for any audience', () => {
+    expect(() =>
+      McpAuthModule.configureJwt({
+        jwksUri: 'https://auth.example.com/jwks.json',
+        issuer: 'https://auth.example.com',
+        resourceServerUrl: 'https://mcp.example.com',
+      }),
+    ).toThrow(/requires audience or resourceIdentifier/);
+  });
+
+  it('configureJwt accepts resourceIdentifier as the audience check', () => {
+    expect(() =>
+      McpAuthModule.configureJwt({
+        jwksUri: 'https://auth.example.com/jwks.json',
+        issuer: 'https://auth.example.com',
+        resourceIdentifier: 'https://mcp.example.com',
+        resourceServerUrl: 'https://mcp.example.com',
+      }),
+    ).not.toThrow();
+  });
+
+  it('configureJwt accepts allowAnyAudience, with a warning', () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    expect(() =>
+      McpAuthModule.configureJwt({
+        jwksUri: 'https://auth.example.com/jwks.json',
+        issuer: 'https://auth.example.com',
+        allowAnyAudience: true,
+        resourceServerUrl: 'https://mcp.example.com',
+      }),
+    ).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('allowAnyAudience'),
+    );
+    warn.mockRestore();
+  });
+
+  it('configureJwtAsync rejects a factory config without an audience check', async () => {
+    await expect(
+      Test.createTestingModule({
+        imports: [
+          McpAuthModule.configureJwtAsync({
+            useFactory: () => ({
+              jwksUri: 'https://auth.example.com/jwks.json',
+              issuer: 'https://auth.example.com',
+              resourceServerUrl: 'https://mcp.example.com',
+            }),
+          }),
+        ],
+      }).compile(),
+    ).rejects.toThrow(/requires audience or resourceIdentifier/);
+  });
+
   it('configureJwt accepts authorizationServers without an issuer', () => {
     const dynamicModule = McpAuthModule.configureJwt({
       jwksUri: 'https://auth.example.com/jwks.json',
+      audience: 'https://mcp.example.com',
       resourceServerUrl: 'https://api.example.com/mcp',
       authorizationServers: ['https://auth.example.com'],
     });
@@ -61,6 +119,7 @@ describe('McpAuthModule validation', () => {
     expect(() =>
       McpAuthModule.configureJwt({
         jwksUri: 'https://auth.example.com/jwks.json',
+        audience: 'https://mcp.example.com',
         resourceServerUrl: 'https://api.example.com/mcp',
         authorizationServers: [],
       }),
@@ -74,6 +133,7 @@ describe('McpAuthModule validation', () => {
           McpAuthModule.configureJwtAsync({
             useFactory: async () => ({
               jwksUri: 'https://auth.example.com/jwks.json',
+              audience: 'https://mcp.example.com',
             }),
           }),
         ],
@@ -113,6 +173,7 @@ describe('McpAuthModule validation', () => {
   it('registerAsync is a backwards-compatible alias for configureJwtAsync', async () => {
     const config = {
       jwksUri: 'https://auth.example.com/jwks.json',
+      audience: 'https://mcp.example.com',
       issuer: 'https://auth.example.com',
       resourceServerUrl: 'https://api.example.com/mcp',
     };

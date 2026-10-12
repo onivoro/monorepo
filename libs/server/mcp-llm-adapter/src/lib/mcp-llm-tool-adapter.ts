@@ -111,6 +111,8 @@ export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
       authInfo,
       extra,
     );
+    const errorText = toolErrorText(result);
+    if (errorText !== undefined) throw new Error(errorText);
     return typeof result === 'string' ? result : JSON.stringify(result);
   }
 
@@ -149,6 +151,9 @@ export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
           authInfo,
           extra,
         );
+        // A tool can report failure by returning `isError` instead of throwing.
+        const errorText = toolErrorText(rawResult);
+        if (errorText !== undefined) throw new Error(errorText);
         const result =
           typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
         return {
@@ -176,4 +181,39 @@ export class McpLlmToolAdapter<T = unknown> implements OnModuleInit {
       };
     });
   }
+}
+
+/**
+ * The error a tool reported by returning an `isError` result: its text content, or a
+ * generic message when it has none. An `inputRequired(...)` result is an error too, since
+ * an in-process caller can't answer it. `undefined` for any other result.
+ */
+function toolErrorText(result: unknown): string | undefined {
+  // `inputRequired(...)` asks the MCP client for input; called in-process, there is none.
+  if (
+    !!result &&
+    typeof result === 'object' &&
+    (result as { resultType?: unknown }).resultType === 'input_required'
+  ) {
+    return 'The tool needs input from the user (inputRequired), which is only available to MCP clients.';
+  }
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    (result as { isError?: unknown }).isError !== true
+  ) {
+    return undefined;
+  }
+
+  const content = (result as { content?: unknown }).content;
+  const text = Array.isArray(content)
+    ? content
+        .filter(
+          (block): block is { type: 'text'; text: string } =>
+            !!block && block.type === 'text' && typeof block.text === 'string',
+        )
+        .map((block) => block.text)
+        .join('\n')
+    : '';
+  return text || 'Tool execution failed';
 }

@@ -11,14 +11,16 @@ import {
   Res,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
-import type { OAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/provider.js';
+import { mcpAuthRouter } from '@modelcontextprotocol/server-legacy/auth';
+import type { OAuthServerProvider } from '@modelcontextprotocol/server-legacy/auth';
 import { PROTECTED_RESOURCE_WILDCARD } from '@onivoro/server-mcp';
 import { McpOAuthConfig } from './mcp-oauth-config';
 import { McpOAuthAsyncOptions } from './mcp-oauth-async-options';
 import { MCP_OAUTH_CONFIG } from './mcp-oauth-config-token';
 import { MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth-server-provider-token';
 import { McpMemoryClientsStore } from './mcp-memory-clients-store';
+import { McpClientIdMetadataDocumentStore } from './mcp-client-id-metadata-document-store';
+import type { McpClientIdMetadataDocumentOptions } from './mcp-client-id-metadata-document-options';
 import type { Request, Response } from 'express';
 
 const MCP_OAUTH_ROUTER = Symbol('MCP_OAUTH_ROUTER');
@@ -64,10 +66,23 @@ function createOAuthController() {
 function createWellKnownOAuthController() {
   @Controller('.well-known')
   class DynamicWellKnownOAuthController {
-    constructor(@Inject(MCP_OAUTH_ROUTER) private readonly router: any) {}
+    constructor(
+      @Inject(MCP_OAUTH_ROUTER) private readonly router: any,
+      @Inject(MCP_OAUTH_CONFIG) private readonly config: McpOAuthConfig,
+    ) {}
 
     @Get('oauth-authorization-server')
     async handleWellKnownOAuthGet(@Req() req: Request, @Res() res: Response) {
+      if (clientIdMetadataDocumentOptions(this.config)) {
+        // The SDK builds the metadata; announce Client ID Metadata Document support in it.
+        const json = res.json.bind(res);
+        res.json = (body: unknown) =>
+          json(
+            body && typeof body === 'object' && !Array.isArray(body)
+              ? { ...body, client_id_metadata_document_supported: true }
+              : body,
+          );
+      }
       await this.dispatch(req, res);
     }
 
@@ -133,6 +148,12 @@ function createProtectedResourceController() {
 }
 
 /**
+ * @deprecated The MCP SDK has frozen the authorization-server helpers this module wraps
+ * (`@modelcontextprotocol/server-legacy`, planned for removal in the SDK's v3), and the
+ * spec treats MCP servers as resource servers with a separate authorization server. Run a
+ * dedicated authorization server and validate its tokens with `McpAuthModule` from
+ * `@onivoro/server-mcp-auth`. See this package's README.
+ *
  * Embedded OAuth 2.1 authorization server module for MCP.
  *
  * Wraps the MCP SDK's `mcpAuthRouter` into NestJS, mounting all standard
@@ -182,11 +203,9 @@ export class McpOAuthModule {
 
     return {
       module: McpOAuthModule,
-      controllers: [
-        createOAuthController(),
-        createWellKnownOAuthController(),
-        createProtectedResourceController(),
-      ],
+      controllers: oauthControllers(
+        validatedConfig.serveProtectedResourceMetadata ?? true,
+      ),
       providers: [
         { provide: MCP_OAUTH_CONFIG, useValue: validatedConfig },
         McpMemoryClientsStore,
@@ -222,11 +241,10 @@ export class McpOAuthModule {
     return {
       module: McpOAuthModule,
       imports: [...(options.imports || [])],
-      controllers: [
-        createOAuthController(),
-        createWellKnownOAuthController(),
-        createProtectedResourceController(),
-      ],
+      // Routes are fixed before the factory runs, so this comes from the options.
+      controllers: oauthControllers(
+        options.serveProtectedResourceMetadata ?? true,
+      ),
       providers: [
         {
           provide: MCP_OAUTH_CONFIG,
@@ -263,7 +281,16 @@ export class McpOAuthModule {
   }
 
   onModuleInit(): void {
+    this.logDeprecation();
     this.logInMemoryStoreUsage();
+  }
+
+  private logDeprecation() {
+    if (process.env.NODE_ENV === 'test') return;
+    this.logger.warn(
+      "@onivoro/server-mcp-oauth is deprecated: the MCP SDK has frozen the authorization-server helpers it wraps (@modelcontextprotocol/server-legacy, planned for removal in the SDK's v3). " +
+        'Run a dedicated authorization server and validate its tokens with McpAuthModule from @onivoro/server-mcp-auth.',
+    );
   }
 
   private logInMemoryStoreUsage() {
@@ -290,6 +317,20 @@ export class McpOAuthModule {
   }
 }
 
+/**
+ * The OAuth endpoints, plus RFC 9728 protected resource metadata unless another module
+ * (such as `McpAuthModule` from `@onivoro/server-mcp-auth`) serves it.
+ */
+function oauthControllers(serveProtectedResourceMetadata: boolean) {
+  return [
+    createOAuthController(),
+    createWellKnownOAuthController(),
+    ...(serveProtectedResourceMetadata
+      ? [createProtectedResourceController()]
+      : []),
+  ];
+}
+
 function validateOAuthConfig(config: McpOAuthConfig): McpOAuthConfig {
   parseAbsoluteUrl(config.issuerUrl, 'issuerUrl');
   if (config.baseUrl) parseAbsoluteUrl(config.baseUrl, 'baseUrl');
@@ -301,12 +342,45 @@ function validateOAuthConfig(config: McpOAuthConfig): McpOAuthConfig {
   return config;
 }
 
+/** The Client ID Metadata Document options in effect, or `undefined` when turned off. */
+function clientIdMetadataDocumentOptions(
+  config: McpOAuthConfig,
+): McpClientIdMetadataDocumentOptions | undefined {
+  const setting = config.clientIdMetadataDocuments ?? true;
+  if (setting === false) return undefined;
+  return setting === true ? {} : setting;
+}
+
+/**
+ * The provider as the SDK router sees it: with Client ID Metadata Documents on, its clients
+ * store also resolves URL client IDs. Everything else is the provider's own.
+ */
+function withClientIdMetadataDocuments(
+  config: McpOAuthConfig,
+  provider: OAuthServerProvider,
+): OAuthServerProvider {
+  const options = clientIdMetadataDocumentOptions(config);
+  if (!options) return provider;
+
+  const clientsStore = new McpClientIdMetadataDocumentStore(
+    provider.clientsStore,
+    options,
+  );
+  return new Proxy(provider, {
+    get(target, property) {
+      if (property === 'clientsStore') return clientsStore;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
 function createOAuthRouter(
   config: McpOAuthConfig,
   provider: OAuthServerProvider,
 ) {
   return mcpAuthRouter({
-    provider,
+    provider: withClientIdMetadataDocuments(config, provider),
     issuerUrl: new URL(config.issuerUrl),
     ...(config.baseUrl && { baseUrl: new URL(config.baseUrl) }),
     ...(config.scopesSupported && { scopesSupported: config.scopesSupported }),
