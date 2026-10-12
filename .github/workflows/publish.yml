@@ -92,6 +92,10 @@ jobs:
 
       # Skips versions already on npm, so rerunning the job after a partial failure picks up where it stopped
       - name: Publish
+        env:
+          # npm reports why a trusted-publishing token exchange failed only at verbose level; without it the
+          # failure surfaces as a bare 404 on the upload
+          NPM_CONFIG_LOGLEVEL: verbose
         run: |
           for pkg in dist/libs/*/*/package.json; do
             dir=$(dirname "$pkg")
