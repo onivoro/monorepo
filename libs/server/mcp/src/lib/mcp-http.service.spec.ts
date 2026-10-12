@@ -1,6 +1,10 @@
 import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-scope-guard';
+import {
+  InsufficientScopeError,
+  InvalidTokenError,
+} from '@modelcontextprotocol/server-legacy/auth';
 import type { McpModuleConfig } from './mcp-module-config';
 import type { OAuthTokenVerifier } from '@modelcontextprotocol/server';
 import { EventEmitter } from 'events';
@@ -491,6 +495,56 @@ describe('McpHttpService', () => {
         }),
       );
     });
+  });
+
+  describe('v1-style OAuth errors from a verifier', () => {
+    it.each([
+      [
+        'InvalidTokenError',
+        new InvalidTokenError('expired'),
+        401,
+        'invalid_token',
+      ],
+      [
+        'InsufficientScopeError',
+        new InsufficientScopeError('needs write'),
+        403,
+        'insufficient_scope',
+      ],
+    ])(
+      'answers %s with its challenge, not a 500',
+      async (_name, failure, status, code) => {
+        const warn = jest
+          .spyOn((service as any).logger, 'warn')
+          .mockImplementation(() => undefined);
+        service.setBearerAuthVerifier({
+          verifyAccessToken: jest.fn().mockRejectedValue(failure),
+        });
+
+        const first = mockRes();
+        const second = mockRes();
+        await service.handleRequest(
+          mockReq({
+            headers: { authorization: 'Bearer t', host: 'api.example.com' },
+          }),
+          first,
+        );
+        await service.handleRequest(
+          mockReq({
+            headers: { authorization: 'Bearer t', host: 'api.example.com' },
+          }),
+          second,
+        );
+
+        expect(first.writeHead).toHaveBeenCalledWith(status, expect.anything());
+        expect(sentHeader(first, 'WWW-Authenticate')).toContain(
+          `error="${code}"`,
+        );
+        // Said once, not on every request.
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toContain('Throw OAuthError');
+      },
+    );
   });
 
   describe('DNS rebinding protection', () => {

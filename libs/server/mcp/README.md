@@ -962,7 +962,7 @@ async getItemDetail(uri: URL, params: { id: string }) {
 }
 ```
 
-A static resource handler is called with `(uri, ctx)` and a template's with `(uri, variables, ctx)`, where `ctx` is the MCP SDK's request context (`ServerContext` from `@modelcontextprotocol/server`: `ctx.http?.authInfo`, `ctx.mcpReq.signal`, `ctx.mcpReq.inputResponses`, …). Resource handlers don't go through the tool pipeline (auth strategy, guards, interceptors). Like tools, they can return `inputRequired(...)`.
+A static resource handler is called with `(uri, context)` and a template's with `(uri, variables, context)`. `context` is an `McpHandlerContext`, which the library owns so handlers don't change shape when the SDK does: `authInfo` (as the transport verified it), `era`, `sessionId`, `signal`, `inputResponses` and `requestState`. Resource handlers don't go through the tool pipeline (auth strategy, guards, interceptors). Like tools, they can return `inputRequired(...)`.
 
 ## Defining prompts
 
@@ -979,7 +979,7 @@ async summarize(params: { itemId: string }) {
 }
 ```
 
-A prompt handler is called with `(args, ctx)`, or just `(ctx)` when it has no `argsSchema`; `ctx` is the SDK's request context, as for resources. `argsSchema` is a shape of zod fields, which the library wraps in `z.object()` for the SDK.
+A prompt handler is called with `(args, context)`, or just `(context)` when it has no `argsSchema`; `context` is an `McpHandlerContext`, as for resources. `argsSchema` is a shape of zod fields, which the library wraps in `z.object()` for the SDK.
 
 ## Execution pipeline
 
@@ -1197,17 +1197,18 @@ The registry is the core of the library. It is injectable in any NestJS service 
 
 Called automatically by the module's discovery phase. You don't call these directly unless you're building custom infrastructure.
 
-| Method                                     | Description                                                                                                                                                |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `registerTool(metadata, handler, guards?)` | Register a tool with optional guards. Throws on duplicate name.                                                                                            |
-| `registerResource(metadata, handler)`      | Register a resource. Throws on duplicate name.                                                                                                             |
-| `registerPrompt(metadata, handler)`        | Register a prompt. Throws on duplicate name.                                                                                                               |
-| `registerInterceptor(interceptor)`         | Register a `McpToolInterceptor` for all tool executions (and its `onRejected`, if any, for rejected calls).                                                |
-| `setGuardResolver(resolver)`               | Set the function used to resolve guard class instances. Called automatically by all modules.                                                               |
-| `setProviderResolver(resolver)`            | Set the function used to resolve `listStrategy` / `completeStrategy` classes. Called automatically by all modules.                                         |
-| `resolveProvider(cls)`                     | Resolve a class through the provider resolver. Throws if no resolver is set.                                                                               |
-| `setAuthStrategy(strategy)`                | Set the auth strategy instance. Called automatically by the HTTP and stdio modules when `authStrategy` is configured.                                      |
-| `onRegistrationChange(listener)`           | Subscribe to registration events (`'tool'`, `'resource'`, `'prompt'`). Returns an unsubscribe function. Used by `wireRegistryToServer` for dynamic wiring. |
+| Method                                     | Description                                                                                                                                                                             |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerTool(metadata, handler, guards?)` | Register a tool with optional guards. Throws on duplicate name.                                                                                                                         |
+| `registerResource(metadata, handler)`      | Register a resource. Throws on duplicate name.                                                                                                                                          |
+| `registerPrompt(metadata, handler)`        | Register a prompt. Throws on duplicate name.                                                                                                                                            |
+| `registerInterceptor(interceptor)`         | Register a `McpToolInterceptor` for all tool executions (and its `onRejected`, if any, for rejected calls).                                                                             |
+| `setGuardResolver(resolver)`               | Set the function used to resolve guard class instances. Called automatically by all modules.                                                                                            |
+| `setProviderResolver(resolver)`            | Set the function used to resolve `listStrategy` / `completeStrategy` classes. Called automatically by all modules.                                                                      |
+| `resolveProvider(cls)`                     | Resolve a class through the provider resolver. Throws if no resolver is set.                                                                                                            |
+| `setAuthStrategy(strategy)`                | Set the auth strategy instance. Called automatically by the HTTP and stdio modules when `authStrategy` is configured.                                                                   |
+| `setExposeErrorMessages(expose)`           | Whether `executeToolWrapped` returns any error's message (`true`, this release's default) or only `McpToolError`s and validation errors. Set by the modules from `exposeErrorMessages`. |
+| `onRegistrationChange(listener)`           | Subscribe to registration events (`'tool'`, `'resource'`, `'prompt'`). Returns an unsubscribe function. Used by `wireRegistryToServer` for dynamic wiring.                              |
 
 Registering after startup works: if a server is already wired, `wireRegistryToServer` picks up the new entry through `onRegistrationChange`:
 
@@ -1250,16 +1251,19 @@ The optional `authInfo` parameter is populated automatically by `wireRegistryToS
 
 ### Error messages
 
-`executeToolWrapped` (and so every MCP transport) logs the full error on the server, but only tells the client:
+`executeToolWrapped` (and so every MCP transport) logs the full error on the server. What it tells the client depends on the `exposeErrorMessages` setting:
 
 | The error                                                     | `<message>` the client sees                                       |
 | ------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `McpToolError` (or a subclass such as `McpAccessDeniedError`) | Its message                                                       |
 | A Zod validation error                                        | `Invalid arguments: <path>: <issue>; ...`, so the model can retry |
 | An unknown tool name                                          | `MCP tool "<name>" is not registered.`                            |
-| Anything else                                                 | `Internal error`                                                  |
+| Anything else, with `exposeErrorMessages: true`               | The error's message                                               |
+| Anything else, with `exposeErrorMessages: false`              | `Internal error`                                                  |
 
-Exception messages can carry internal details (hostnames, SQL, stack fragments), so a message only reaches the client when you mean it to. Throw `McpToolError` for the ones you do:
+Exception messages can carry internal details (hostnames, SQL, stack fragments), so set `exposeErrorMessages: false` (on `McpHttpModule` or `McpStdioModule`) to send a message only when you mean to. In this release the setting defaults to `true`, as before, and the module logs a warning at startup when it isn't set; the default becomes `false` in the next major release. Set it explicitly to keep your choice and silence the warning. With a custom transport, call `registry.setExposeErrorMessages(...)`.
+
+Throw `McpToolError` for messages meant for the client; they reach it either way:
 
 ```typescript
 import { McpToolError } from '@onivoro/server-mcp';
@@ -1321,6 +1325,7 @@ McpHttpModule.registerAndServeHttp({
     'https://my-app.example.com',
   ],
   allowedHosts: ['mcp.example.com'], // Optional. Default: loopback host names on a loopback socket. See below.
+  exposeErrorMessages: false, // Optional. Default: true for now (with a warning); becomes false. See "Error messages".
   authStrategy: JwtAuthStrategy, // Optional. Existing Nest provider class implementing McpAuthStrategy.
   requireBearerAuth: {
     // Optional. `true` or an object. HTTP 401 bearer challenge using authStrategy as OAuthTokenVerifier.
@@ -1346,6 +1351,7 @@ McpStdioModule.registerAndServeStdio({
   stdin: process.stdin, // Optional. Defaults to process.stdin.
   stdout: process.stdout, // Optional. Defaults to process.stdout.
   redirectLogsToStderr: true, // Optional. Default: true on process.stdout. See "Logging goes to stderr".
+  exposeErrorMessages: false, // Optional. Default: true for now (with a warning); becomes false. See "Error messages".
   authStrategy: JwtAuthStrategy, // Optional. Existing Nest provider class implementing McpAuthStrategy.
 });
 ```
@@ -1370,7 +1376,7 @@ When enabled, unauthenticated HTTP requests (all methods except `OPTIONS`) are r
 
 `requireBearerAuth` only takes effect when `authStrategy` is also set, and that provider must implement the SDK's `OAuthTokenVerifier` (`verifyAccessToken()`, from `@modelcontextprotocol/server`); otherwise module init throws. `McpJwtAuthStrategy` from `@onivoro/server-mcp-auth` implements both interfaces.
 
-A verifier rejects a token by throwing `new OAuthError(OAuthErrorCode.InvalidToken, message)` (from `@modelcontextprotocol/server`), which becomes the `401` challenge. Any other error, including v1's `InvalidTokenError`, becomes a `500`. The verified token must have an `expiresAt`, or it is rejected.
+A verifier rejects a token by throwing `new OAuthError(OAuthErrorCode.InvalidToken, message)` (from `@modelcontextprotocol/server`), which becomes the `401` challenge. v1-style errors (`InvalidTokenError` and friends, still exported by `@modelcontextprotocol/server-legacy/auth`) are translated to the matching challenge, with a one-time warning; any other error becomes a `500`. `OAuthError`, `OAuthErrorCode`, `OAuthTokenVerifier` and `AuthInfo` are re-exported by this package. The verified token must have an `expiresAt`, or it is rejected.
 
 Authentication applies to clients of both protocol eras: the verified token reaches tools as `context.authInfo` either way.
 
@@ -1574,8 +1580,8 @@ The package test suite covers:
 - registry discovery and execution, including which error messages reach the client
 - end to end over HTTP, with the MCP SDK's own v2 client in both protocol eras against stateful and stateless servers: `inputRequired` (bridged to elicitation for 2025-era clients), progress, log levels, list-changed notifications over `subscriptions/listen`, and resource updates
 - end to end over stdio in both eras, including list-changed notifications
-- in memory against the SDK client (2025 protocol): prompt completions, progress, log levels, sampling, structured output, error messages
-- HTTP bearer challenge behavior, `insufficient_scope` challenges, and PRM URL derivation
+- in memory against the SDK client (2025 protocol): prompt completions, progress, log levels, sampling, structured output, error messages, and the context resource and prompt handlers receive
+- HTTP bearer challenge behavior, `insufficient_scope` challenges, the translation of v1-style verifier errors, and PRM URL derivation
 - auth strategy resolution through Nest DI
 - the PRM route helpers: wildcard syntax per Nest major, reading the installed Nest version and its fallback, and trailing-slash handling
 
@@ -1794,6 +1800,7 @@ markMcpAuthInfoResolved; // (authInfo) => authInfo — in-process callers: skip 
 isMcpAuthInfoResolved; // (authInfo?) => boolean — whether that exact object was marked
 McpToolContext; // { toolName, params, metadata, authInfo?, era?, sessionId?, signal?, sendProgress?, sendLog?, inputResponses?, requestState?, createMessage?, elicitInput?, listRoots? }
 McpToolExecutionExtra; // The transport-level part of McpToolContext — executeToolRaw/executeToolWrapped's `extra`
+McpHandlerContext; // { authInfo?, era?, sessionId?, signal?, inputResponses?, requestState? } — what resource and prompt handlers receive
 McpProtocolEra; // 'modern' (spec 2026-07-28) | 'legacy' (2025-11-25 and earlier)
 McpLogLevel; // 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'
 
@@ -1835,7 +1842,12 @@ PROTECTED_RESOURCE_WILDCARD; // '*resourcePath' or ':resourcePath(*)', for the i
 protectedResourceWildcardRoute; // (nestVersion) => '*resourcePath' (Nest 11+) or ':resourcePath(*)' (Nest 10)
 wildcardParamToPath; // (string | string[] | undefined) => path string; joins Nest 11 segments with '/', drops trailing slashes
 
-// SDK re-exports (from @modelcontextprotocol/server)
+// SDK re-exports (from @modelcontextprotocol/server; the same objects, not wrappers)
+McpServer; // The SDK's server class, for custom transports
+OAuthError; // Throw from a token verifier: new OAuthError(OAuthErrorCode.InvalidToken, message)
+OAuthErrorCode; // OAuth error codes ('invalid_token', 'insufficient_scope', ...)
+AuthInfo; // Type — what a token verifier returns
+OAuthTokenVerifier; // Type — { verifyAccessToken(token): Promise<AuthInfo> }
 inputRequired; // Build an InputRequiredResult: inputRequired({ inputRequests, requestState? }), inputRequired.elicit(...), .elicitUrl(...)
 acceptedContent; // (inputResponses, key, schema?) => the accepted, validated answer, or undefined
 inputResponse; // (inputResponses, key) => the answer as { kind: 'missing' | 'elicit' | 'sampling' | 'roots', ... }
@@ -1906,7 +1918,7 @@ MCP_CORS_CONFIG; // Complete CORS config object (methods, allowedHeaders, expose
 
 `express` is optional: only its types are used, by `McpHttpModule`. The MCP SDK's v2 packages need Node 20 or later and zod 4.2 or later.
 
-Coming from a version built on `@modelcontextprotocol/sdk` 1.x: replace it with the two SDK packages above. Code that imports from the SDK directly moves too (`McpServer`, `OAuthTokenVerifier`, `AuthInfo` and `EventStore` now come from `@modelcontextprotocol/server`), and a verifier must throw `OAuthError` (see [Transport-level authentication](#transport-level-authentication)). Resource and prompt handlers receive the SDK's v2 request context (`ctx`) where they used to get v1's `extra`. `McpIcon` uses the spec's field names (`src`, `mimeType`, `sizes`).
+Coming from a version built on `@modelcontextprotocol/sdk` 1.x: see [UPGRADING.md](https://github.com/onivoro/monorepo/blob/main/libs/server/mcp/UPGRADING.md) for every required change and changed default.
 
 ## Recommended patterns
 

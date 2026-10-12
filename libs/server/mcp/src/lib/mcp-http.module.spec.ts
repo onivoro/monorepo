@@ -1,4 +1,4 @@
-import { Injectable, Module, RequestMethod } from '@nestjs/common';
+import { Injectable, Logger, Module, RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA } from '@nestjs/common/constants';
 import { Test } from '@nestjs/testing';
 import { McpHttpModule } from './mcp-http.module';
@@ -441,37 +441,53 @@ describe('McpHttpModule', () => {
   });
 
   describe('error handling in discovery', () => {
-    it('should catch tool execution errors and return error content', async () => {
-      @Injectable()
-      class FailingToolService {
-        @McpTool({ name: 'failing-tool', description: 'A tool that fails' })
-        async failTool() {
-          throw new Error('tool exploded');
+    it.each([
+      ['unset (this release exposes, and warns)', undefined, true, true],
+      ['true', true, true, false],
+      ['false', false, false, false],
+    ])(
+      'should catch tool execution errors with exposeErrorMessages %s',
+      async (_case, exposeErrorMessages, exposed, warned) => {
+        @Injectable()
+        class FailingToolService {
+          @McpTool({ name: 'failing-tool', description: 'A tool that fails' })
+          async failTool() {
+            throw new Error('tool exploded');
+          }
         }
-      }
+        const warn = jest
+          .spyOn(Logger.prototype, 'warn')
+          .mockImplementation(() => undefined);
 
-      const module = await Test.createTestingModule({
-        imports: [
-          McpHttpModule.registerAndServeHttp({
-            metadata: { name: 'test', version: '1.0.0' },
-          }),
-        ],
-        providers: [FailingToolService],
-      }).compile();
+        const module = await Test.createTestingModule({
+          imports: [
+            McpHttpModule.registerAndServeHttp({
+              metadata: { name: 'test', version: '1.0.0' },
+              ...(exposeErrorMessages !== undefined && { exposeErrorMessages }),
+            }),
+          ],
+          providers: [FailingToolService],
+        }).compile();
 
-      await module.init();
+        await module.init();
 
-      const registry = module.get(McpToolRegistry);
-      const result = await registry.executeToolWrapped('failing-tool', {});
+        const registry = module.get(McpToolRegistry);
+        const result = await registry.executeToolWrapped('failing-tool', {});
 
-      expect((result.content[0] as any).text).toContain(
-        'Error executing failing-tool',
-      );
-      // The error's own message stays on the server; it could carry internal details.
-      expect((result.content[0] as any).text).not.toContain('tool exploded');
+        expect((result.content[0] as any).text).toBe(
+          exposed
+            ? 'Error executing failing-tool: tool exploded'
+            : 'Error executing failing-tool: Internal error',
+        );
+        const warnings = warn.mock.calls.filter(([message]) =>
+          String(message).startsWith('exposeErrorMessages is not set'),
+        );
+        expect(warnings).toHaveLength(warned ? 1 : 0);
 
-      await module.close();
-    });
+        warn.mockRestore();
+        await module.close();
+      },
+    );
   });
 });
 

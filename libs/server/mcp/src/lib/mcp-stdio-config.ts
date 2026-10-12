@@ -20,4 +20,14 @@ export interface McpStdioConfig {
    * The module resolves it through DI, so it can inject other services.
    */
   authStrategy?: new (...args: any[]) => McpAuthStrategy;
+  /**
+   * Whether clients see the message of any error a tool throws, or only messages written for
+   * them (`McpToolError`s and argument validation failures), with the rest replaced by
+   * `Internal error`. Exception messages can leak internal details (hostnames, SQL, stack
+   * fragments), so set `false` unless your tools only throw messages meant for clients.
+   *
+   * Default: `true` in this release, with a startup warning when not set; it becomes `false`
+   * in the next major release. Set it explicitly to keep your choice and silence the warning.
+   */
+  exposeErrorMessages?: boolean;
 }

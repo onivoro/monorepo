@@ -113,6 +113,19 @@ export type {
   EventId,
   InputRequiredResult,
 } from '@modelcontextprotocol/server';
+// The SDK types and classes consumers most often need next to this library: a custom
+// transport (McpServer), a token verifier (OAuthTokenVerifier, AuthInfo, OAuthError,
+// OAuthErrorCode). Importing them from here keeps consumers on the SDK version this
+// library is built against; their shapes are still the SDK's.
+export {
+  McpServer,
+  OAuthError,
+  OAuthErrorCode,
+} from '@modelcontextprotocol/server';
+export type {
+  AuthInfo,
+  OAuthTokenVerifier,
+} from '@modelcontextprotocol/server';
 // For tools that ask the client for input (spec 2026-07-28 multi round-trip requests,
 // bridged to server-to-client requests for 2025-era clients).
 export {
@@ -123,3 +136,4 @@ export {
 } from '@modelcontextprotocol/server';
 export { McpProtocolEra } from './lib/mcp-protocol-era';
 export { McpToolExecutionExtra } from './lib/mcp-tool-execution-extra';
+export { McpHandlerContext } from './lib/mcp-handler-context';

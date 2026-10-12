@@ -98,12 +98,15 @@ import { ExamplePromptService } from './prompts/example.prompt';
       metadata: { name: 'my-server', version: '0.0.1' },
       authStrategy: McpJwtAuthStrategy,
       requireBearerAuth: true,
+      exposeErrorMessages: false,
     }),
   ],
   providers: [ExampleToolService, ExampleResourceService, ExamplePromptService],
 })
 export class AppModule {}
 ```
+
+Generated modules set `exposeErrorMessages: false`, so clients only see the messages of errors you throw as `McpToolError` (and argument validation errors); other errors reach them as `Internal error` and are logged in full on the server.
 
 With stdio only, there is no HTTP route to describe, so the generated `McpAuthModule` sets `serveProtectedResourceMetadata: false` instead of `resourceServerUrl`, and there is no `requireBearerAuth`.
 

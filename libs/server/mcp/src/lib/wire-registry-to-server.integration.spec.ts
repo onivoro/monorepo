@@ -158,7 +158,8 @@ describe('wireRegistryToServer against the MCP SDK', () => {
     expect(result.structuredContent).toEqual({ count: 3 });
   });
 
-  it('shows the client messages written for it, and hides others', async () => {
+  it('shows the client messages written for it, and hides others when exposeErrorMessages is off', async () => {
+    registry.setExposeErrorMessages(false);
     registry.registerTool({ name: 'safe', description: 'd' }, async () => {
       throw new McpToolError('No invoice 42');
     });
@@ -260,6 +261,59 @@ describe('wireRegistryToServer against the MCP SDK', () => {
 
     expect(seen.params).toEqual({ anything: 1 });
     expect(seen.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("passes resource and prompt handlers the library context, not the SDK's", async () => {
+    const seen: Record<string, any> = {};
+    registry.registerResource(
+      { name: 'static', uri: 'app://static' },
+      async (_uri: URL, ctx: any) => {
+        seen['static'] = ctx;
+        return 'data';
+      },
+    );
+    registry.registerResource(
+      { name: 'item', uri: 'app://items/{id}', isTemplate: true },
+      async (_uri: URL, variables: any, ctx: any) => {
+        seen['template'] = { variables, ctx };
+        return 'item';
+      },
+    );
+    registry.registerPrompt(
+      { name: 'with-args', argsSchema: { topic: z.string() } },
+      async (args: any, ctx: any) => {
+        seen['withArgs'] = { args, ctx };
+        return 'prompt';
+      },
+    );
+    registry.registerPrompt({ name: 'no-args' }, async (ctx: any) => {
+      seen['noArgs'] = ctx;
+      return 'prompt';
+    });
+
+    const { client } = await connect(registry);
+    await client.readResource({ uri: 'app://static' });
+    await client.readResource({ uri: 'app://items/7' });
+    await client.getPrompt({ name: 'with-args', arguments: { topic: 'mcp' } });
+    await client.getPrompt({ name: 'no-args' });
+
+    const libraryContext = {
+      era: 'legacy',
+      signal: expect.any(AbortSignal),
+      requestState: expect.any(Function),
+    };
+    expect(seen['static']).toEqual(libraryContext);
+    expect(seen['template']).toEqual({
+      variables: { id: '7' },
+      ctx: libraryContext,
+    });
+    expect(seen['withArgs']).toEqual({
+      args: { topic: 'mcp' },
+      ctx: libraryContext,
+    });
+    expect(seen['noArgs']).toEqual(libraryContext);
+    // None of the SDK's own context leaks through.
+    expect(seen['static']).not.toHaveProperty('mcpReq');
   });
 
   it('advertises no list changes or subscriptions without a stream for them', async () => {

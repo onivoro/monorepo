@@ -248,6 +248,6 @@ For DRY multi-app usage, put decorated MCP adapters in a shared Nest module such
 - Forgetting to include a Nest global prefix or reverse-proxy base path in `resourceServerUrl`.
 - Using `McpMemoryClientsStore` in production and expecting registered clients to survive restart.
 - Importing both `McpOAuthModule` and `McpAuthModule` without `serveProtectedResourceMetadata: false` on `McpOAuthModule`.
-- Throwing plain `Error`s with messages meant for the model. Only `McpToolError` messages (and validation errors) reach the client; everything else becomes `Internal error`.
+- Throwing plain `Error`s with messages meant for the model. With `exposeErrorMessages: false` (the default from the next major release), only `McpToolError` messages and validation errors reach the client; everything else becomes `Internal error`.
 - Calling a browser-based client from another origin without listing it in `allowedOrigins`.
 - Putting MCP protocol concerns directly into reusable business services instead of using thin MCP adapter providers.

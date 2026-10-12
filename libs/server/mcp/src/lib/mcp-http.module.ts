@@ -22,6 +22,7 @@ import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
+import { applyExposeErrorMessages } from './apply-expose-error-messages';
 import type { OAuthTokenVerifier } from '@modelcontextprotocol/server';
 import { normalizeMcpHttpRoute } from './mcp-http-route';
 
@@ -154,6 +155,11 @@ export class McpHttpModule implements OnModuleInit {
     );
     this.registry.setProviderResolver((cls) =>
       this.moduleRef.get(cls, { strict: false }),
+    );
+    applyExposeErrorMessages(
+      this.registry,
+      this.config.exposeErrorMessages,
+      this.logger,
     );
     if (this.config.authStrategy) {
       const provider = this.moduleRef.get(this.config.authStrategy, {
