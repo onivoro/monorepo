@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import {
   bearerAuthChallengeResponse,
   createMcpHandler,
+  OAuthError,
   isLegacyRequest,
   McpServer,
   verifyBearerToken,
@@ -58,6 +59,7 @@ export class McpHttpService implements OnModuleDestroy {
   private bearerAuthRequiredScopes: string[] = [];
   private bearerAuthResourceMetadataUrl?: string;
   private bearerAuthExpectedResource?: URL;
+  private warnedAboutLegacyOAuthError = false;
   /** Serves 2026-07-28 clients: stateless, one fresh server per request. */
   private readonly modern: McpHttpHandler;
   private readonly modernNode: (
@@ -340,13 +342,37 @@ export class McpHttpService implements OnModuleDestroy {
       // 401 with a `WWW-Authenticate` challenge for a bad token, 403 for missing scopes.
       await this.sendWebResponse(
         res,
-        bearerAuthChallengeResponse(error, {
+        bearerAuthChallengeResponse(this.asOAuthError(error), {
           requiredScopes,
           resourceMetadataUrl,
         }),
       );
       return false;
     }
+  }
+
+  /**
+   * v1-style OAuth errors (`InvalidTokenError` and friends, still exported by
+   * `@modelcontextprotocol/server-legacy`) carry their code in `errorCode` and aren't the
+   * SDK's `OAuthError`, which the SDK would answer with a 500. Translate them, and say so
+   * once, so a verifier ported by renaming its imports still gets the right challenge.
+   */
+  private asOAuthError(error: unknown): unknown {
+    if (error instanceof OAuthError) return error;
+    const errorCode = (error as { errorCode?: unknown } | null)?.errorCode;
+    if (typeof errorCode !== 'string') return error;
+
+    if (!this.warnedAboutLegacyOAuthError) {
+      this.warnedAboutLegacyOAuthError = true;
+      this.logger.warn(
+        `The token verifier threw a v1-style OAuth error (${(error as Error).name ?? 'OAuthError'}). ` +
+          'Throw OAuthError from @modelcontextprotocol/server instead; this translation is a stopgap.',
+      );
+    }
+    return new OAuthError(
+      errorCode,
+      error instanceof Error ? error.message : 'Invalid access token',
+    );
   }
 
   private async sendWebResponse(res: http.ServerResponse, response: Response) {

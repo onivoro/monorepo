@@ -10,6 +10,7 @@ import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpLogLevel } from './mcp-log-level';
 import type { McpPromptMetadata } from './mcp-prompt-metadata';
 import type { McpProtocolEra } from './mcp-protocol-era';
+import type { McpHandlerContext } from './mcp-handler-context';
 import { wrapResourceResult } from './wrap-resource-result';
 import { wrapPromptResult } from './wrap-prompt-result';
 
@@ -154,6 +155,26 @@ function buildClientRequests(
   };
 }
 
+/** The library's context for resource and prompt handlers, from the SDK's request context. */
+function handlerContext(
+  ctx: ServerContext | undefined,
+  era: McpProtocolEra,
+): McpHandlerContext {
+  const authInfo = ctx?.http?.authInfo;
+  return {
+    era,
+    ...(authInfo && { authInfo: { ...(authInfo as any) } }),
+    ...(ctx?.sessionId !== undefined && { sessionId: ctx.sessionId }),
+    ...(ctx?.mcpReq?.signal && { signal: ctx.mcpReq.signal }),
+    ...(ctx?.mcpReq?.inputResponses && {
+      inputResponses: ctx.mcpReq.inputResponses,
+    }),
+    ...(ctx?.mcpReq?.requestState && {
+      requestState: ctx.mcpReq.requestState,
+    }),
+  };
+}
+
 function wireToolToServer(
   registry: McpToolRegistry,
   server: McpServer,
@@ -212,6 +233,7 @@ function wireResourceToServer(
   registry: McpToolRegistry,
   server: McpServer,
   resourceName: string,
+  wiring: ServerWiring,
 ): void {
   const entries = registry.getResources();
   const entry = entries.find((e) => e.metadata.name === resourceName);
@@ -261,7 +283,7 @@ function wireResourceToServer(
       resourceConfig,
       (async (uri: URL, variables: any, ctx: ServerContext) =>
         wrapResourceResult(
-          await handler(uri, variables, ctx),
+          await handler(uri, variables, handlerContext(ctx, wiring.era)),
           uri.href,
           metadata.mimeType,
         )) as any,
@@ -273,7 +295,7 @@ function wireResourceToServer(
       resourceConfig,
       (async (uri: URL, ctx: ServerContext) =>
         wrapResourceResult(
-          await handler(uri, ctx),
+          await handler(uri, handlerContext(ctx, wiring.era)),
           uri.href,
           metadata.mimeType,
         )) as any,
@@ -319,6 +341,7 @@ function wirePromptToServer(
   registry: McpToolRegistry,
   server: McpServer,
   promptName: string,
+  wiring: ServerWiring,
 ): void {
   const entries = registry.getPrompts();
   const entry = entries.find((e) => e.metadata.name === promptName);
@@ -334,7 +357,14 @@ function wirePromptToServer(
       ...(metadata.title && { title: metadata.title }),
       ...(metadata.icons && { icons: metadata.icons }),
     },
-    (async (...args: any[]) => wrapPromptResult(await handler(...args))) as any,
+    // The SDK calls `(args, ctx)` for a prompt with arguments and `(ctx)` for one without.
+    (async (...sdkArgs: any[]) => {
+      const ctx = sdkArgs[sdkArgs.length - 1] as ServerContext | undefined;
+      const context = handlerContext(ctx, wiring.era);
+      return wrapPromptResult(
+        await (argsSchema ? handler(sdkArgs[0], context) : handler(context)),
+      );
+    }) as any,
   );
 }
 
@@ -391,11 +421,11 @@ export function wireRegistryToServer(
   }
 
   for (const { metadata } of registry.getResources()) {
-    wireResourceToServer(registry, server, metadata.name);
+    wireResourceToServer(registry, server, metadata.name, wiring);
   }
 
   for (const { metadata } of registry.getPrompts()) {
-    wirePromptToServer(registry, server, metadata.name);
+    wirePromptToServer(registry, server, metadata.name, wiring);
   }
 
   if (!unsolicitedMessages) withdrawUnsolicitedCapabilities(registry, server);
@@ -479,10 +509,10 @@ export function wireRegistryToServer(
           wireToolToServer(registry, server, name, registeredTools, wiring);
           break;
         case 'resource':
-          wireResourceToServer(registry, server, name);
+          wireResourceToServer(registry, server, name, wiring);
           break;
         case 'prompt':
-          wirePromptToServer(registry, server, name);
+          wirePromptToServer(registry, server, name, wiring);
           break;
       }
     },

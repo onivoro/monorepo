@@ -56,6 +56,7 @@ export class McpToolRegistry {
   ) => McpCanActivate;
   private providerResolver?: (cls: new (...args: any[]) => any) => any;
   private authStrategy?: McpAuthStrategy;
+  private exposeErrorMessages = true;
 
   // -- Registration --
 
@@ -145,6 +146,16 @@ export class McpToolRegistry {
     ) => McpCanActivate,
   ): void {
     this.guardResolver = resolver;
+  }
+
+  /**
+   * Whether `executeToolWrapped` returns the message of any error a tool throws to the client
+   * (`true`, the current default), or only messages written for it — `McpToolError`s and
+   * argument validation failures — replacing the rest with `Internal error` (`false`).
+   * The default becomes `false` in the next major release.
+   */
+  setExposeErrorMessages(expose: boolean): void {
+    this.exposeErrorMessages = expose;
   }
 
   setAuthStrategy(strategy: McpAuthStrategy): void {
@@ -414,7 +425,7 @@ export class McpToolRegistry {
         content: [
           {
             type: 'text',
-            text: `Error executing ${name}: ${clientErrorMessage(error)}`,
+            text: `Error executing ${name}: ${clientErrorMessage(error, this.exposeErrorMessages)}`,
           },
         ],
         isError: true,
@@ -457,9 +468,10 @@ export class McpToolRegistry {
 /**
  * What the client may see of a failed tool call. Messages written for the client
  * (`McpToolError`) and argument validation failures, which the model needs to correct its
- * call, pass through; anything else could carry internal details and is replaced.
+ * call, always pass through. Anything else could carry internal details, and is replaced
+ * unless `expose` is set.
  */
-function clientErrorMessage(error: unknown): string {
+function clientErrorMessage(error: unknown, expose: boolean): string {
   if (error instanceof McpToolError) return error.message;
   if (error instanceof ZodError) {
     return `Invalid arguments: ${error.issues
@@ -469,6 +481,9 @@ function clientErrorMessage(error: unknown): string {
           : issue.message,
       )
       .join('; ')}`;
+  }
+  if (expose) {
+    return error instanceof Error ? error.message : 'Unknown error';
   }
   return 'Internal error';
 }

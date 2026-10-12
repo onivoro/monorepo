@@ -149,6 +149,15 @@ describe('composeAppModule', () => {
     expect(result).not.toContain('authStrategy');
   });
 
+  it('should hide internal error messages from clients in every module', () => {
+    const result = composeAppModule({
+      projectName: 'test',
+      transport: 'both',
+      auth: false,
+    });
+    expect(result.match(/exposeErrorMessages: false,/g)).toHaveLength(2);
+  });
+
   it('should never reference the deprecated OAuth package', () => {
     for (const transport of ['http', 'stdio', 'both'] as const) {
       for (const auth of [true, false]) {

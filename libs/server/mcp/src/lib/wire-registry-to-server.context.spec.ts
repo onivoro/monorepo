@@ -152,7 +152,7 @@ describe('wireRegistryToServer tool context', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toBe(
-      'Error executing elicit: Internal error',
+      'Error executing elicit: client does not support elicitation',
     );
   });
 

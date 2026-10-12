@@ -98,18 +98,20 @@ export function composeAppModule(options: ScaffoldOptions): string {
   const authStrategyOption = options.auth
     ? `\n      authStrategy: McpJwtAuthStrategy,`
     : '';
+  // Only McpToolError messages reach clients: the library's future default, set now.
+  const errorOption = `\n      exposeErrorMessages: false,`;
 
   if (servesHttp) {
     // requireBearerAuth sends the 401 challenge that lets MCP clients start OAuth.
     const bearerOption = options.auth ? `\n      requireBearerAuth: true,` : '';
     registrations.push(`    McpHttpModule.registerAndServeHttp({
-      metadata: { name: '${options.projectName}', version: '0.0.1' },${authStrategyOption}${bearerOption}
+      metadata: { name: '${options.projectName}', version: '0.0.1' },${authStrategyOption}${bearerOption}${errorOption}
     }),`);
   }
 
   if (options.transport === 'stdio' || options.transport === 'both') {
     registrations.push(`    McpStdioModule.registerAndServeStdio({
-      metadata: { name: '${options.projectName}', version: '0.0.1' },${authStrategyOption}
+      metadata: { name: '${options.projectName}', version: '0.0.1' },${authStrategyOption}${errorOption}
     }),`);
   }
 

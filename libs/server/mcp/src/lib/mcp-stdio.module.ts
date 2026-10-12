@@ -23,6 +23,7 @@ import { MCP_STDIO_CONFIG } from './mcp-stdio-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
+import { applyExposeErrorMessages } from './apply-expose-error-messages';
 import { buildCapabilities } from './build-capabilities';
 import { wireRegistryToServer } from './wire-registry-to-server';
 import { McpStderrLogger } from './mcp-stderr-logger';
@@ -104,6 +105,11 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     );
     this.registry.setProviderResolver((cls) =>
       this.moduleRef.get(cls, { strict: false }),
+    );
+    applyExposeErrorMessages(
+      this.registry,
+      this.config.exposeErrorMessages,
+      this.logger,
     );
     if (this.config.authStrategy) {
       const provider = this.moduleRef.get(this.config.authStrategy, {
