@@ -11,9 +11,7 @@
   },
   "dependencies": {
     "@onivoro/isomorphic-common": "24.39.0",
-    "tslib": "^2.3.0",
-    "safer-buffer": "^2.1.2",
-    "inquirer": "^8.2.6"
+    "tslib": "^2.3.0"
   },
   "peerDependencies": {
     "@nestjs/common": "*",

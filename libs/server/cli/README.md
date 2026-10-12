@@ -151,7 +151,7 @@ node dist/main.js migrate --help
 ## Dependencies
 
 - Peer: `@nestjs/common`, `nest-commander`
-- Direct: `@onivoro/isomorphic-common`, `inquirer`, `safer-buffer`, `tslib`
+- Direct: `@onivoro/isomorphic-common`, `tslib`
 
 ## License
 

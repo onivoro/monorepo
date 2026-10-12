@@ -8,7 +8,7 @@ AWS Kinesis Data Firehose integration for NestJS applications: write JSON record
 npm install @onivoro/server-aws-firehose @aws-sdk/client-firehose @nestjs/common
 ```
 
-`@aws-sdk/client-firehose` and `@nestjs/common` are peer dependencies. (`@aws-sdk/s3-request-presigner` is also listed as a peer dependency but is not used by this package.)
+`@aws-sdk/client-firehose` and `@nestjs/common` are peer dependencies.
 
 ## Module Setup
 

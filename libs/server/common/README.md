@@ -8,7 +8,7 @@ Common server utilities, DTOs, decorators, pipes, and bootstrap helpers for Nest
 npm install @onivoro/server-common
 ```
 
-Peer dependencies: `@nestjs/common`, `@nestjs/core`, `@nestjs/swagger`, `body-parser`, `reflect-metadata`, `rxjs`, `typeorm`, `zod`. The error filters and bootstrap helpers assume the Express platform (`@nestjs/platform-express`). Depends on [`@onivoro/isomorphic-common`](../../isomorphic/common/).
+Peer dependencies: `@nestjs/common`, `@nestjs/core`, `@nestjs/swagger`, `body-parser`, `reflect-metadata`, `typeorm`, `zod`, and optionally `express` (types only). The error filters and bootstrap helpers assume the Express platform (`@nestjs/platform-express`). Depends on [`@onivoro/isomorphic-common`](../../isomorphic/common/).
 
 ## Module Setup
 

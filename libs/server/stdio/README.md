@@ -13,7 +13,7 @@ There are two sides:
 npm install @onivoro/server-stdio
 ```
 
-Peer dependencies: `@nestjs/common`, `@nestjs/core`, `reflect-metadata`, `rxjs`. JSON-RPC types (`JsonRpcRequest`, `MessageBus`, `MESSAGE_BUS`, ...) come from [`@onivoro/isomorphic-jsonrpc`](../../isomorphic/jsonrpc/), which is installed as a dependency.
+Peer dependencies: `@nestjs/common`, `@nestjs/core`. JSON-RPC types (`JsonRpcRequest`, `MessageBus`, `MESSAGE_BUS`, ...) come from [`@onivoro/isomorphic-jsonrpc`](../../isomorphic/jsonrpc/), which is installed as a dependency.
 
 ## Server process
 

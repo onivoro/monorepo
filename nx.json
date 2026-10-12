@@ -46,15 +46,6 @@
   },
   "plugins": [
     {
-      "plugin": "@nx/vite/plugin",
-      "options": {
-        "buildTargetName": "build",
-        "serveTargetName": "serve",
-        "previewTargetName": "preview",
-        "serveStaticTargetName": "serve-static"
-      }
-    },
-    {
       "plugin": "@nx/jest/plugin",
       "options": {
         "targetName": "test"
@@ -71,16 +62,6 @@
           "configName": "tsconfig.lib.json"
         }
       }
-    },
-    {
-      "plugin": "@nx/webpack/plugin",
-      "options": {
-        "buildTargetName": "webpack:build",
-        "serveTargetName": "webpack:serve",
-        "previewTargetName": "preview",
-        "buildDepsTargetName": "build-deps",
-        "watchDepsTargetName": "watch-deps"
-      }
     }
   ],
   "namedInputs": {
@@ -94,25 +75,6 @@
       "!{projectRoot}/test-setup.[jt]s"
     ],
     "sharedGlobals": []
-  },
-  "generators": {
-    "@nx/workspace:move": {
-      "projectNameAndRootFormat": "as-provided"
-    },
-    "@nx/react": {
-      "application": {
-        "babel": true,
-        "style": "tailwind",
-        "bundler": "vite"
-      },
-      "component": {
-        "style": "tailwind"
-      },
-      "library": {
-        "style": "tailwind",
-        "unitTestRunner": "jest"
-      }
-    }
   },
   "release": {
     "projectsRelationship": "fixed",

@@ -17,7 +17,7 @@ If you are deciding how the packages fit together, start with:
 npm install @onivoro/server-mcp-oauth
 ```
 
-**Peer dependencies:** `@modelcontextprotocol/sdk`, `@nestjs/common`, `@nestjs/core`
+**Peer dependencies:** `@modelcontextprotocol/sdk`, `@nestjs/common`, `@nestjs/core`, and optionally `express` (types only)
 
 `@onivoro/server-mcp` is a regular dependency and is installed automatically.
 

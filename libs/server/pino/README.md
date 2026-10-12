@@ -5,10 +5,10 @@ A thin wrapper around `nestjs-pino` for NestJS applications, providing a configu
 ## Installation
 
 ```bash
-npm install @onivoro/server-pino nestjs-pino pino-http
+npm install @onivoro/server-pino nestjs-pino pino-http pino
 ```
 
-`@nestjs/common`, `nestjs-pino` and `pino-http` are peer dependencies.
+`@nestjs/common`, `nestjs-pino`, `pino-http` and `pino` are peer dependencies.
 
 ## Overview
 

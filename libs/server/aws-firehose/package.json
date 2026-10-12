@@ -16,7 +16,6 @@
   },
   "peerDependencies": {
     "@aws-sdk/client-firehose": "*",
-    "@aws-sdk/s3-request-presigner": "*",
     "@nestjs/common": "*"
   },
   "files": [

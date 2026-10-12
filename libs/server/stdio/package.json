@@ -10,15 +10,12 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/isomorphic-common": "24.39.0",
     "@onivoro/isomorphic-jsonrpc": "24.39.0",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
     "@nestjs/common": "*",
-    "@nestjs/core": "*",
-    "reflect-metadata": "*",
-    "rxjs": "*"
+    "@nestjs/core": "*"
   },
   "files": [
     "**/*.js",
