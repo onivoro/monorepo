@@ -40,7 +40,6 @@ Spec 2026-07-28 has no server-to-client requests. `context.createMessage`, `cont
 ## Deprecated and removed
 
 - **`@onivoro/server-mcp-oauth` is deprecated.** It depends on the SDK's frozen `@modelcontextprotocol/server-legacy`, which is planned for removal in the SDK's v3. Move to a dedicated authorization server with `@onivoro/server-mcp-auth`; the package's README has the reasons and the steps. It still works and now supports Client ID Metadata Documents.
-- **`@onivoro/create-mcp-server --oauth` is removed.** Passing it stops the CLI with an explanation; use `--auth`.
 
 ## Releasing
 
