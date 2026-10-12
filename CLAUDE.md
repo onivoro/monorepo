@@ -5,7 +5,7 @@ Nx monorepo of publishable `@onivoro/*` libraries, grouped by runtime: `libs/ser
 ## Commands
 
 ```bash
-npm run fmt                  # format (required before commits)
+npm run fmt                  # format everything (the pre-commit hook formats staged files)
 npm run test                 # all unit tests
 npm run smoke:nest11         # build the MCP libs, serve their protected-resource routes on Nest 11
 npx nx test {project}
