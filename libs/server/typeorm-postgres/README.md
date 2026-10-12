@@ -7,10 +7,10 @@ Everything exported by [`@onivoro/server-typeorm-common`](../typeorm-common/) (`
 ## Installation
 
 ```bash
-npm install @onivoro/server-typeorm-postgres typeorm typeorm-naming-strategies pg @nestjs/typeorm
+npm install @onivoro/server-typeorm-postgres typeorm typeorm-naming-strategies pg
 ```
 
-Peer dependencies: `@nestjs/common`, `@nestjs/typeorm`, `pg`, `reflect-metadata`, `typeorm`, `typeorm-naming-strategies`. `@onivoro/isomorphic-common` and `@onivoro/server-typeorm-common` are installed as regular dependencies.
+Peer dependencies: `@nestjs/common`, `pg`, `reflect-metadata`, `typeorm`, `typeorm-naming-strategies`. `@onivoro/isomorphic-common` and `@onivoro/server-typeorm-common` are installed as regular dependencies.
 
 ## Module setup
 

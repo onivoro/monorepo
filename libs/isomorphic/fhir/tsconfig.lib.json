@@ -3,6 +3,12 @@
   "compilerOptions": {
     "declaration": true
   },
-  "exclude": ["jest.config.ts", "src/**/*.spec.ts", "src/**/*.test.ts"],
+  "exclude": [
+    "jest.config.ts",
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts",
+    "src/lib/functions/fhir-test-config.ts",
+    "src/lib/functions/test-setup.ts"
+  ],
   "include": ["src/**/*.ts"]
 }

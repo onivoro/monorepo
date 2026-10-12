@@ -8,7 +8,7 @@ NestJS-based framework for building VSCode extensions with a three-tier architec
 npm install @onivoro/server-vscode
 ```
 
-Peer dependencies: `@nestjs/common`, `@nestjs/core`, `reflect-metadata`, `rxjs`, and `@types/vscode` (`^1.74.0`). `@onivoro/server-stdio` and `@onivoro/isomorphic-jsonrpc` are installed as regular dependencies. The `vscode` module itself is supplied by the VSCode extension host at runtime.
+Peer dependencies: `@nestjs/common`, `@nestjs/core`, `reflect-metadata`, and `@types/vscode` (`^1.74.0`). `@onivoro/server-stdio` and `@onivoro/isomorphic-jsonrpc` are installed as regular dependencies. The `vscode` module itself is supplied by the VSCode extension host at runtime.
 
 ## Overview
 

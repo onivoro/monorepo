@@ -8,7 +8,7 @@ AWS Cognito integration for NestJS applications: ID/access token validation, OID
 npm install @onivoro/server-aws-cognito
 ```
 
-Peer dependencies: `@aws-sdk/client-cognito-identity-provider`, `@nestjs/common`, `@nestjs/swagger`, `jsonwebtoken`, `jwk-to-pem`, `jwks-rsa`, `axios`.
+Peer dependencies: `@aws-sdk/client-cognito-identity-provider`, `@nestjs/common`, `@nestjs/swagger`, `jsonwebtoken`, `jwk-to-pem`, `jwks-rsa`, and optionally `express` (types only).
 
 The OIDC middlewares and `CookieService` read cookies from `req.cookies`, so your app must also register [`cookie-parser`](https://www.npmjs.com/package/cookie-parser) (or an equivalent) for those features to work.
 

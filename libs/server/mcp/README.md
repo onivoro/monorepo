@@ -1661,9 +1661,13 @@ MCP_CORS_CONFIG; // Complete CORS config object (methods, allowedHeaders, expose
   "@modelcontextprotocol/sdk": "^1.31.0",
   "@nestjs/common": "^10.0.0 || ^11.0.0",
   "@nestjs/core": "^10.0.0 || ^11.0.0",
+  "express": "^4.0.0 || ^5.0.0",
+  "reflect-metadata": "^0.1.12 || ^0.2.0",
   "zod": "^4.0.0"
 }
 ```
+
+`express` is optional: only its types are used, by `McpHttpModule`.
 
 ## Recommended patterns
 

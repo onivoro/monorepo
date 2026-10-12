@@ -7,10 +7,10 @@ Everything exported by [`@onivoro/server-typeorm-common`](../typeorm-common/) (`
 ## Installation
 
 ```bash
-npm install @onivoro/server-typeorm-mysql typeorm typeorm-naming-strategies mysql @nestjs/typeorm
+npm install @onivoro/server-typeorm-mysql typeorm typeorm-naming-strategies mysql
 ```
 
-Peer dependencies: `@nestjs/common`, `@nestjs/typeorm`, `mysql`, `reflect-metadata`, `typeorm`, `typeorm-naming-strategies`.
+Peer dependencies: `@nestjs/common`, `mysql`, `reflect-metadata`, `typeorm`, `typeorm-naming-strategies`.
 
 ## Module setup
 

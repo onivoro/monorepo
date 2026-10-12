@@ -18,9 +18,9 @@
     "@aws-sdk/client-cognito-identity-provider": "*",
     "@nestjs/common": "*",
     "@nestjs/swagger": "*",
-    "axios": "*",
-    "jwk-to-pem": "*",
+    "express": "*",
     "jsonwebtoken": "*",
+    "jwk-to-pem": "*",
     "jwks-rsa": "*"
   },
   "files": [
@@ -28,5 +28,10 @@
     "**/*.d.ts",
     "**/*.js.map",
     "README.md"
-  ]
+  ],
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  }
 }

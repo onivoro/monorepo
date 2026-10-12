@@ -15,7 +15,6 @@
   },
   "peerDependencies": {
     "@nestjs/common": "*",
-    "@nestjs/typeorm": "*",
     "mysql": "*",
     "reflect-metadata": "*",
     "typeorm": "*",

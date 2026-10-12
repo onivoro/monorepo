@@ -18,8 +18,8 @@
     "@nestjs/core": "*",
     "@nestjs/swagger": "*",
     "body-parser": "*",
+    "express": "*",
     "reflect-metadata": "*",
-    "rxjs": "*",
     "typeorm": "*",
     "zod": "*"
   },
@@ -28,5 +28,10 @@
     "**/*.d.ts",
     "**/*.js.map",
     "README.md"
-  ]
+  ],
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  }
 }

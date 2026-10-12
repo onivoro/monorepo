@@ -16,6 +16,7 @@
   "peerDependencies": {
     "@nestjs/common": "*",
     "nestjs-pino": "*",
+    "pino": "*",
     "pino-http": "*"
   },
   "files": [
