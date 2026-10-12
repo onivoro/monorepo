@@ -14,7 +14,9 @@
 #   bash tools/npm-trust.sh @onivoro/server-foo        # only the packages named
 #   bash tools/npm-trust.sh --renew                    # replace expired trust
 #
-# Other arguments starting with - go to npm, e.g. --dry-run or --otp=<code>.
+# Every npm call needs a one-time password. The script asks for one from your authenticator app and reuses it
+# until npm rejects it, then asks for the next, so a run takes a code about every 30 seconds rather than one
+# per call. Other arguments starting with - go to npm, e.g. --dry-run.
 set -euo pipefail
 
 REPO=onivoro/monorepo
@@ -23,17 +25,32 @@ ENVIRONMENT=npm-publish
 
 cd "$(dirname "$0")/.."
 npm whoami > /dev/null || { echo 'ERROR: not logged in to npm. Run npm login first'; exit 1; }
-[ -t 0 ] && [ -t 1 ] || { echo 'ERROR: run this in an interactive terminal, so npm can ask for two-factor authentication'; exit 1; }
+[ -t 0 ] && [ -t 1 ] || { echo 'ERROR: run this in an interactive terminal, so it can ask for one-time passwords'; exit 1; }
 
 log=$(mktemp)
-trap 'rm -f "$log"' EXIT
+errors=$(mktemp)
+trap 'rm -f "$log" "$errors"' EXIT
 
-list_trust() {
-  if [ "$(uname)" = Darwin ]; then
-    script -q "$2" npm trust list "$1"
-  else
-    script -q -e -c "npm trust list '$1'" "$2"
-  fi
+otp=''
+ask_otp() {
+  read -r -p 'One-time password: ' otp < /dev/tty
+}
+
+# Runs npm with the current one-time password, asking for a new one while npm rejects it.
+# Without a terminal on stdin npm fails instead of prompting, so the script owns every prompt.
+npm_otp() {
+  local attempt
+  for attempt in 1 2 3; do
+    if npm "$@" --otp="$otp" < /dev/null 2> "$errors"; then
+      return 0
+    fi
+    if ! grep -qiE 'EOTP|one-time pass' "$errors"; then
+      break
+    fi
+    ask_otp
+  done
+  cat "$errors" >&2
+  return 1
 }
 
 # Prints the id of each entry in a recorded `npm trust list` that trusts $WORKFLOW
@@ -57,18 +74,17 @@ if [ ${#names[@]} -eq 0 ]; then
   for pkg in libs/*/*/package.json; do names+=("$(node -p "require('./$pkg').name")"); done
 fi
 
+ask_otp
 for name in "${names[@]}"; do
-  # Reading trust needs two-factor authentication too, so a failure here must stop rather than count as untrusted.
-  # npm only asks for it when stdin and stdout are a terminal, so run it under `script`, which gives it one,
-  # shows its prompts and records its output for the check below
-  list_trust "$name" "$log" || { echo "ERROR: couldn't read the trust settings of $name"; exit 1; }
+  # Reading trust needs two-factor authentication too, so a failure here must stop rather than count as untrusted
+  npm_otp trust list "$name" > "$log" || { echo "ERROR: couldn't read the trust settings of $name"; exit 1; }
   if $renew; then
     for id in $(trust_ids "$log"); do
       if $dry_run; then
         echo "would revoke: $name trust $id"
       else
         echo "revoke: $name trust $id"
-        npm trust revoke "$name" --id="$id" ${flags[@]+"${flags[@]}"}
+        npm_otp trust revoke "$name" --id="$id" ${flags[@]+"${flags[@]}"}
       fi
     done
     : > "$log"
@@ -77,18 +93,18 @@ for name in "${names[@]}"; do
     echo "skip: $name already trusts $WORKFLOW"
   else
     echo "trust: $name"
-    npm trust github "$name" --repository "$REPO" --file "$WORKFLOW" --environment "$ENVIRONMENT" --allow-publish --yes ${flags[@]+"${flags[@]}"}
+    npm_otp trust github "$name" --repository "$REPO" --file "$WORKFLOW" --environment "$ENVIRONMENT" --allow-publish --yes ${flags[@]+"${flags[@]}"}
   fi
   if $dry_run; then
     echo "would set: $name mfa=publish"
   else
-    npm access set mfa=publish "$name" ${flags[@]+"${flags[@]}"}
+    npm_otp access set mfa=publish "$name" ${flags[@]+"${flags[@]}"}
   fi
 done
 
 echo
 echo 'Review who can publish or change these packages and their trust settings:'
-npm org ls onivoro || true
+npm_otp org ls onivoro || true
 echo
 echo 'Your npm tokens (revoke any you no longer need with npm token revoke <id>):'
-npm token list || true
+npm_otp token list || true
