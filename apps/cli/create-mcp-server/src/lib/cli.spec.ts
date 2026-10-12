@@ -1,4 +1,4 @@
-import { parseArgs } from './cli';
+import { CliUsageError, OAUTH_FLAG_REMOVED_MESSAGE, parseArgs } from './cli';
 
 describe('parseArgs', () => {
   it('should return defaults when no args', () => {
@@ -29,26 +29,37 @@ describe('parseArgs', () => {
 
   it('should parse --transport', () => {
     expect(parseArgs(['--transport', 'http']).overrides.transport).toBe('http');
-    expect(parseArgs(['--transport', 'stdio']).overrides.transport).toBe('stdio');
+    expect(parseArgs(['--transport', 'stdio']).overrides.transport).toBe(
+      'stdio',
+    );
     expect(parseArgs(['--transport', 'both']).overrides.transport).toBe('both');
   });
 
   it('should ignore invalid transport values', () => {
-    expect(parseArgs(['--transport', 'websocket']).overrides.transport).toBeUndefined();
+    expect(
+      parseArgs(['--transport', 'websocket']).overrides.transport,
+    ).toBeUndefined();
   });
 
   it('should parse --auth', () => {
     expect(parseArgs(['--auth']).overrides.auth).toBe(true);
   });
 
-  it('should parse --oauth and imply --auth', () => {
-    const result = parseArgs(['--oauth']);
-    expect(result.overrides.oauth).toBe(true);
-    expect(result.overrides.auth).toBe(true);
+  it('should reject the removed --oauth flag with a message pointing to --auth', () => {
+    expect(() => parseArgs(['--auth', '--oauth'])).toThrow(CliUsageError);
+    expect(() => parseArgs(['--oauth'])).toThrow(OAUTH_FLAG_REMOVED_MESSAGE);
+    expect(OAUTH_FLAG_REMOVED_MESSAGE).toContain('Use --auth');
   });
 
   it('should combine multiple flags', () => {
-    const result = parseArgs(['-y', '--name', 'test', '--transport', 'both', '--auth']);
+    const result = parseArgs([
+      '-y',
+      '--name',
+      'test',
+      '--transport',
+      'both',
+      '--auth',
+    ]);
     expect(result.skip).toBe(true);
     expect(result.overrides.projectName).toBe('test');
     expect(result.overrides.transport).toBe('both');

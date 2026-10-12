@@ -1,7 +1,7 @@
 # @onivoro/server-mcp-audit
 
-Audit interception for MCP tool calls: who called which tool, and what it
-touched.
+Audit interception for MCP tool calls: who called which tool, what it
+touched, and how the call ended — including calls that failed or were denied.
 
 Registers a single interceptor with the
 [`@onivoro/server-mcp`](https://www.npmjs.com/package/@onivoro/server-mcp)
@@ -72,8 +72,10 @@ to `McpAuthInfoEmailResolver`:
   it when identity lives somewhere else.
 - **`McpAuditEventResolver`** — derives the domain meaning of a call: what kind
   of resource it touched, which records, and how it was accessed:
-  `resolveAuditEvent(context, result): Promise<McpResolvedAuditEvent | undefined> | McpResolvedAuditEvent | undefined`,
+  `resolveAuditEvent(context, result, outcome): Promise<McpResolvedAuditEvent | undefined> | McpResolvedAuditEvent | undefined`,
   where `McpResolvedAuditEvent` is `{ accessType: string; resourceType: string; resourceIds?: Array<string | number | null | undefined> }`.
+  `result` is what the tool returned (`undefined` when it threw or never ran),
+  and `outcome` is how the call ended (see below).
   This is the part only your application knows, which is why it is a seam
   rather than a heuristic over tool names.
 
@@ -99,7 +101,7 @@ export class MyEventResolver implements McpAuditEventResolver {
 @Injectable()
 export class MyAuditSink implements McpAuditSink {
   async writeAuditEvent({ context, ...record }: McpAuditEvent) {
-    // context carries params, authInfo (including the raw token), sessionId, ...
+    // context carries params, authInfo (without the token), sessionId, ...
     console.log(JSON.stringify(record));
   }
 }
@@ -109,30 +111,52 @@ export class MyAuditSink implements McpAuditSink {
 
 `McpAuditEvent`:
 
-| Field                        | Source                                                                                        |
-| ---------------------------- | --------------------------------------------------------------------------------------------- |
-| `accessEmail`                | the email resolver                                                                            |
-| `accessType`, `resourceType` | the event resolver                                                                            |
-| `resourceIds`                | the event resolver, with `null`/`undefined` entries removed (defaults to `[]`)                |
-| `toolName`                   | `context.toolName`                                                                            |
-| `context`                    | the full `McpToolContext`: validated `params`, `metadata`, `authInfo`, `sessionId`, and so on |
+| Field                        | Source                                                                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `accessEmail`                | the email resolver                                                                                              |
+| `accessType`, `resourceType` | the event resolver                                                                                              |
+| `resourceIds`                | the event resolver, with `null`/`undefined` entries removed (defaults to `[]`)                                  |
+| `toolName`                   | `context.toolName`                                                                                              |
+| `outcome`                    | how the call ended: `'success'`, `'error'`, `'denied'` or `'rejected'` (below)                                  |
+| `error`                      | for any outcome but `'success'`: the error message, or the text of an `isError` result                          |
+| `context`                    | the `McpToolContext` (`params`, `metadata`, `authInfo`, `sessionId`, and so on), with `authInfo.token` left out |
+
+`McpAuditOutcome`:
+
+| Outcome      | When                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| `'success'`  | The tool returned a result                                                                       |
+| `'error'`    | The tool (or an interceptor inside this one) threw, or returned a result with `isError: true`    |
+| `'denied'`   | A guard rejected the call (`McpAccessDeniedError`), so the tool never ran                        |
+| `'rejected'` | The auth strategy rejected the caller, or the arguments failed validation, so the tool never ran |
 
 When a record is written:
 
-- Only after the tool handler (and any inner interceptors) returns. A call
-  that throws, including one rejected by a guard or schema validation, is not
-  audited. A returned result that represents a tool error is still passed to
-  the event resolver as `result`.
+- After the call ends, however it ends. A tool that returns `inputRequired(...)`
+  hasn't ended: the client answers and calls it again, and only that call is
+  recorded. Successes and errors are recorded by
+  the interceptor around the tool; denied and rejected calls, which never
+  reach the interceptor chain, through its `onRejected` hook. For those two,
+  `context.params` holds the arguments as received, not validated. When the
+  auth strategy is what rejected the caller, `context.authInfo` is the auth
+  info the call arrived with (over HTTP with `requireBearerAuth`, the token the
+  transport verified), or unset if there was none.
 - Only when the email resolver returns an email **and** the event resolver
-  returns an event. Either returning `undefined` skips the record.
+  returns an event. Either returning `undefined` skips the record. The default
+  email resolver reads `authInfo.extra.email`, so a caller the auth strategy
+  rejected is recorded only if the auth info it arrived with already carries
+  an email.
 - Failures in the resolvers or the sink are logged as a warning and swallowed;
-  they never change the tool's result.
+  they never change the tool's result, and a failed call still fails with its
+  original error.
 
-There is no outcome or duration field.
+There is no duration field.
 
-Redaction is the sink's and resolver's job, not this package's. The sink gets
-the whole `context`, including the arguments and `authInfo.token`, and this
-package cannot know which of them are sensitive.
+The sink never sees the bearer token: `context.authInfo` is passed without it.
+The resolvers get the full `McpToolContext`, token included, since they run in
+your process to derive identity. Any other redaction, such as of sensitive
+arguments, is the sink's and resolver's job; this package cannot know which
+arguments are sensitive.
 
 ## Exports
 
@@ -141,10 +165,11 @@ package cannot know which of them are sensitive.
 | `createMcpAuditProviders(config)`                                        | Function   | Returns the `Provider[]` described above                                                                                |
 | `CreateMcpAuditProvidersConfig`                                          | Interface  | `{ sink: Type<McpAuditSink>; eventResolver: Type<McpAuditEventResolver>; emailResolver?: Type<McpAuditEmailResolver> }` |
 | `McpAuditSink`, `McpAuditEvent`                                          | Interfaces | Sink contract and the record it receives                                                                                |
+| `McpAuditOutcome`, `McpAuditContext`                                     | Types      | How a call ended; the tool context without the bearer token                                                             |
 | `McpAuditEventResolver`, `McpResolvedAuditEvent`                         | Interfaces | Event resolver contract and its return type                                                                             |
 | `McpAuditEmailResolver`                                                  | Interface  | Actor resolver contract                                                                                                 |
 | `McpAuthInfoEmailResolver`                                               | Service    | Default email resolver (`authInfo.extra.email`)                                                                         |
-| `McpAuditInterceptor`                                                    | Service    | The `McpToolInterceptor` that writes records                                                                            |
+| `McpAuditInterceptor`                                                    | Service    | The `McpToolInterceptor` that writes records, including from `onRejected`                                               |
 | `McpAuditInterceptorRegistrar`                                           | Service    | Registers the interceptor with `McpToolRegistry` on init                                                                |
 | `MCP_AUDIT_SINK`, `MCP_AUDIT_EVENT_RESOLVER`, `MCP_AUDIT_EMAIL_RESOLVER` | Symbols    | Injection tokens                                                                                                        |
 

@@ -15,7 +15,8 @@ const handledPaths = new Set([
   '/.well-known/oauth-protected-resource/mcp',
 ]);
 
-jest.mock('@modelcontextprotocol/sdk/server/auth/router.js', () => ({
+jest.mock('@modelcontextprotocol/server-legacy/auth', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server-legacy/auth'),
   mcpAuthRouter: jest
     .fn()
     .mockImplementation(() => (req: any, res: any, next: () => void) => {
@@ -84,7 +85,15 @@ describe('McpOAuthModule routing', () => {
       const response = await fetch(`${baseUrl}${path}`, { method });
 
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ method, url: path });
+      expect(await response.json()).toEqual({
+        method,
+        url: path,
+        // Client ID Metadata Documents are on by default; the module announces them.
+        ...(method === 'GET' &&
+          path === '/.well-known/oauth-authorization-server' && {
+            client_id_metadata_document_supported: true,
+          }),
+      });
       expect(routerCalls).toEqual([{ method, url: path }]);
     },
   );
@@ -110,6 +119,70 @@ describe('McpOAuthModule routing', () => {
       { method: 'GET', url: '/.well-known/oauth-protected-resource/other' },
     ]);
   });
+});
+
+describe('McpOAuthModule without protected resource metadata', () => {
+  let app: any;
+  let baseUrl: string;
+
+  async function start(module: any) {
+    const moduleRef = await Test.createTestingModule({
+      imports: [module],
+    }).compile();
+    app = moduleRef.createNestApplication({ logger: false });
+    await app.listen(0, '127.0.0.1');
+    const address = app.getHttpServer().address() as AddressInfo;
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  }
+
+  afterEach(async () => {
+    await app?.close();
+  });
+
+  beforeEach(() => {
+    routerCalls.length = 0;
+  });
+
+  it.each([
+    [
+      'configure',
+      () =>
+        McpOAuthModule.configure({
+          provider: provider as any,
+          issuerUrl: 'https://auth.example.com',
+          serveProtectedResourceMetadata: false,
+        }),
+    ],
+    [
+      'configureAsync',
+      () =>
+        McpOAuthModule.configureAsync({
+          useFactory: () => ({
+            provider: provider as any,
+            issuerUrl: 'https://auth.example.com',
+          }),
+          serveProtectedResourceMetadata: false,
+        }),
+    ],
+  ])(
+    'leaves the route to another module with %s, and keeps the OAuth endpoints',
+    async (_name, createModule) => {
+      await start(createModule());
+
+      const prm = await fetch(
+        `${baseUrl}/.well-known/oauth-protected-resource`,
+      );
+      const metadata = await fetch(
+        `${baseUrl}/.well-known/oauth-authorization-server`,
+      );
+
+      expect(prm.status).toBe(404);
+      expect(metadata.status).toBe(200);
+      expect(routerCalls).toEqual([
+        { method: 'GET', url: '/.well-known/oauth-authorization-server' },
+      ]);
+    },
+  );
 });
 
 describe('McpOAuthModule in-memory clients store warning', () => {
@@ -169,6 +242,26 @@ describe('McpOAuthModule in-memory clients store warning', () => {
     expect(memoryStoreWarnings()).toHaveLength(1);
   });
 
+  it('warns outside of tests that the package is deprecated', async () => {
+    process.env.NODE_ENV = 'production';
+
+    await initWith(provider);
+
+    const deprecations = warnSpy.mock.calls.filter(([message]) =>
+      String(message).startsWith('@onivoro/server-mcp-oauth is deprecated'),
+    );
+    expect(deprecations).toHaveLength(1);
+    expect(deprecations[0][0]).toContain('@onivoro/server-mcp-auth');
+  });
+
+  it('does not warn about the deprecation when NODE_ENV is test', async () => {
+    process.env.NODE_ENV = 'test';
+
+    await initWith(provider);
+
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
   it('does not warn when NODE_ENV is test', async () => {
     process.env.NODE_ENV = 'test';
 
@@ -220,7 +313,7 @@ describe('McpOAuthModule URL validation', () => {
 describe('McpOAuthModule SDK router options', () => {
   it('forwards handler pass-through options and URL fields to mcpAuthRouter', async () => {
     const { mcpAuthRouter } = jest.requireMock(
-      '@modelcontextprotocol/sdk/server/auth/router.js',
+      '@modelcontextprotocol/server-legacy/auth',
     );
     mcpAuthRouter.mockClear();
 
@@ -238,6 +331,8 @@ describe('McpOAuthModule SDK router options', () => {
           issuerUrl: 'https://auth.example.com',
           baseUrl: 'https://auth.example.com/oauth',
           serviceDocumentationUrl: 'https://docs.example.com',
+          // With it on, the router gets a wrapped provider (covered by its own spec).
+          clientIdMetadataDocuments: false,
           ...options,
         }),
       ],

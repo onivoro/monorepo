@@ -36,7 +36,7 @@
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/server": "^2.3.1",
     "@nestjs/common": "^10.0.0 || ^11.0.0",
     "@nestjs/core": "^10.0.0 || ^11.0.0",
     "jsonwebtoken": "^9.0.0",

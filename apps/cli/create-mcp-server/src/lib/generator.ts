@@ -12,7 +12,10 @@ export function getTemplatesDir(): string {
   return path.resolve(__dirname, '..', '..', 'templates');
 }
 
-export function applyReplacements(content: string, replacements: Record<string, string>): string {
+export function applyReplacements(
+  content: string,
+  replacements: Record<string, string>,
+): string {
   let result = content;
   for (const [token, value] of Object.entries(replacements)) {
     result = result.split(token).join(value);
@@ -20,7 +23,11 @@ export function applyReplacements(content: string, replacements: Record<string, 
   return result;
 }
 
-export function processPackageJson(content: string, options: ScaffoldOptions, version: string): string {
+export function processPackageJson(
+  content: string,
+  options: ScaffoldOptions,
+  version: string,
+): string {
   let result = applyReplacements(content, {
     __PROJECT_NAME__: options.projectName,
     __LIB_VERSION__: version,
@@ -33,15 +40,6 @@ export function processPackageJson(content: string, options: ScaffoldOptions, ve
     );
   } else {
     result = result.replace(/^.*__AUTH_DEP__.*\n/m, '');
-  }
-
-  if (options.oauth) {
-    result = result.replace(
-      '__OAUTH_DEP__',
-      `    "@onivoro/server-mcp-oauth": "^${version}",`,
-    );
-  } else {
-    result = result.replace(/^.*__OAUTH_DEP__.*\n/m, '');
   }
 
   return result;
@@ -62,46 +60,50 @@ export function composeAppModule(options: ScaffoldOptions): string {
     mcpImports.push('McpStdioModule');
   }
   if (mcpImports.length > 0) {
-    imports.push(`import { ${mcpImports.join(', ')} } from '@onivoro/server-mcp';`);
+    imports.push(
+      `import { ${mcpImports.join(', ')} } from '@onivoro/server-mcp';`,
+    );
   }
 
   if (options.auth) {
-    imports.push(`import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';`);
-  }
-
-  if (options.oauth) {
-    imports.push(`import { McpOAuthModule } from '@onivoro/server-mcp-oauth';`);
+    imports.push(
+      `import { McpAuthModule, McpJwtAuthStrategy } from '@onivoro/server-mcp-auth';`,
+    );
   }
 
   imports.push(`import { ExampleToolService } from './tools/example.tool';`);
-  imports.push(`import { ExampleResourceService } from './resources/example.resource';`);
-  imports.push(`import { ExamplePromptService } from './prompts/example.prompt';`);
+  imports.push(
+    `import { ExampleResourceService } from './resources/example.resource';`,
+  );
+  imports.push(
+    `import { ExamplePromptService } from './prompts/example.prompt';`,
+  );
 
   // Build module registrations
-  if (options.auth) {
-    registrations.push(`    McpAuthModule.register({
-      jwksUri: process.env.JWKS_URI!,
-      issuer: process.env.JWT_ISSUER,
-      audience: process.env.JWT_AUDIENCE,
-    }),`);
-  }
+  const servesHttp =
+    options.transport === 'http' || options.transport === 'both';
 
-  if (options.oauth) {
-    registrations.push(`    // TODO: Replace with your OAuthServerProvider implementation
-    // McpOAuthModule.register({
-    //   provider: MyOAuthProvider,
-    //   issuerUrl: process.env.OAUTH_ISSUER_URL!,
-    //   scopesSupported: ['read', 'write'],
-    // }),`);
+  if (options.auth) {
+    // Protected resource metadata is served over HTTP, so a stdio-only server turns it off.
+    const resourceMetadata = servesHttp
+      ? `\n      resourceServerUrl: process.env.MCP_RESOURCE_URL!,`
+      : `\n      serveProtectedResourceMetadata: false,`;
+    registrations.push(`    McpAuthModule.configureJwt({
+      jwksUri: process.env.JWKS_URI!,
+      issuer: process.env.JWT_ISSUER!,
+      audience: process.env.JWT_AUDIENCE!,${resourceMetadata}
+    }),`);
   }
 
   const authStrategyOption = options.auth
     ? `\n      authStrategy: McpJwtAuthStrategy,`
     : '';
 
-  if (options.transport === 'http' || options.transport === 'both') {
+  if (servesHttp) {
+    // requireBearerAuth sends the 401 challenge that lets MCP clients start OAuth.
+    const bearerOption = options.auth ? `\n      requireBearerAuth: true,` : '';
     registrations.push(`    McpHttpModule.registerAndServeHttp({
-      metadata: { name: '${options.projectName}', version: '0.0.1' },${authStrategyOption}
+      metadata: { name: '${options.projectName}', version: '0.0.1' },${authStrategyOption}${bearerOption}
     }),`);
   }
 
@@ -123,13 +125,19 @@ export class AppModule {}
 `;
 }
 
-export async function generate(options: ScaffoldOptions, outputDir?: string): Promise<string> {
-  const targetDir = outputDir ?? path.resolve(process.cwd(), options.projectName);
+export async function generate(
+  options: ScaffoldOptions,
+  outputDir?: string,
+): Promise<string> {
+  const targetDir =
+    outputDir ?? path.resolve(process.cwd(), options.projectName);
   const templatesDir = getTemplatesDir();
   const version = getLibVersion();
 
   if (fs.existsSync(targetDir) && fs.readdirSync(targetDir).length > 0) {
-    throw new Error(`Directory "${targetDir}" already exists and is not empty.`);
+    throw new Error(
+      `Directory "${targetDir}" already exists and is not empty.`,
+    );
   }
 
   fs.mkdirSync(targetDir, { recursive: true });
@@ -154,7 +162,10 @@ export async function generate(options: ScaffoldOptions, outputDir?: string): Pr
   );
 
   // package.json needs special handling for conditional deps
-  const pkgContent = fs.readFileSync(path.join(templatesDir, 'package.json.tmpl'), 'utf-8');
+  const pkgContent = fs.readFileSync(
+    path.join(templatesDir, 'package.json.tmpl'),
+    'utf-8',
+  );
   fs.writeFileSync(
     path.join(targetDir, 'package.json'),
     processPackageJson(pkgContent, options, version),
@@ -175,9 +186,8 @@ export async function generate(options: ScaffoldOptions, outputDir?: string): Pr
   fs.mkdirSync(path.join(targetDir, 'src', 'prompts'), { recursive: true });
 
   // main.ts — pick the right template
-  const mainTemplate = options.transport === 'stdio'
-    ? 'main.stdio.ts.tmpl'
-    : 'main.http.ts.tmpl';
+  const mainTemplate =
+    options.transport === 'stdio' ? 'main.stdio.ts.tmpl' : 'main.http.ts.tmpl';
   processTemplateFile(
     path.join(templatesDir, 'src', mainTemplate),
     path.join(targetDir, 'src', 'main.ts'),
@@ -226,7 +236,9 @@ export async function generate(options: ScaffoldOptions, outputDir?: string): Pr
     console.log('  npm run start:dev');
     console.log('');
     console.log('Connect with Claude Code:\n');
-    console.log(`  claude mcp add ${options.projectName} --transport http http://localhost:3000/mcp`);
+    console.log(
+      `  claude mcp add ${options.projectName} --transport http http://localhost:3000/mcp`,
+    );
   }
   console.log('');
 

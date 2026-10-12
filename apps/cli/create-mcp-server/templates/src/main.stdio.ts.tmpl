@@ -1,8 +1,12 @@
 import { NestFactory } from '@nestjs/core';
+import { McpStderrLogger } from '@onivoro/server-mcp';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  await NestFactory.createApplicationContext(AppModule);
+  // stdout carries the MCP protocol, so every log goes to stderr.
+  await NestFactory.createApplicationContext(AppModule, {
+    logger: new McpStderrLogger(),
+  });
   // No HTTP listener — the McpStdioModule connects to stdin/stdout on init
 }
 bootstrap();

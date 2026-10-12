@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { EventEmitter } from 'events';
-import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { OAuthTokenVerifier } from '@modelcontextprotocol/server';
+import { McpServer } from '@modelcontextprotocol/server';
 import { McpHttpService } from './mcp-http.service';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpModuleConfig } from './mcp-module-config';
@@ -12,8 +12,28 @@ const mockServerClose = jest.fn().mockResolvedValue(undefined);
 
 let capturedOnSessionInitialized: ((sessionId: string) => void) | undefined;
 
-jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+/** A response header the service wrote with `writeHead`, by case-insensitive name. */
+function sentHeader(res: any, name: string): string | undefined {
+  for (const [, headers] of res.writeHead.mock.calls) {
+    for (const [key, value] of Object.entries(headers ?? {})) {
+      if (key.toLowerCase() === name.toLowerCase()) return value as string;
+    }
+  }
+  return undefined;
+}
+
+/** The JSON body the service sent with `end`. */
+function sentJson(res: any): unknown {
+  return JSON.parse(res.end.mock.calls[0][0]);
+}
+
+/** A JSON-RPC request without the 2026-07-28 `_meta` envelope: a 2025-era client's. */
+const LEGACY_BODY = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
+
+jest.mock('@modelcontextprotocol/server', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server'),
   McpServer: jest.fn().mockImplementation(() => ({
+    isConnected: jest.fn().mockReturnValue(false),
     registerTool: jest
       .fn()
       .mockReturnValue({ enable: jest.fn(), disable: jest.fn() }),
@@ -23,6 +43,8 @@ jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
     close: mockServerClose,
     server: {
       setRequestHandler: jest.fn(),
+      registerCapabilities: jest.fn(),
+      getClientCapabilities: jest.fn().mockReturnValue({}),
       sendResourceUpdated: jest.fn().mockResolvedValue(undefined),
       notification: jest.fn().mockResolvedValue(undefined),
     },
@@ -31,19 +53,17 @@ jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   ResourceTemplate: jest.fn(),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
-  SubscribeRequestSchema: { method: 'resources/subscribe' },
-  UnsubscribeRequestSchema: { method: 'resources/unsubscribe' },
-}));
-
-jest.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
-  StreamableHTTPServerTransport: jest.fn().mockImplementation((opts: any) => {
-    capturedOnSessionInitialized = opts.onsessioninitialized;
-    return {
-      handleRequest: mockTransportHandleRequest,
-      close: mockTransportClose,
-    };
-  }),
+jest.mock('@modelcontextprotocol/node', () => ({
+  ...jest.requireActual('@modelcontextprotocol/node'),
+  NodeStreamableHTTPServerTransport: jest
+    .fn()
+    .mockImplementation((opts: any) => {
+      capturedOnSessionInitialized = opts.onsessioninitialized;
+      return {
+        handleRequest: mockTransportHandleRequest,
+        close: mockTransportClose,
+      };
+    }),
 }));
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -59,7 +79,7 @@ function mockReq(
   return {
     method: overrides.method ?? 'POST',
     headers: overrides.headers ?? {},
-    body: overrides.body ?? {},
+    body: overrides.body ?? LEGACY_BODY,
     socket: overrides.socket,
   } as any;
 }
@@ -78,6 +98,7 @@ function mockRes(headersSent = false) {
 describe('McpHttpService session lifecycle', () => {
   const config: McpModuleConfig = {
     metadata: { name: 'test-server', version: '1.0.0' },
+    session: {},
   };
   let registry: McpToolRegistry;
   let service: McpHttpService;
@@ -159,7 +180,11 @@ describe('McpHttpService session lifecycle', () => {
       const res = mockRes();
       await service.handleRequest(req, res);
 
-      expect(mockTransportHandleRequest).toHaveBeenCalledWith(req, res, {});
+      expect(mockTransportHandleRequest).toHaveBeenCalledWith(
+        req,
+        res,
+        req.body,
+      );
       expect(res.writeHead).not.toHaveBeenCalled();
       expect(sessions().has('del-ok')).toBe(false);
       expect(mockTransportClose).toHaveBeenCalledTimes(1);
@@ -279,10 +304,7 @@ describe('McpHttpService session lifecycle', () => {
       service.setBearerAuthVerifier(verifier);
       const res = mockRes();
       await service.handleRequest(req, res);
-      const call = res.set.mock.calls.find(
-        ([name]: [string]) => name === 'WWW-Authenticate',
-      );
-      return call?.[1] as string;
+      return sentHeader(res, 'WWW-Authenticate') as string;
     }
 
     it('should honour x-forwarded-proto and x-forwarded-host headers', async () => {
@@ -339,10 +361,9 @@ describe('McpHttpService session lifecycle', () => {
       const res = mockRes();
       await service.handleRequest(mockReq({ headers: {} }), res);
 
-      const call = res.set.mock.calls.find(
-        ([name]: [string]) => name === 'WWW-Authenticate',
+      expect(sentHeader(res, 'WWW-Authenticate')).not.toContain(
+        'resource_metadata',
       );
-      expect(call[1]).not.toContain('resource_metadata');
     });
 
     it('should skip bearer authentication for OPTIONS requests', async () => {
@@ -354,7 +375,7 @@ describe('McpHttpService session lifecycle', () => {
         res,
       );
 
-      expect(res.status).not.toHaveBeenCalledWith(401);
+      expect(res.writeHead).not.toHaveBeenCalledWith(401, expect.anything());
       // Proceeds to session lookup, which fails for an unknown session.
       expect(res.writeHead).toHaveBeenCalledWith(404, expect.any(Object));
     });

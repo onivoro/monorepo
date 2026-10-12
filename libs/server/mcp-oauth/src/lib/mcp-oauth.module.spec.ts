@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { Injectable, Module, RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA } from '@nestjs/common/constants';
 import { McpOAuthModule } from './mcp-oauth.module';
+import { McpClientIdMetadataDocumentStore } from './mcp-client-id-metadata-document-store';
 import { MCP_OAUTH_CONFIG } from './mcp-oauth-config-token';
 import { MCP_OAUTH_SERVER_PROVIDER } from './mcp-oauth-server-provider-token';
 import { McpMemoryClientsStore } from './mcp-memory-clients-store';
@@ -10,7 +11,8 @@ const mockMcpAuthRouter = jest
   .fn()
   .mockReturnValue((_req: any, _res: any, next: any) => next());
 
-jest.mock('@modelcontextprotocol/sdk/server/auth/router.js', () => ({
+jest.mock('@modelcontextprotocol/server-legacy/auth', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server-legacy/auth'),
   mcpAuthRouter: (...args: any[]) => mockMcpAuthRouter(...args),
 }));
 
@@ -51,6 +53,7 @@ describe('McpOAuthModule', () => {
           issuerUrl: 'https://auth.example.com',
           scopesSupported: ['read', 'write'],
           resourceName: 'Test MCP Server',
+          clientIdMetadataDocuments: false,
         }),
       ],
     }).compile();
@@ -65,6 +68,35 @@ describe('McpOAuthModule', () => {
         scopesSupported: ['read', 'write'],
         resourceName: 'Test MCP Server',
       }),
+    );
+
+    await app.close();
+  });
+
+  it('should give the router a provider whose clients store resolves metadata document URLs', async () => {
+    const module = await Test.createTestingModule({
+      imports: [
+        McpOAuthModule.configure({
+          provider: mockProvider as any,
+          issuerUrl: 'https://auth.example.com',
+        }),
+      ],
+    }).compile();
+
+    const app = module.createNestApplication();
+    await app.init();
+
+    const { provider } = mockMcpAuthRouter.mock.calls.at(-1)[0];
+    expect(provider).not.toBe(mockProvider);
+    expect(provider.clientsStore).toBeInstanceOf(
+      McpClientIdMetadataDocumentStore,
+    );
+    // Everything else is the provider's own.
+    await provider.authorize('client', 'params', 'res');
+    expect(mockProvider.authorize).toHaveBeenCalledWith(
+      'client',
+      'params',
+      'res',
     );
 
     await app.close();

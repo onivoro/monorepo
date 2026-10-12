@@ -1,5 +1,9 @@
 import { Injectable, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import {
+  serveStdio,
+  StdioServerTransport,
+} from '@modelcontextprotocol/server/stdio';
 import { McpStdioModule } from './mcp-stdio.module';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpAuthInfo } from './mcp-auth-info';
@@ -17,8 +21,10 @@ const mockServerConnect = jest.fn().mockResolvedValue(undefined);
 const mockServerClose = jest.fn().mockResolvedValue(undefined);
 const mockTransportClose = jest.fn().mockResolvedValue(undefined);
 
-jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+jest.mock('@modelcontextprotocol/server', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server'),
   McpServer: jest.fn().mockImplementation(() => ({
+    isConnected: jest.fn().mockReturnValue(false),
     registerTool: mockServerRegisterTool,
     registerResource: mockServerRegisterResource,
     registerPrompt: mockServerRegisterPrompt,
@@ -26,6 +32,8 @@ jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
     close: mockServerClose,
     server: {
       setRequestHandler: jest.fn(),
+      registerCapabilities: jest.fn(),
+      getClientCapabilities: jest.fn().mockReturnValue({}),
       sendResourceUpdated: jest.fn().mockResolvedValue(undefined),
       notification: jest.fn().mockResolvedValue(undefined),
     },
@@ -34,15 +42,24 @@ jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   ResourceTemplate: jest.fn(),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
-  SubscribeRequestSchema: { method: 'resources/subscribe' },
-  UnsubscribeRequestSchema: { method: 'resources/unsubscribe' },
-}));
-
-jest.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
+jest.mock('@modelcontextprotocol/server/stdio', () => ({
   StdioServerTransport: jest.fn().mockImplementation(() => ({
     close: mockTransportClose,
   })),
+  // Builds the server at once, as the client's first message would, and closes the
+  // transport and the server on close, like the SDK's handle.
+  serveStdio: jest.fn().mockImplementation((factory: any, options: any) => {
+    const server = factory({ era: 'legacy' });
+    return {
+      close: async () => {
+        try {
+          await options.transport.close();
+        } finally {
+          await server.close();
+        }
+      },
+    };
+  }),
 }));
 
 const testToolSchema = z.object({
@@ -51,7 +68,11 @@ const testToolSchema = z.object({
 
 @Injectable()
 class TestToolService {
-  @McpTool({ name: 'test-tool', description: 'A test tool', schema: testToolSchema })
+  @McpTool({
+    name: 'test-tool',
+    description: 'A test tool',
+    schema: testToolSchema,
+  })
   async myTool(params: z.infer<typeof testToolSchema>) {
     return { content: [{ type: 'text', text: `echo: ${params.input}` }] };
   }
@@ -59,7 +80,11 @@ class TestToolService {
 
 @Injectable()
 class TestResourceService {
-  @McpResource({ name: 'test-resource', uri: 'test://data', description: 'Test resource' })
+  @McpResource({
+    name: 'test-resource',
+    uri: 'test://data',
+    description: 'Test resource',
+  })
   async myResource() {
     return { contents: [{ uri: 'test://data', text: 'resource data' }] };
   }
@@ -69,7 +94,9 @@ class TestResourceService {
 class TestPromptService {
   @McpPrompt({ name: 'test-prompt', description: 'A test prompt' })
   async myPrompt() {
-    return { messages: [{ role: 'user', content: { type: 'text', text: 'hello' } }] };
+    return {
+      messages: [{ role: 'user', content: { type: 'text', text: 'hello' } }],
+    };
   }
 }
 
@@ -120,7 +147,7 @@ describe('McpStdioModule', () => {
       expect.any(Function),
     );
 
-    expect(mockServerConnect).toHaveBeenCalled();
+    expect(serveStdio).toHaveBeenCalled();
 
     await module.close();
   });
@@ -174,7 +201,7 @@ describe('McpStdioModule', () => {
   });
 
   it('should create McpServer with correct metadata', async () => {
-    const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
+    const { McpServer } = require('@modelcontextprotocol/server');
 
     const module = await Test.createTestingModule({
       imports: [
@@ -191,14 +218,18 @@ describe('McpStdioModule', () => {
 
     expect(McpServer).toHaveBeenCalledWith(
       { name: 'my-stdio-server', version: '2.0.0' },
-      expect.objectContaining({ capabilities: { logging: {}, tools: { listChanged: true } } }),
+      expect.objectContaining({
+        capabilities: { logging: {}, tools: { listChanged: true } },
+      }),
     );
 
     await module.close();
   });
 
   it('should create StdioServerTransport with custom streams', async () => {
-    const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
+    const {
+      StdioServerTransport,
+    } = require('@modelcontextprotocol/server/stdio');
     const stdin = new PassThrough();
     const stdout = new PassThrough();
 
@@ -252,7 +283,12 @@ describe('McpStdioModule', () => {
 
       resolveAuth(authInfo: McpAuthInfo | undefined) {
         resolveAuthSpy(authInfo);
-        return authInfo ? { ...authInfo, extra: { enriched: true, dependency: this.dependency.mark } } : undefined;
+        return authInfo
+          ? {
+              ...authInfo,
+              extra: { enriched: true, dependency: this.dependency.mark },
+            }
+          : undefined;
       }
     }
 
@@ -281,15 +317,21 @@ describe('McpStdioModule', () => {
 
       const registry = module.get(McpToolRegistry);
       let handlerAuth: any;
-      registry.registerTool({ name: 'auth-test', description: 'd' }, jest.fn().mockImplementation((_p: any, ctx: any) => {
-        handlerAuth = ctx.authInfo;
-        return 'ok';
-      }));
+      registry.registerTool(
+        { name: 'auth-test', description: 'd' },
+        jest.fn().mockImplementation((_p: any, ctx: any) => {
+          handlerAuth = ctx.authInfo;
+          return 'ok';
+        }),
+      );
 
       const mockAuth = { token: 'test', clientId: 'c', scopes: [] };
       await registry.executeToolRaw('auth-test', {}, mockAuth);
       expect(resolveAuthSpy).toHaveBeenCalledWith(mockAuth);
-      expect(handlerAuth.extra).toEqual({ enriched: true, dependency: authDependency.mark });
+      expect(handlerAuth.extra).toEqual({
+        enriched: true,
+        dependency: authDependency.mark,
+      });
 
       await module.close();
     });
@@ -309,10 +351,13 @@ describe('McpStdioModule', () => {
 
       const registry = module.get(McpToolRegistry);
       let handlerAuth: any;
-      registry.registerTool({ name: 'auth-test', description: 'd' }, jest.fn().mockImplementation((_p: any, ctx: any) => {
-        handlerAuth = ctx.authInfo;
-        return 'ok';
-      }));
+      registry.registerTool(
+        { name: 'auth-test', description: 'd' },
+        jest.fn().mockImplementation((_p: any, ctx: any) => {
+          handlerAuth = ctx.authInfo;
+          return 'ok';
+        }),
+      );
 
       const mockAuth = { token: 'test', clientId: 'c', scopes: [] };
       await registry.executeToolRaw('auth-test', {}, mockAuth);

@@ -11,7 +11,10 @@ const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
 });
 
-function signToken(claims: Record<string, unknown>, options?: jwt.SignOptions): string {
+function signToken(
+  claims: Record<string, unknown>,
+  options?: jwt.SignOptions,
+): string {
   return jwt.sign(claims, privateKey, {
     algorithm: 'RS256',
     keyid: 'test-kid-1',
@@ -37,7 +40,9 @@ describe('McpJwtAuthStrategy', () => {
     } as any;
   });
 
-  function createProvider(configOverrides?: Partial<McpAuthConfig>): McpJwtAuthStrategy {
+  function createProvider(
+    configOverrides?: Partial<McpAuthConfig>,
+  ): McpJwtAuthStrategy {
     const config = { ...baseConfig, ...configOverrides };
     return new McpJwtAuthStrategy(config, mockJwksService);
   }
@@ -51,7 +56,11 @@ describe('McpJwtAuthStrategy', () => {
 
     it('should return undefined when token is missing', async () => {
       provider = createProvider();
-      const result = await provider.resolveAuth({ token: '', clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token: '',
+        clientId: '',
+        scopes: [],
+      });
       expect(result).toBeUndefined();
     });
 
@@ -64,7 +73,11 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
 
       expect(result).toBeDefined();
       expect(result!.token).toBe(token);
@@ -142,7 +155,11 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
       expect(result!.clientId).toBe('auth0-client-id');
     });
 
@@ -155,7 +172,11 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
       expect(result!.clientId).toBe('user-123');
     });
   });
@@ -170,12 +191,19 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
       expect(result!.scopes).toEqual(['read', 'write', 'admin']);
     });
 
     it('should parse array scopes (Auth0 permissions)', async () => {
-      provider = createProvider({ scopeClaim: 'permissions', scopeFormat: 'array' });
+      provider = createProvider({
+        scopeClaim: 'permissions',
+        scopeFormat: 'array',
+      });
       const token = signToken({
         client_id: 'c',
         permissions: ['read', 'write'],
@@ -183,7 +211,11 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
       expect(result!.scopes).toEqual(['read', 'write']);
     });
 
@@ -196,7 +228,11 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
       expect(result!.scopes).toEqual(['admin']);
     });
 
@@ -208,7 +244,11 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
       expect(result!.scopes).toEqual([]);
     });
   });
@@ -227,8 +267,33 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
-      expect(result!.extra).toEqual({ tenantId: 'tenant-xyz', userId: 'user-abc' });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
+      expect(result!.extra).toEqual({
+        sub: 'user-abc',
+        tenantId: 'tenant-xyz',
+        userId: 'user-abc',
+      });
+    });
+
+    it('should always carry the subject as extra.sub', async () => {
+      provider = createProvider();
+      const token = signToken({
+        client_id: 'c',
+        sub: 'user-abc',
+        iss: 'https://example.com',
+        aud: 'test-audience',
+      });
+
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
+      expect(result!.extra).toEqual({ sub: 'user-abc' });
     });
 
     it('should skip missing extra claims', async () => {
@@ -242,26 +307,38 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'test-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
       expect(result!.extra).toBeUndefined();
     });
   });
 
   describe('resourceIdentifier', () => {
     it('should set resource when configured and the token audience includes it', async () => {
-      provider = createProvider({ resourceIdentifier: 'https://api.example.com/mcp' });
+      provider = createProvider({
+        resourceIdentifier: 'https://api.example.com/mcp',
+      });
       const token = signToken({
         client_id: 'c',
         iss: 'https://example.com',
         aud: ['test-audience', 'https://api.example.com/mcp'],
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
       expect(result!.resource).toBe('https://api.example.com/mcp');
     });
 
     it('should reject tokens whose audience does not include the required resource', async () => {
-      provider = createProvider({ resourceIdentifier: 'https://api.example.com/mcp' });
+      provider = createProvider({
+        resourceIdentifier: 'https://api.example.com/mcp',
+      });
       const token = signToken({
         client_id: 'c',
         iss: 'https://example.com',
@@ -276,7 +353,9 @@ describe('McpJwtAuthStrategy', () => {
 
   describe('verifyAccessToken (OAuthTokenVerifier)', () => {
     it('should return SDK AuthInfo with resource as URL', async () => {
-      provider = createProvider({ resourceIdentifier: 'https://api.example.com/mcp' });
+      provider = createProvider({
+        resourceIdentifier: 'https://api.example.com/mcp',
+      });
       const token = signToken({
         client_id: 'my-client',
         scope: 'read',
@@ -315,7 +394,11 @@ describe('McpJwtAuthStrategy', () => {
         aud: 'any-audience',
       });
 
-      const result = await provider.resolveAuth({ token, clientId: '', scopes: [] });
+      const result = await provider.resolveAuth({
+        token,
+        clientId: '',
+        scopes: [],
+      });
       expect(result).toBeDefined();
       expect(result!.clientId).toBe('c');
     });

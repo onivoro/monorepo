@@ -1,7 +1,8 @@
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import { Logger } from '@nestjs/common';
-import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import { OAuthError } from '@modelcontextprotocol/server';
+import { invalidTokenError } from './invalid-token-error';
 import { McpJwksService } from './mcp-jwks.service';
 import {
   buildJwtConfig,
@@ -131,11 +132,11 @@ describe('McpCognitoAuthStrategy edge cases', () => {
     });
 
     await expect(strategy.verifyAccessToken(token)).rejects.toBeInstanceOf(
-      InvalidTokenError,
+      OAuthError,
     );
   });
 
-  it('wraps unexpected Error failures (e.g. JWKS lookup) in InvalidTokenError and logs them', async () => {
+  it('wraps unexpected Error failures (e.g. JWKS lookup) in OAuthError and logs them', async () => {
     jwksService.getSigningKey.mockRejectedValue(new Error('jwks unavailable'));
     const strategy = createStrategy();
     const token = signToken({
@@ -148,7 +149,7 @@ describe('McpCognitoAuthStrategy edge cases', () => {
       .resolveAuth({ token, clientId: '', scopes: [] })
       .catch((e) => e);
 
-    expect(error).toBeInstanceOf(InvalidTokenError);
+    expect(error).toBeInstanceOf(OAuthError);
     expect(error.message).toBe('jwks unavailable');
     expect(warnSpy).toHaveBeenCalledWith(
       'Cognito MCP token validation failed: jwks unavailable',

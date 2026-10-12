@@ -31,6 +31,7 @@ describe('McpAuthModule + McpHttpModule integration', () => {
       imports: [
         McpAuthModule.configureJwt({
           jwksUri: 'https://auth.example.com/.well-known/jwks.json',
+          audience: 'https://mcp.example.com',
           issuer: 'https://auth.example.com',
           resourceServerUrl: `http://127.0.0.1/${resourcePath}`,
           protectedResourceMetadataMode: metadataMode,
@@ -85,6 +86,32 @@ describe('McpAuthModule + McpHttpModule integration', () => {
       const header = response.headers.get('www-authenticate') ?? '';
       expect(header).toContain(
         `resource_metadata="${baseUrl}/.well-known/oauth-protected-resource/mcp"`,
+      );
+    } finally {
+      await stopApp(app);
+    }
+  });
+
+  it('should answer a token the strategy rejects with a 401 challenge, not a 500', async () => {
+    const { app, baseUrl } = await startApp();
+
+    try {
+      const response = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer not-a-jwt',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+        }),
+      });
+
+      expect(response.status).toBe(401);
+      expect(response.headers.get('www-authenticate')).toContain(
+        'error="invalid_token"',
       );
     } finally {
       await stopApp(app);

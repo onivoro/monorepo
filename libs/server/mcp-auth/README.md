@@ -29,7 +29,7 @@ If you are choosing between the `@onivoro/server-mcp*` packages, start with:
 npm install @onivoro/server-mcp-auth
 ```
 
-**Peer dependencies:** `@modelcontextprotocol/sdk`, `@nestjs/common`, `@nestjs/core`, `jsonwebtoken`, `jwks-rsa`
+**Peer dependencies:** `@modelcontextprotocol/server` (v2 of the MCP TypeScript SDK), `@nestjs/common`, `@nestjs/core`, `jsonwebtoken`, `jwks-rsa`
 
 `@onivoro/server-mcp` is a regular dependency and is installed automatically.
 
@@ -62,7 +62,9 @@ export class AppModule {}
 
 With `requireBearerAuth: true`, unauthenticated HTTP requests are rejected at the transport layer with a standards-compliant `401` challenge and `WWW-Authenticate` metadata. That is the configuration MCP HTTP clients need to trigger OAuth automatically.
 
-Without `requireBearerAuth`, `McpJwtAuthStrategy` still validates and enriches auth during tool execution, but anonymous HTTP requests are not challenged automatically.
+Without `requireBearerAuth`, the HTTP transport doesn't read the `Authorization` header at all: tool calls run anonymously unless your own middleware sets `req.auth`. The strategy validates and enriches only auth info it is given — from such middleware, a stdio integration, or in-process callers — and anonymous HTTP requests are not challenged.
+
+The SDK rejects a verified token that has no expiry with `401` ("Token has no expiration time"), so tokens used over HTTP need an `exp` claim; `McpJwtAuthStrategy` reports it as `expiresAt`.
 
 Import `McpAuthModule` in the same Nest application that imports `McpHttpModule.registerAndServeHttp()` or `McpStdioModule.registerAndServeStdio()`, otherwise Nest will not be able to resolve the selected auth strategy and its config dependencies.
 
@@ -81,26 +83,32 @@ For MCP clients to start OAuth automatically, the same app should also import `M
 
 ## What you get
 
-| Feature                         | Description                                                                                                                                                                |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **JWT validation**              | Signature verification via JWKS, issuer/audience/expiry checks                                                                                                             |
-| **Auth enrichment**             | Extracts `clientId` (falls back to `sub`, then `'unknown'`), `scopes`, `expiresAt`, `resource` (from `resourceIdentifier`), and mapped claims (`extra`) into `McpAuthInfo` |
-| **Scope auto-discovery**        | Collects all scopes from `@McpGuard(McpScopeGuard, { scopes })` across tools                                                                                               |
-| **Protected Resource Metadata** | Serves `/.well-known/oauth-protected-resource` (RFC 9728)                                                                                                                  |
-| **SDK compatibility**           | Implements both `McpAuthStrategy` and the SDK's `OAuthTokenVerifier`                                                                                                       |
-| **Testing utilities**           | `McpTestAuthStrategy`, `createMockAuthInfo()`, `createMockJwt()`                                                                                                           |
+| Feature                         | Description                                                                                                                                                                                          |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **JWT validation**              | Signature verification via JWKS, issuer/audience/expiry checks                                                                                                                                       |
+| **Auth enrichment**             | Extracts `clientId` (falls back to `sub`, then `'unknown'`), `scopes`, `expiresAt`, `resource` (from `resourceIdentifier`), the subject (`extra.sub`) and mapped claims (`extra`) into `McpAuthInfo` |
+| **Scope auto-discovery**        | Collects all scopes from `@McpGuard(McpScopeGuard, { scopes })` across tools                                                                                                                         |
+| **Protected Resource Metadata** | Serves `/.well-known/oauth-protected-resource` (RFC 9728)                                                                                                                                            |
+| **SDK compatibility**           | Implements both `McpAuthStrategy` and the SDK's `OAuthTokenVerifier`                                                                                                                                 |
+| **Testing utilities**           | `McpTestAuthStrategy`, `createMockAuthInfo()`, `createMockJwt()`                                                                                                                                     |
 
 ## Configuration
 
 ### Minimum required config
 
-Protected Resource Metadata is on by default, so `configureJwt()` throws at startup unless you either disable it or provide `resourceServerUrl` plus `issuer` or `authorizationServers`.
+`configureJwt()` throws at startup unless:
+
+- it can tell which tokens were issued for this server: `audience` or `resourceIdentifier` is set. The MCP spec requires servers to reject tokens issued for anything else. If your issuer binds tokens to the server some other way, set `allowAnyAudience: true` to opt out; that logs a warning at startup.
+- Protected Resource Metadata, which is on by default, has what it needs: `resourceServerUrl` plus `issuer` or `authorizationServers`. Or you disable it.
+
+`configureCognito()` has no audience requirement: Cognito access tokens carry no `aud`, and the Cognito strategy checks `client_id` instead.
 
 ### For JWT validation only
 
 ```typescript
 McpAuthModule.configureJwt({
   jwksUri: 'https://auth.example.com/.well-known/jwks.json',
+  audience: 'https://api.example.com/mcp',
   serveProtectedResourceMetadata: false,
 });
 ```
@@ -111,6 +119,7 @@ McpAuthModule.configureJwt({
 McpAuthModule.configureJwt({
   jwksUri: 'https://auth.example.com/.well-known/jwks.json',
   issuer: 'https://auth.example.com',
+  audience: 'https://api.example.com/mcp',
   resourceServerUrl: 'https://api.example.com/mcp',
 });
 ```
@@ -121,6 +130,7 @@ McpAuthModule.configureJwt({
 McpAuthModule.configureJwt({
   jwksUri: 'https://auth.example.com/.well-known/jwks.json',
   issuer: 'https://auth.example.com',
+  audience: 'https://api.example.com/mcp',
   resourceServerUrl: 'https://api.example.com/mcp',
 });
 
@@ -131,7 +141,7 @@ McpHttpModule.registerAndServeHttp({
 });
 ```
 
-Without `requireBearerAuth`, the strategy still validates tokens during tool execution, but MCP HTTP clients will not receive the transport-level `401` challenge they use to start OAuth automatically.
+Without `requireBearerAuth`, the HTTP transport doesn't extract the bearer token, so the strategy only sees auth info that something else supplied, and MCP HTTP clients will not receive the transport-level `401` challenge they use to start OAuth automatically.
 
 ### `McpAuthConfig`
 
@@ -139,13 +149,14 @@ Without `requireBearerAuth`, the strategy still validates tokens during tool exe
 | -------------------------------- | ------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `jwksUri`                        | `string`                        | _required_    | JWKS endpoint URL                                                                                                    |
 | `issuer`                         | `string?`                       | —             | Expected JWT issuer (`iss` claim)                                                                                    |
-| `audience`                       | `string?`                       | —             | Expected audience (`aud` claim)                                                                                      |
+| `audience`                       | `string?`                       | —             | Expected audience (`aud` claim). `configureJwt()` requires this or `resourceIdentifier`                              |
 | `algorithms`                     | `string[]?`                     | `['RS256']`   | Accepted signing algorithms                                                                                          |
 | `clientIdClaim`                  | `string?`                       | `'client_id'` | JWT claim for client ID. Cognito: `'client_id'`, Auth0: `'azp'`, Entra: `'appid'`                                    |
 | `scopeClaim`                     | `string?`                       | `'scope'`     | JWT claim for scopes. Auth0: `'permissions'`                                                                         |
 | `scopeFormat`                    | `'string' \| 'array' \| 'auto'` | `'auto'`      | Whether scope claim is space-delimited or array                                                                      |
-| `extraClaims`                    | `Record<string, string>?`       | —             | Map JWT claim names to `McpAuthInfo.extra` keys                                                                      |
+| `extraClaims`                    | `Record<string, string>?`       | —             | Map JWT claim names to `McpAuthInfo.extra` keys. `sub` is always copied to `extra.sub` as well                       |
 | `resourceIdentifier`             | `string?`                       | —             | RFC 8707 resource indicator. When set, the token's `aud` must include it, and it is copied to `McpAuthInfo.resource` |
+| `allowAnyAudience`               | `boolean?`                      | `false`       | Accept tokens whatever their `aud`, so `configureJwt()` needs neither field above. Logs a warning                    |
 | `resourceServerUrl`              | `string?`                       | —             | Public MCP endpoint URL for PRM `resource` field                                                                     |
 | `authorizationServers`           | `string[]?`                     | `[issuer]`    | Auth server URLs for PRM. When omitted, PRM advertises `issuer`                                                      |
 | `serveProtectedResourceMetadata` | `boolean?`                      | `true`        | Serve `/.well-known/oauth-protected-resource`                                                                        |
@@ -166,7 +177,7 @@ McpAuthModule.configureJwtAsync({
   useFactory: (config: ConfigService) => ({
     jwksUri: config.getOrThrow('JWKS_URI'),
     issuer: config.getOrThrow('JWT_ISSUER'),
-    audience: config.get('JWT_AUDIENCE'),
+    audience: config.getOrThrow('JWT_AUDIENCE'),
     resourceServerUrl: config.getOrThrow('MCP_RESOURCE_URL'),
   }),
 });
@@ -236,7 +247,7 @@ McpAuthModule.configureCognito({
 const authInfo = markMcpAuthInfoResolved(await cognitoStrategy.verifyInProcessAccessToken(webAppAccessToken));
 ```
 
-`verifyInProcessAccessToken()` runs the same signature, issuer, expiry and `token_use: 'access'` checks as the MCP route, accepts `client_id` values from `clientId` and `inProcessClientIds`, and throws `InvalidTokenError` otherwise. The MCP route's own checks (`resolveAuth()` and `verifyAccessToken()`) are unchanged. `@onivoro/server-agentic-mcp`'s `resolveAgenticMcpAuth()` wraps this flow for agentic chat.
+`verifyInProcessAccessToken()` runs the same signature, issuer, expiry and `token_use: 'access'` checks as the MCP route, accepts `client_id` values from `clientId` and `inProcessClientIds`, and throws an `invalid_token` `OAuthError` otherwise. The MCP route's own checks (`resolveAuth()` and `verifyAccessToken()`) are unchanged. `@onivoro/server-agentic-mcp`'s `resolveAgenticMcpAuth()` wraps this flow for agentic chat.
 
 ### Auth0
 
@@ -269,14 +280,14 @@ McpAuthModule.configureJwt({
 
 When `requireBearerAuth` is enabled, HTTP auth happens before MCP request handling. After that, the auth strategy still runs during tool execution:
 
-| Stage | Component                              | Role                                                                                                                                                     |
-| ----- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Transport                              | Extracts raw `authInfo` from the HTTP/stdio request                                                                                                      |
-| 2     | **McpJwtAuthStrategy** (`resolveAuth`) | Validates JWT, enriches `McpAuthInfo` with decoded claims. Invalid tokens throw `InvalidTokenError`; a missing token resolves to `undefined` (anonymous) |
-| 3     | Guards                                 | Check scopes, roles, or custom rules against enriched auth                                                                                               |
-| 4     | Validation                             | Schema validation of tool params                                                                                                                         |
-| 5     | Interceptors                           | Cross-cutting concerns (logging, metrics)                                                                                                                |
-| 6     | Handler                                | Tool implementation                                                                                                                                      |
+| Stage | Component                              | Role                                                                                                                                                                 |
+| ----- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Transport                              | Extracts raw `authInfo` from the HTTP/stdio request                                                                                                                  |
+| 2     | **McpJwtAuthStrategy** (`resolveAuth`) | Validates JWT, enriches `McpAuthInfo` with decoded claims. Invalid tokens throw an `invalid_token` `OAuthError`; a missing token resolves to `undefined` (anonymous) |
+| 3     | Guards                                 | Check scopes, roles, or custom rules against enriched auth                                                                                                           |
+| 4     | Validation                             | Schema validation of tool params                                                                                                                                     |
+| 5     | Interceptors                           | Cross-cutting concerns (logging, metrics)                                                                                                                            |
+| 6     | Handler                                | Tool implementation                                                                                                                                                  |
 
 ## McpScopeRegistry
 
@@ -314,11 +325,11 @@ If you need to advertise the root route instead, set `requireBearerAuth: { resou
 The package test suite covers:
 
 - JWT validation and enrichment
-- `resourceIdentifier` enforcement
+- `resourceIdentifier` enforcement, and the startup check that `configureJwt()` has an audience check
 - Protected Resource Metadata route modes
 - the path-derived PRM route over real HTTP on Nest 10, including a trailing slash. Nest 11 is checked by the repository's `npm run smoke:nest11`, which runs locally, not in CI
 - config validation
-- composition with `McpHttpModule` for real HTTP `401` challenges
+- composition with `McpHttpModule` for real HTTP `401` challenges, for a missing token and for one the strategy rejects
 
 ## Troubleshooting
 
@@ -327,7 +338,7 @@ The package test suite covers:
 - PRM is not discoverable
   Set `resourceServerUrl`, and ensure `serveProtectedResourceMetadata` is not disabled.
 - Startup fails on auth config
-  That is expected for invalid PRM config. When PRM is enabled, `resourceServerUrl` and an authorization-server source (`authorizationServers` or `issuer`) are required.
+  That is expected for invalid config. `configureJwt()` requires `audience` or `resourceIdentifier` (or `allowAnyAudience: true`). When PRM is enabled, `resourceServerUrl` and an authorization-server source (`authorizationServers` or `issuer`) are required.
 - Cognito tokens are rejected with `unexpected client_id`
   On the MCP route, `McpCognitoAuthStrategy` accepts access tokens from exactly one app client, the configured `clientId`; `inProcessClientIds` only applies to `verifyInProcessAccessToken()`. ID tokens are rejected because their `token_use` is `id`.
 - JWT validation fails for the wrong issuer or audience

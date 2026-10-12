@@ -1,3 +1,4 @@
+import { isInputRequiredResult } from './is-input-required-result';
 import type { McpResourceResult } from './mcp-resource-result';
 
 export function wrapResourceResult(
@@ -6,6 +7,11 @@ export function wrapResourceResult(
   mimeType?: string,
 ): McpResourceResult {
   if (raw && typeof raw === 'object' && Array.isArray((raw as any).contents)) {
+    return raw as McpResourceResult;
+  }
+
+  // `inputRequired(...)`: the SDK asks the client and runs the handler again.
+  if (isInputRequiredResult(raw)) {
     return raw as McpResourceResult;
   }
 

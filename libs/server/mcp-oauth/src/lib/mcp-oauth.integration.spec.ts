@@ -11,23 +11,39 @@ jest.mock('jwks-rsa', () => ({
   })),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/server/auth/router.js', () => ({
+jest.mock('@modelcontextprotocol/server-legacy/auth', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server-legacy/auth'),
   mcpAuthRouter: jest.fn().mockImplementation((config: any) => {
     return (req: any, res: any, next: any) => {
       const path = req.originalUrl || req.url;
-      if (req.method === 'GET' && path === '/.well-known/oauth-authorization-server') {
+      if (
+        req.method === 'GET' &&
+        path === '/.well-known/oauth-authorization-server'
+      ) {
         res.json({ issuer: config.issuerUrl.href });
         return;
       }
-      if (req.method === 'GET' && path === '/.well-known/oauth-protected-resource') {
+      if (
+        req.method === 'GET' &&
+        path === '/.well-known/oauth-protected-resource'
+      ) {
         res.json({
-          resource: config.resourceServerUrl?.href ?? config.baseUrl?.href ?? config.issuerUrl.href,
+          resource:
+            config.resourceServerUrl?.href ??
+            config.baseUrl?.href ??
+            config.issuerUrl.href,
         });
         return;
       }
-      if (req.method === 'GET' && path.startsWith('/.well-known/oauth-protected-resource/')) {
+      if (
+        req.method === 'GET' &&
+        path.startsWith('/.well-known/oauth-protected-resource/')
+      ) {
         res.json({
-          resource: config.resourceServerUrl?.href ?? config.baseUrl?.href ?? config.issuerUrl.href,
+          resource:
+            config.resourceServerUrl?.href ??
+            config.baseUrl?.href ??
+            config.issuerUrl.href,
         });
         return;
       }
@@ -93,8 +109,13 @@ describe('McpOAuthModule integration', () => {
     const { app, baseUrl } = await startApp(TestAppModule);
 
     try {
-      expect((await fetch(`${baseUrl}/.well-known/oauth-authorization-server`)).status).toBe(200);
-      expect((await fetch(`${baseUrl}/.well-known/oauth-protected-resource`)).status).toBe(200);
+      expect(
+        (await fetch(`${baseUrl}/.well-known/oauth-authorization-server`))
+          .status,
+      ).toBe(200);
+      expect(
+        (await fetch(`${baseUrl}/.well-known/oauth-protected-resource`)).status,
+      ).toBe(200);
       expect((await fetch(`${baseUrl}/authorize`)).status).toBe(200);
     } finally {
       await app.close();
@@ -122,7 +143,12 @@ describe('McpOAuthModule integration', () => {
       const response = await fetch(`${baseUrl}/mcp`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        }),
       });
 
       expect(response.status).not.toBe(401);
@@ -138,10 +164,13 @@ describe('McpOAuthModule integration', () => {
           provider: provider as any,
           issuerUrl: 'https://auth.example.com',
           resourceServerUrl: 'https://api.example.com/mcp',
+          // McpAuthModule serves the protected resource metadata.
+          serveProtectedResourceMetadata: false,
         }),
         McpAuthModule.register({
           jwksUri: 'https://auth.example.com/.well-known/jwks.json',
           issuer: 'https://auth.example.com',
+          audience: 'https://api.example.com/mcp',
           resourceServerUrl: 'https://api.example.com/mcp',
         }),
         McpHttpModule.registerAndServeHttp({
@@ -159,12 +188,28 @@ describe('McpOAuthModule integration', () => {
       const response = await fetch(`${baseUrl}/mcp`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        }),
       });
 
       expect(response.status).toBe(401);
       expect(response.headers.get('www-authenticate')).toContain(
         `${baseUrl}/.well-known/oauth-protected-resource/mcp`,
+      );
+
+      const metadata = await fetch(
+        `${baseUrl}/.well-known/oauth-protected-resource/mcp`,
+      );
+      expect(metadata.status).toBe(200);
+      expect(await metadata.json()).toEqual(
+        expect.objectContaining({
+          resource: 'https://api.example.com/mcp',
+          authorization_servers: ['https://auth.example.com'],
+        }),
       );
     } finally {
       await app.close();
@@ -200,7 +245,10 @@ describe('McpOAuthModule integration', () => {
     const { app, baseUrl } = await startApp(TestAppModule);
 
     try {
-      expect((await fetch(`${baseUrl}/.well-known/oauth-authorization-server`)).status).toBe(200);
+      expect(
+        (await fetch(`${baseUrl}/.well-known/oauth-authorization-server`))
+          .status,
+      ).toBe(200);
     } finally {
       await app.close();
     }

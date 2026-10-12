@@ -44,7 +44,7 @@ CI can't publish a package that doesn't exist on npm yet, because npm only accep
 
 ### 1. Create the library
 
-Copy an existing library from the same runtime folder, for example `libs/server/mcp-oauth`, and rename every path and name in it.
+Copy an existing library from the same runtime folder, for example `libs/server/mcp-audit`, and rename every path and name in it.
 
 - **`project.json`**: `name` must be `lib-<runtime>-<name>`, such as `lib-server-foo`, so `nx release` includes it in the shared version. Keep the `build` target's `outputPath` at `dist/libs/<runtime>/<name>`, and keep the `nx-release-publish` target.
 - **`package.json`** needs:

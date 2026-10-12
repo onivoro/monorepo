@@ -1,7 +1,8 @@
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import { Logger } from '@nestjs/common';
-import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import { OAuthError } from '@modelcontextprotocol/server';
+import { invalidTokenError } from './invalid-token-error';
 import { McpJwtAuthStrategy } from './mcp-jwt-auth-strategy';
 import { McpJwksService } from './mcp-jwks.service';
 import type { McpAuthConfig } from './mcp-auth-config';
@@ -60,9 +61,9 @@ describe('McpJwtAuthStrategy edge cases', () => {
   }
 
   describe('verifyAccessToken', () => {
-    it('rejects an empty token with InvalidTokenError', async () => {
+    it('rejects an empty token with OAuthError', async () => {
       await expect(createStrategy().verifyAccessToken('')).rejects.toThrow(
-        new InvalidTokenError('Invalid access token'),
+        invalidTokenError('Invalid access token'),
       );
     });
 
@@ -80,7 +81,7 @@ describe('McpJwtAuthStrategy edge cases', () => {
       const error = await createStrategy()
         .verifyAccessToken(token)
         .catch((e) => e);
-      expect(error).toBeInstanceOf(InvalidTokenError);
+      expect(error).toBeInstanceOf(OAuthError);
       expect(error.message).toMatch(/invalid signature/);
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('JWT validation failed'),
@@ -95,7 +96,7 @@ describe('McpJwtAuthStrategy edge cases', () => {
 
       await expect(
         createStrategy().verifyAccessToken(token),
-      ).rejects.toBeInstanceOf(InvalidTokenError);
+      ).rejects.toBeInstanceOf(OAuthError);
     });
   });
 
@@ -109,7 +110,7 @@ describe('McpJwtAuthStrategy edge cases', () => {
           clientId: '',
           scopes: [],
         }),
-      ).rejects.toThrow(new InvalidTokenError('no key'));
+      ).rejects.toThrow(invalidTokenError('no key'));
     });
 
     it('uses a generic message for non-Error rejections', async () => {
@@ -121,7 +122,7 @@ describe('McpJwtAuthStrategy edge cases', () => {
           clientId: '',
           scopes: [],
         }),
-      ).rejects.toThrow(new InvalidTokenError('Invalid access token'));
+      ).rejects.toThrow(invalidTokenError('Invalid access token'));
     });
   });
 
@@ -199,7 +200,7 @@ describe('McpJwtAuthStrategy edge cases', () => {
 
       await expect(
         strategy.verifyAccessToken(signToken({})),
-      ).rejects.toBeInstanceOf(InvalidTokenError);
+      ).rejects.toBeInstanceOf(OAuthError);
 
       const rs512 = signToken({ client_id: 'c' }, { algorithm: 'RS512' });
       await expect(strategy.verifyAccessToken(rs512)).resolves.toEqual(

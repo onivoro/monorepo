@@ -127,11 +127,21 @@ const githubTools = new StandardMcpClientAgenticToolProvider(mcpClient, {
 ```
 
 The second argument is an `AgenticMcpConfig` (`namespace`, `exposeNamespace`,
-`inputContext`). Anything matching `StandardMcpClientLike` — `listTools()`
-returning `{ tools }` and `callTool({ name, arguments })` — works, so an official
-MCP SDK client drops straight in. Tool names are exposed as above and mapped
-back to the server's original name on execution. The raw `callTool` result is
-returned as the tool result, with `resultText` its JSON rendering.
+`inputContext`). Anything matching `StandardMcpClientLike` — `listTools(params?)`
+returning `{ tools, nextCursor? }` and `callTool({ name, arguments })` — works,
+so the MCP SDK's `Client` (`@modelcontextprotocol/client`, in either protocol era) drops straight in.
+
+- `listTools` follows `nextCursor` until the server has listed every tool (up to
+  100 pages), and remembers the list.
+- Tool names are exposed as above and mapped back to the server's original
+  name on execution, using the remembered list. A name that isn't in it is
+  looked up once more, in case the server has added the tool since; if it's
+  still unknown, the call returns an `isError` result (`Unknown tool "<name>".`)
+  without calling the server.
+- The raw `callTool` result is returned as the tool result, with `resultText`
+  its JSON rendering. When the server reports the tool failed (`isError: true`),
+  the result is marked `isError` and `resultText` is the failure's text content
+  (or `Tool execution failed` when it has none).
 
 Combine sources with `CompositeAgenticToolProvider`, and register the result as
 `AGENTIC_TOOL_PROVIDER` yourself:

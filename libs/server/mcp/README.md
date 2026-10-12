@@ -18,7 +18,7 @@ If you are choosing between the `@onivoro/server-mcp*` packages, start with the 
 - discovers `@McpTool`, `@McpResource`, and `@McpPrompt` methods from the Nest container
 - exposes them over Streamable HTTP, stdio, or direct in-process registry access
 - handles MCP session lifecycle, schema conversion, registry wiring, and capability generation
-- can issue HTTP bearer challenges on the configured MCP HTTP route when `requireBearerAuth` is enabled
+- can issue HTTP bearer challenges on the configured MCP HTTP route when `requireBearerAuth` is enabled and `authStrategy` names a provider that implements the SDK's `OAuthTokenVerifier` (without an `authStrategy`, `requireBearerAuth` is ignored)
 
 ## What this package does not do
 
@@ -48,7 +48,7 @@ Consumer-specific formatting (e.g. Bedrock Converse tool definitions, OpenAI fun
 - **Automatic format wrapping**: The registry provides per-consumer execution methods. Your service methods return whatever is natural — the registry wraps for the target transport.
 - **Schema conversion**: Zod schemas on decorators are converted to JSON Schema automatically via zod v4's native `z.toJSONSchema()`.
 - **Consistent infrastructure**: Sessions, transport, discovery, cleanup, duplicate detection, error handling — all handled.
-- **Auth-aware execution**: MCP SDK `authInfo`, `sessionId`, `signal` (AbortSignal), and `sendProgress` flow through the registry to tool handlers. Centralized auth enrichment via `McpAuthStrategy`, per-tool authorization via `@McpGuard`.
+- **Auth-aware execution**: MCP SDK `authInfo`, `era`, `sessionId`, `signal` (AbortSignal), `sendProgress` and `inputResponses` flow through the registry to tool handlers. Centralized auth enrichment via `McpAuthStrategy`, per-tool authorization via `@McpGuard`.
 - **Extensible execution pipeline**: Guards, interceptors, and the handler compose in the same order as the NestJS HTTP lifecycle. Interceptors use the `intercept(context, next)` onion model.
 
 ## Three entry points
@@ -63,7 +63,14 @@ All three modules auto-discover `@McpTool`, `@McpResource`, and `@McpPrompt` dec
 
 ## Client compatibility
 
-This library supports **stdio** and **Streamable HTTP** (MCP spec 2025-03-26). It does **not** support the legacy SSE transport (`GET /sse` + `POST /messages`) by design. Consumers that don't fully support the standard right now (see table below) will eventually catch up.
+This library supports **stdio** and **Streamable HTTP**, on version 2 of the MCP TypeScript SDK (`@modelcontextprotocol/server`). It does **not** support the legacy SSE transport (`GET /sse` + `POST /messages`) by design. Consumers that don't fully support the standard right now (see table below) will eventually catch up.
+
+Both transports serve both generations of the protocol at once, on the same endpoint:
+
+- **Spec revision 2026-07-28** (`era: 'modern'`): stateless. There is no `initialize` handshake and no session; every request carries the client's protocol version and capabilities. Clients learn about changes on `subscriptions/listen` streams, and a tool asks the user for input by returning `inputRequired(...)` instead of sending requests to the client.
+- **Revisions 2025-11-25 and earlier** (`era: 'legacy'`, back to 2024-10-07): the `initialize` handshake, optional sessions (`Mcp-Session-Id`), and server-to-client requests.
+
+The SDK tells the two apart from each request, and tool handlers see which one they serve in `context.era`. Write tools once: `inputRequired(...)` reaches clients of both eras (see [Asking the user for input](#asking-the-user-for-input)).
 
 | Client                 | stdio | Streamable HTTP | Status                                                     |
 | ---------------------- | :---: | :-------------: | ---------------------------------------------------------- |
@@ -147,6 +154,7 @@ import { EmojiService } from './services/emoji.service';
     McpAuthModule.configureJwt({
       jwksUri: 'https://auth.example.com/.well-known/jwks.json',
       issuer: 'https://auth.example.com',
+      audience: 'https://api.example.com/mcp',
       resourceServerUrl: 'https://api.example.com/mcp',
     }),
     McpHttpModule.registerAndServeHttp({
@@ -164,7 +172,7 @@ export class AppModule {}
 
 `McpHttpModule` requires NestJS's Express platform (`@nestjs/platform-express`), which is the default when you call `NestFactory.create()`. It depends on Express body-parsing middleware to parse incoming request bodies.
 
-If your application uses `@nestjs/platform-fastify`, use `McpRegistryModule.registerOnly()` and write a custom Fastify-aware controller. The `McpHttpService.handleRequest()` method accepts raw Node `http.IncomingMessage` and `http.ServerResponse` — you only need to extract the parsed body from Fastify's request and pass it correctly.
+If your application uses `@nestjs/platform-fastify`, use `McpRegistryModule.registerOnly()` and write a Fastify-aware controller around `McpHttpService`, which isn't provided by `registerOnly()`: provide it yourself, along with `MCP_MODULE_CONFIG` (an `McpModuleConfig`). `McpHttpService.handleRequest(req, res)` takes raw Node `http.IncomingMessage` and `http.ServerResponse` (`request.raw`, `reply.raw`) and reads the parsed JSON body from `req.body`, so set that from Fastify's parsed body first. Bearer authentication and the auth strategy are set up by `McpHttpModule`; without it, call `httpService.setBearerAuthVerifier(...)` and `registry.setAuthStrategy(...)` yourself. Or serve the registry with the SDK directly (see [Custom transport](#custom-transport)).
 
 ## Quick start: MCP stdio server
 
@@ -190,16 +198,31 @@ export class AppStdioModule {}
 ```typescript
 // main.ts
 import { NestFactory } from '@nestjs/core';
+import { McpStderrLogger } from '@onivoro/server-mcp';
 import { AppStdioModule } from './app/app-stdio.module';
 
 async function bootstrap() {
-  await NestFactory.createApplicationContext(AppStdioModule);
+  await NestFactory.createApplicationContext(AppStdioModule, {
+    logger: new McpStderrLogger(),
+  });
   // No HTTP listener — the module connects to stdin/stdout on init
 }
 bootstrap();
 ```
 
 The server starts listening on stdin/stdout as soon as the NestJS application context initializes. Tools, resources, and prompts are discovered and registered automatically.
+
+It serves either protocol era. The client's first message decides which: `server/discover` (or any 2026-07-28 request) for the modern protocol, `initialize` for 2025-era clients. Either way the connection is long-lived, so tools registered later, `setToolEnabled` and `notifyResourceUpdated` reach the client: as unsolicited notifications on a 2025-era connection, and on the client's `subscriptions/listen` streams on a 2026-07-28 one.
+
+### Logging goes to stderr
+
+stdout carries the JSON-RPC stream, and Nest's default logger writes everything below `error` to stdout, which corrupts it. `McpStderrLogger` is a `ConsoleLogger` that writes every level to stderr.
+
+When it serves on `process.stdout`, `registerAndServeStdio()` installs it as Nest's logger (`Logger.overrideLogger`) as soon as the module is declared, before Nest bootstraps. That covers Nest's startup logs, the module's own logs and your services' `Logger` calls. A `logger` passed to `NestFactory` replaces it, so if you pass one, make it `McpStderrLogger` (as above) or another logger that writes to stderr.
+
+`redirectLogsToStderr` controls this. It defaults to `true`, or `false` when you pass a custom `stdout`. Set it to `false` to keep your own logger setup. `registerAndServeStdioAsync()` takes `redirectLogsToStderr` in its options rather than in the factory's config, because it must apply before Nest bootstraps; there it defaults to `true`.
+
+Never write to stdout yourself (`console.log`, `process.stdout.write`) in a stdio server.
 
 ### Custom streams
 
@@ -222,8 +245,8 @@ McpStdioModule.registerAndServeStdio({
   stdout,
 });
 
-// Simulate an incoming JSON-RPC request
-stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 1 }) + '\n');
+// Feed it newline-delimited JSON-RPC; a real client starts with `initialize` or `server/discover`
+stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'initialize', id: 1, params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } } }) + '\n');
 ```
 
 ## Quick start: Registry only
@@ -252,12 +275,14 @@ See [`@onivoro/server-mcp-llm-adapter`](https://www.npmjs.com/package/@onivoro/s
 
 ### Custom transport
 
-`registerOnly()` also works when you need to bring your own MCP transport — for example, the legacy SSE transport, a WebSocket transport, or any custom protocol. The registry populates during module init; you then wire it to an `McpServer` instance connected to whatever transport you need:
+`registerOnly()` also works when you need to serve the registry yourself — another framework's HTTP stack, a WebSocket, or any other transport. The registry populates during module init; you then wire it onto `McpServer` instances from `@modelcontextprotocol/server`.
+
+A server connected to a transport with `server.connect(transport)` speaks the 2025-era protocol:
 
 ```typescript
 import { Injectable, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import type { Transport } from '@modelcontextprotocol/server';
 import { McpToolRegistry, wireRegistryToServer, buildCapabilities } from '@onivoro/server-mcp';
 
 @Injectable()
@@ -271,12 +296,11 @@ export class CustomTransportService implements OnApplicationBootstrap, OnModuleD
   onApplicationBootstrap() {
     this.server = new McpServer({ name: 'my-server', version: '1.0.0' }, { capabilities: buildCapabilities(this.registry) });
 
-    // Wires existing entries and subscribes to future registrations.
-    // Returns an unsubscribe function for cleanup.
+    // Wires existing entries and follows future registrations, before connecting.
+    // Returns a function that stops following the registry.
     this.unsubscribe = wireRegistryToServer(this.registry, this.server);
   }
 
-  // Connect to any SDK Transport — SSE, WebSocket, custom protocol, etc.
   async connect(transport: Transport) {
     await this.server!.connect(transport);
   }
@@ -288,9 +312,53 @@ export class CustomTransportService implements OnApplicationBootstrap, OnModuleD
 }
 ```
 
-`wireRegistryToServer` and `buildCapabilities` are independent — `buildCapabilities(registry, options?)` derives capabilities from the current registry state, and `wireRegistryToServer` registers entries onto the server without touching capabilities. `buildCapabilities` returns `logging: {}` (unless you pass `{ logging: false }`), `tools: { listChanged: true }` when at least one tool is registered, `resources: { subscribe: true, listChanged: true }` when at least one resource is registered, and `prompts: { listChanged: true }` when at least one prompt is registered. Because it reads the registry at call time, call it after discovery has run.
+To serve 2026-07-28 clients over HTTP yourself, give the SDK's `createMcpHandler` a factory that builds a server per request, and publish registry changes through the handler (this is what `McpHttpModule` does for them):
 
-`wireRegistryToServer` also subscribes to future registration changes, so tools/resources/prompts added dynamically after startup are automatically wired to the server (triggering `listChanged` notifications to connected clients). It also installs `resources/subscribe` / `resources/unsubscribe` handlers and forwards `notifyResourceUpdated(uri)` calls to the client when it has subscribed to that URI. It returns a function that unwires the server from the registry; call it when the server closes. To add capabilities beyond what the registry provides (e.g. `experimental`, `completions`), merge them:
+```typescript
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
+import { buildCapabilities, wireRegistryToServer } from '@onivoro/server-mcp';
+
+const handler = createMcpHandler(
+  () => {
+    const server = new McpServer({ name: 'my-server', version: '1.0.0' }, { capabilities: buildCapabilities(registry) });
+    // Lives for one request: no need to follow the registry.
+    wireRegistryToServer(registry, server, { era: 'modern', followRegistry: false });
+    return server;
+  },
+  // This handler only serves 2026-07-28 clients; serve 2025-era ones some other way.
+  { legacy: 'reject' },
+);
+registry.onRegistrationChange((type) => (type === 'tool' ? handler.notify.toolsChanged() : type === 'prompt' ? handler.notify.promptsChanged() : handler.notify.resourcesChanged()));
+registry.setToolEnabledDelegate(() => handler.notify.toolsChanged()); // also lets setToolEnabled() work
+registry.onResourceUpdate((uri) => handler.notify.resourceUpdated(uri));
+// Serve with handler.fetch(request, { authInfo }), or toNodeHandler(handler) from @modelcontextprotocol/node.
+```
+
+Without `legacy: 'reject'`, the handler also answers 2025-era clients, one server per request (as `McpHttpModule` does in stateless mode); wire with `era: ctx.era` and `unsolicitedMessages: ctx.era === 'modern'`, from the factory's `ctx` (a per-request 2025-era server has no stream for notifications). `McpHttpService` shows the full composition: `isLegacyRequest()` sends 2025-era requests to a session-aware transport and the rest to the handler.
+
+For stdio on custom streams, `serveStdio(factory, { transport })` from `@modelcontextprotocol/server/stdio` serves both eras; build the server in the factory with `wireRegistryToServer(registry, server, { era: ctx.era })`, and call the function it returns when the server closes (the SDK may build and discard an extra server to answer a `server/discover` probe).
+
+`buildCapabilities(registry, options?)` derives capabilities from the current registry state. Because it reads the registry at call time, call it after discovery has run. It returns:
+
+- `logging: {}`, unless you pass `{ logging: false }`.
+- `tools: { listChanged }` when at least one tool is registered.
+- `resources: { subscribe, listChanged }` when at least one resource is registered.
+- `prompts: { listChanged }` when at least one prompt is registered.
+
+`listChanged` and `subscribe` are `true` unless you pass `{ notifications: false }`.
+
+`wireRegistryToServer(registry, server, options?)` takes:
+
+| Option                  | Default    | Meaning                                                                                                                                                                                                                      |
+| ----------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requestScopedMessages` | `true`     | The transport delivers messages tied to a request: progress, logs, and 2025-era server-to-client requests. True for stdio and SSE responses; false for JSON responses. Use the same value as `buildCapabilities`' `logging`. |
+| `unsolicitedMessages`   | `true`     | List-changed and resource-updated notifications can reach the client. Use the same value as `buildCapabilities`' `notifications`.                                                                                            |
+| `era`                   | `'legacy'` | The protocol era the server serves. `'modern'` servers get no `createMessage`, `elicitInput` or `listRoots` in the tool context (2026-07-28 has no server-to-client requests).                                               |
+| `followRegistry`        | `true`     | Keep the server in step with the registry: wire tools, resources and prompts registered later, apply `setToolEnabled`, and forward `notifyResourceUpdated`. Turn off for a server that lives for one request.                |
+
+With `requestScopedMessages: false`, tool handlers get no `sendProgress`, `sendLog`, `createMessage`, `elicitInput` or `listRoots`. With `unsolicitedMessages: false`, `wireRegistryToServer` advertises `listChanged: false` and `subscribe: false` (the SDK would otherwise advertise `listChanged: true` for every kind it serves) and doesn't handle `resources/subscribe`. Capabilities can only change before the server connects, so call `wireRegistryToServer` first.
+
+While following the registry, tools/resources/prompts added after startup are wired to the server (and the SDK sends `listChanged` notifications). On a 2025-era server with `unsolicitedMessages` on, it also handles `resources/subscribe` / `resources/unsubscribe` and forwards `notifyResourceUpdated(uri)` to a client that subscribed to that URI; on a 2026-07-28 server it forwards every update, and the SDK delivers it to listen streams whose filter names the URI. Log levels are the SDK's: `logging/setLevel` on 2025-era connections, the request's own level on 2026-07-28 ones. It returns a function that stops following the registry; call it when the server closes. To add capabilities beyond what the registry provides (e.g. `experimental`), merge them:
 
 ```typescript
 const capabilities = { ...buildCapabilities(this.registry), experimental: {} };
@@ -398,7 +466,7 @@ export class DataService {
 }
 ```
 
-`sendProgress(progress, total?, message?)` sends a `notifications/progress` notification to the client:
+`sendProgress(progress, total?, message?)` sends a `notifications/progress` notification to the client, on the same response stream as the tool call's result:
 
 | Parameter  | Type      | Description                                                      |
 | ---------- | --------- | ---------------------------------------------------------------- |
@@ -406,7 +474,7 @@ export class DataService {
 | `total`    | `number?` | Total expected value (enables percentage display in client UIs). |
 | `message`  | `string?` | Human-readable description of current step.                      |
 
-The `?.` chain on `context?.sendProgress?.()` is important — `sendProgress` is only populated when the client requested progress tracking via `_meta.progressToken`. Clients that don't request progress (most do not by default) leave it `undefined`, and the optional chain makes the call a safe no-op.
+The `?.` chain on `context?.sendProgress?.()` is important — `sendProgress` is only populated when the client requested progress tracking via `_meta.progressToken` and the transport can deliver it. Clients that don't request progress (most do not by default) leave it `undefined`, and so does HTTP with `enableJsonResponse: true`, which answers with a single JSON body that has no room for progress. The optional chain makes the call a safe no-op.
 
 ### Cancellation via AbortSignal
 
@@ -449,11 +517,15 @@ async getStatus(
 }
 ```
 
-`sessionId` is only set when the HTTP transport runs with stateful sessions (the `session` config option); each client connection then gets a unique session. In stateless HTTP mode (the default) and over stdio, `sessionId` is `undefined`.
+`sessionId` is only set for 2025-era clients when the HTTP transport runs with stateful sessions (the `session` config option); each client connection then gets a unique session. 2026-07-28 has no sessions, so it is `undefined` for those clients, in stateless HTTP mode (the default), and over stdio.
+
+`context.era` says which protocol the caller speaks: `'modern'` (2026-07-28) or `'legacy'` (2025-11-25 and earlier). It is unset when the registry is called in-process.
 
 ### Logging
 
-Tool handlers can send structured log messages to MCP clients via `context.sendLog()`. The client controls the minimum log level via the `logging/setLevel` protocol message.
+Tool handlers can send structured log messages to MCP clients via `context.sendLog()`. The client controls the minimum log level, and messages below it are dropped: a 2025-era client sets it with `logging/setLevel`; a 2026-07-28 client names it on each request (`_meta["io.modelcontextprotocol/logLevel"]`), and a request that names no level gets no log messages. Like progress, log messages go out on the tool call's response stream, so `sendLog` is `undefined` (and `logging` isn't advertised) on HTTP with `enableJsonResponse: true`.
+
+Spec revision 2026-07-28 deprecates logging to the client; it recommends stderr or OpenTelemetry for server diagnostics. `sendLog` keeps working for clients that ask for it.
 
 ```typescript
 @McpTool({ name: 'import-data', description: 'Import data from source', schema: importSchema })
@@ -483,7 +555,10 @@ export class ConfigService {
 }
 ```
 
-The library handles `resources/subscribe` and `resources/unsubscribe` requests automatically, tracking subscribers by session ID (see `getResourceSubscribers(uri)`). Subscriptions are only tracked when the request carries a session ID — i.e. HTTP with `session` configured — and are cleaned up when those sessions close. `notifyResourceUpdated(uri)` sends `notifications/resources/updated` only to clients that subscribed to that URI on their connection (this includes stdio clients, which have no session ID).
+How clients subscribe depends on their protocol era, and `notifyResourceUpdated(uri)` reaches both:
+
+- **2025-era clients** send `resources/subscribe` and `resources/unsubscribe`, which the library handles, tracking subscribers by session ID (see `getResourceSubscribers(uri)`). Subscriptions are only tracked when the request carries a session ID — i.e. HTTP with `session` configured — and are cleaned up when those sessions close. The update goes only to clients that subscribed to that URI on their connection (this includes stdio clients, which have no session ID). Stateless HTTP has nowhere to send it.
+- **2026-07-28 clients** open a `subscriptions/listen` stream whose filter names the URIs (and list changes) they want; the SDK serves it. The update goes to every open stream whose filter names the URI, on HTTP (stateless or not) and stdio.
 
 ### Resource template completion
 
@@ -530,7 +605,7 @@ Both strategies must be registered as NestJS providers (e.g., in the module's `p
 
 ### Output schema
 
-Tools can declare an output schema for structured output validation. When present, the SDK validates `structuredContent` against this schema and advertises it to clients:
+Tools can declare an output schema for structured output validation. When present, the SDK validates `structuredContent` against this schema and advertises it to clients. Return a plain object and it becomes the `structuredContent`, with its JSON as the text content for clients that ignore structured output:
 
 ```typescript
 const resultSchema = z.object({ count: z.number(), items: z.array(z.string()) });
@@ -538,13 +613,15 @@ const resultSchema = z.object({ count: z.number(), items: z.array(z.string()) })
 @McpTool({ name: 'list-items', description: 'List all items', schema: inputSchema, outputSchema: resultSchema })
 async listItems(params: z.infer<typeof inputSchema>) {
   const items = await this.itemService.list(params.filter);
-  return { content: [{ type: 'text', text: 'Done' }], structuredContent: { count: items.length, items } };
+  return { count: items.length, items };
 }
 ```
 
+To choose the text content yourself, return the full result: `{ content: [{ type: 'text', text: 'Done' }], structuredContent: { count, items } }`. A tool with an output schema must return structured content (unless the result has `isError: true`); a string result, or an array, fails the SDK's validation.
+
 ### Server instructions
 
-Provide human-readable usage instructions that are included in the MCP `initialize` response:
+Provide human-readable usage instructions, which clients receive in the `initialize` response (2025-era) or the `server/discover` result (2026-07-28):
 
 ```typescript
 McpHttpModule.registerAndServeHttp({
@@ -558,7 +635,7 @@ McpHttpModule.registerAndServeHttp({
 
 ### Tool enable/disable
 
-Tools can be enabled or disabled at runtime with `registry.setToolEnabled(name, enabled)`. Disabled tools are hidden from `tools/list` and reject calls. It throws if the tool isn't registered or if no server has been wired yet (via `McpHttpModule`, `McpStdioModule`, or `wireRegistryToServer`). The toggle applies to every currently wired server, and the registry remembers it, so servers wired later (new HTTP sessions, or the per-request servers of stateless HTTP) start with the tool in that state (`registry.isToolEnabled(name)` reports it):
+Tools can be enabled or disabled at runtime with `registry.setToolEnabled(name, enabled)`. Disabled tools are hidden from `tools/list` and reject calls. It throws if the tool isn't registered, or if nothing serves the registry yet: `McpHttpModule` and `McpStdioModule` count from startup, and a custom server once `wireRegistryToServer` has wired it while following the registry (the default). The toggle applies to every currently wired server, and the registry remembers it, so servers wired later (new HTTP sessions, or the per-request servers of stateless HTTP) start with the tool in that state (`registry.isToolEnabled(name)` reports it):
 
 ```typescript
 @Injectable()
@@ -573,15 +650,45 @@ export class FeatureFlagService {
 }
 ```
 
-### Sampling, elicitation, and roots
+### Asking the user for input
 
-Tool handlers have access to client capabilities via context callbacks:
+A tool that needs something from the user — a confirmation, a missing value, a choice — returns `inputRequired(...)` with the requests, and reads the answers when the client calls it again:
 
-- `context.createMessage(params)` — request LLM sampling from the client
-- `context.elicitInput(params)` — request user input via a form or URL
-- `context.listRoots()` — request the client's filesystem roots
+```typescript
+import { acceptedContent, inputRequired, McpTool, McpToolContext } from '@onivoro/server-mcp';
 
-When the tool is called over an MCP transport (or any server wired with `wireRegistryToServer`), these are always populated but may reject if the client doesn't support the capability, so wrap calls in try/catch. When you call `executeToolRaw`/`executeToolWrapped` directly they are only present if you pass them in `extra`, so use optional chaining:
+const confirmSchema = z.object({ confirm: z.boolean() });
+
+@McpTool({ name: 'deploy', description: 'Deploy to an environment', schema: deploySchema })
+async deploy(params: z.infer<typeof deploySchema>, context?: McpToolContext) {
+  const answer = acceptedContent(context?.inputResponses, 'confirm', confirmSchema);
+  if (!answer) {
+    return inputRequired({
+      inputRequests: {
+        confirm: inputRequired.elicit({ message: `Deploy to ${params.env}?`, requestedSchema: confirmSchema }),
+      },
+    });
+  }
+  return answer.confirm ? this.deployer.deploy(params.env) : 'Cancelled';
+}
+```
+
+The handler runs again from the top with `context.inputResponses` filled in, so keep the work before the question cheap and side-effect free.
+
+- `inputRequired.elicit({ message, requestedSchema })` asks for a form (`requestedSchema` can be a flat zod object or a raw elicitation schema); `inputRequired.elicitUrl({ message, url })` sends the user to a URL. `inputRequired.createMessage(...)` (sampling) and `inputRequired.listRoots()` also exist, but spec 2026-07-28 deprecates both.
+- `acceptedContent(responses, key, schema?)` returns the accepted, validated answer or `undefined`; `inputResponse(responses, key)` tells declined, cancelled and missing answers apart.
+- To carry state between rounds, return `inputRequired({ inputRequests, requestState })` and read it with `context.requestState()`. The client echoes it back, so treat it as untrusted unless you sign it with `createRequestStateCodec`.
+
+This works in both protocol eras:
+
+- **2026-07-28 clients** answer the requests and retry the call themselves (multi round-trip requests). The client must have declared the capability (`elicitation`, …) in the request; otherwise the call fails.
+- **2025-era clients** get real `elicitation/create` (or `sampling/createMessage`, `roots/list`) requests from the SDK, which then calls the handler again with the answers. That needs a connection the server can send requests on: stdio, or HTTP with stateful `session` and SSE responses (the default). A stateless 2025-era HTTP request gets an `isError` result instead, and with `enableJsonResponse: true` the request waits out the SDK's round timeout and fails.
+
+Called in-process (`executeToolRaw`, `@onivoro/server-mcp-llm-adapter`), there is no client to ask: the result comes back as is, and the LLM adapter reports it as a failure.
+
+#### Server-to-client requests (deprecated)
+
+2025-era connections also offer the older push-style callbacks: `context.createMessage(params)` (sampling), `context.elicitInput(params)` and `context.listRoots()`. Each is set only when the client declared the capability when it initialized, the transport delivers requests sent while a tool runs, and the caller speaks the 2025-era protocol — so not for 2026-07-28 clients, stateless HTTP, or `enableJsonResponse: true`. Prefer `inputRequired(...)`, which reaches clients of both eras. When you call `executeToolRaw`/`executeToolWrapped` directly they are only present if you pass them in `extra`. Use optional chaining, and try/catch for clients that reject the request:
 
 ```typescript
 @McpTool({ name: 'summarize-roots', description: 'Summarize the client workspace roots' })
@@ -597,7 +704,7 @@ async summarizeRoots(_params: Record<string, never>, context?: McpToolContext) {
 
 ### Icons
 
-Tools, resources, and prompts can provide icons for client UI rendering (spec 2025-11-25+):
+Tools, resources, and prompts can provide icons for client UI rendering (spec 2025-11-25+). An icon has a `src` (`https:` or `data:` URL) and optionally a `mimeType`, `sizes` (e.g. `['32x32']`, or `['any']` for SVG) and `theme` (`'light'` or `'dark'`):
 
 ```typescript
 @McpTool({
@@ -605,8 +712,8 @@ Tools, resources, and prompts can provide icons for client UI rendering (spec 20
   description: 'Deploy application',
   schema: deploySchema,
   icons: [
-    { url: 'https://cdn.example.com/deploy-icon.svg', mediaType: 'image/svg+xml' },
-    { url: 'https://cdn.example.com/deploy-icon-32.png', mediaType: 'image/png', size: '32x32' },
+    { src: 'https://cdn.example.com/deploy-icon.svg', mimeType: 'image/svg+xml', sizes: ['any'] },
+    { src: 'https://cdn.example.com/deploy-icon-32.png', mimeType: 'image/png', sizes: ['32x32'], theme: 'light' },
   ],
 })
 async deploy(params: z.infer<typeof deploySchema>) { ... }
@@ -618,7 +725,7 @@ Resources and prompts accept `icons` in their metadata object:
 @McpResource({
   name: 'logs',
   uri: 'app://logs',
-  icons: [{ url: 'https://cdn.example.com/logs.svg' }],
+  icons: [{ src: 'https://cdn.example.com/logs.svg' }],
 })
 ```
 
@@ -695,7 +802,7 @@ import { McpHttpModule } from '@onivoro/server-mcp';
 export class AppModule {}
 ```
 
-For HTTP async configuration, `route` is intentionally outside `useFactory` because Nest controller decorators are created before async factories resolve. Runtime values such as metadata, CORS, auth strategy, and session settings belong in `useFactory`; the HTTP route must be known synchronously when the module is created.
+For HTTP async configuration, `route` is intentionally outside `useFactory` because Nest controller decorators are created before async factories resolve. Runtime values such as metadata, `allowedOrigins`/`allowedHosts`, auth strategy, and session settings belong in `useFactory` (CORS itself is set on the app, with `app.enableCors(MCP_CORS_CONFIG)`); the HTTP route must be known synchronously when the module is created.
 
 The stdio equivalent is `McpStdioModule.registerAndServeStdioAsync()` with the same `{ imports, inject, useFactory }` shape (no `route`); its factory returns an `McpStdioConfig`.
 
@@ -708,7 +815,7 @@ When a tool has a Zod schema, the registry runs `schema.parse(params)` as the **
 - **Defaults and transforms are applied** — if your schema has `.default()` or `.transform()`, interceptors and the handler receive the fully processed params, not the raw input.
 - **Refinements are enforced** — `.refine()` and `.superRefine()` checks run, even though they can't be expressed in JSON Schema.
 
-On the MCP transport path (HTTP/stdio), the MCP SDK also validates incoming params against the JSON Schema representation of the Zod schema. The registry's validation is intentionally redundant on that path — it ensures that the programmatic path (`executeToolRaw`, or `executeToolForProvider` in `@onivoro/server-mcp-llm-adapter`) gets the same guarantees without relying on the SDK.
+This holds on every path. Over MCP transports (HTTP/stdio) the SDK advertises the schema in `tools/list` but leaves validation to the registry, so the order above, and audit's `onRejected` hook, apply there too, and transforms run once. In-process callers (`executeToolRaw`, `executeToolForProvider` in `@onivoro/server-mcp-llm-adapter`) get the same pipeline.
 
 Tools without a schema accept any params without validation.
 
@@ -722,6 +829,7 @@ Your `@McpTool` methods can return any of these — the registry wraps automatic
 | `{ content: [{ type: 'image', data: '...', mimeType: '...' }] }` | Passed through           | Passed through                                                    |
 | `'plain string'`                                                 | `'plain string'`         | `{ content: [{ type: 'text', text: 'plain string' }] }`           |
 | `{ key: 'value' }`                                               | `{ key: 'value' }`       | `{ content: [{ type: 'text', text: '...' }] }` (JSON-stringified) |
+| `{ key: 'value' }`, tool has an `outputSchema`                   | `{ key: 'value' }`       | The same, plus `structuredContent: { key: 'value' }`              |
 
 When auto-wrapping, the result is always wrapped as `type: 'text'`. If you need to return other content types, return the full `McpToolResult` structure directly — it passes through unchanged.
 
@@ -854,6 +962,8 @@ async getItemDetail(uri: URL, params: { id: string }) {
 }
 ```
 
+A static resource handler is called with `(uri, ctx)` and a template's with `(uri, variables, ctx)`, where `ctx` is the MCP SDK's request context (`ServerContext` from `@modelcontextprotocol/server`: `ctx.http?.authInfo`, `ctx.mcpReq.signal`, `ctx.mcpReq.inputResponses`, …). Resource handlers don't go through the tool pipeline (auth strategy, guards, interceptors). Like tools, they can return `inputRequired(...)`.
+
 ## Defining prompts
 
 ```typescript
@@ -868,6 +978,8 @@ async summarize(params: { itemId: string }) {
   return `Summarize: ${item.content}`;
 }
 ```
+
+A prompt handler is called with `(args, ctx)`, or just `(ctx)` when it has no `argsSchema`; `ctx` is the SDK's request context, as for resources. `argsSchema` is a shape of zod fields, which the library wraps in `z.object()` for the SDK.
 
 ## Execution pipeline
 
@@ -900,7 +1012,8 @@ Interceptors use the **onion model** — identical to NestJS `NestInterceptor`. 
 - **Validation** runs `schema.parse()`, applying Zod defaults, transforms, and refinements. From this point forward, all downstream stages (interceptors and handler) see the validated params.
 - **Interceptors** see validated params and the full `McpToolContext`. Each interceptor decides whether to call `next()` (proceed) or short-circuit. They can also transform the result returned by `next()`.
 - **Handler** receives validated params as the first argument and `McpToolContext` as the optional second argument. It is the innermost `next()` in the interceptor chain.
-- **Error handling** in `executeToolWrapped` catches any error from any stage and returns it as MCP error content — the auth strategy throwing, guards rejecting, validation failing, interceptors throwing, or the handler itself failing all produce structured error responses to the MCP client.
+- **Rejection hooks**: when the auth strategy throws, a guard rejects or validation fails, interceptors never run, but each one's optional `onRejected(context, error)` is called, so auditing can record calls that never reached the tool. See [Interceptors](#interceptors).
+- **Error handling** in `executeToolWrapped` catches any error from any stage and returns it as an `isError` result — the auth strategy throwing, guards rejecting, validation failing, interceptors throwing, or the handler itself failing all produce structured error responses to the MCP client. See [Error messages](#error-messages) for what the client is told.
 
 The pipeline runs identically regardless of transport — the same guards, validation, and interceptors apply whether the tool is called via MCP HTTP, MCP stdio, `executeToolRaw`/`executeToolWrapped`, or `executeToolForProvider` from the LLM adapter.
 
@@ -926,7 +1039,9 @@ export class ItemService {
 }
 ```
 
-When the scope check fails, the registry throws `"Access denied by McpScopeGuard for tool "delete-item"."` — which `executeToolWrapped` catches and returns as error content to MCP clients.
+When the scope check fails, the registry throws an `McpAccessDeniedError` with the message `Access denied by McpScopeGuard for tool "delete-item".` — which `executeToolWrapped` catches and returns as error content to MCP clients.
+
+Over HTTP with `requireBearerAuth`, the transport checks `McpScopeGuard` scopes before the call reaches the registry. A `tools/call` whose token lacks them gets an HTTP `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="..."`, which tells the client which scopes to request so it can ask the user for them and retry (step-up authorization). The `scope` lists the token's current scopes plus the missing ones (and any `requiredScopes`), so one round of consent covers the call. The guard still runs for callers that reach the registry another way.
 
 ### Custom guards
 
@@ -970,6 +1085,8 @@ async adminAction(params: z.infer<typeof schema>) { ... }
 ```
 
 `registry.getToolGuards(name)` returns the guards for a tool in execution order.
+
+Any guard that returns `false` makes the registry throw `McpAccessDeniedError` (a subclass of `McpToolError`, with the guard's class name in `guardName`).
 
 ## Interceptors
 
@@ -1047,6 +1164,31 @@ export class CachingInterceptor implements McpToolInterceptor {
 
 Multiple interceptors chain in registration order using the onion model. If interceptor A is registered before interceptor B, execution flows: A-before → B-before → handler → B-after → A-after. If any interceptor throws (or doesn't call `next()`), downstream interceptors and the handler are skipped.
 
+### Rejected calls
+
+A call that the auth strategy, a guard or validation rejects never reaches the interceptor chain. To see those calls too (for an audit log, say), implement the optional `onRejected(context, error)`:
+
+```typescript
+import { Injectable, Logger } from '@nestjs/common';
+import { McpAccessDeniedError, McpToolContext, McpToolInterceptor } from '@onivoro/server-mcp';
+
+@Injectable()
+export class DenialLogger implements McpToolInterceptor {
+  private readonly logger = new Logger(DenialLogger.name);
+
+  intercept(context: McpToolContext, next: () => Promise<unknown>) {
+    return next();
+  }
+
+  onRejected(context: McpToolContext, error: unknown) {
+    const kind = error instanceof McpAccessDeniedError ? 'denied' : 'rejected';
+    this.logger.warn(`${context.toolName} ${kind}: ${(error as Error).message}`);
+  }
+}
+```
+
+`context.params` holds the arguments as received (unvalidated). `context.authInfo` is the resolved auth once the auth strategy has succeeded; if the strategy itself rejected the call, it is the auth info the call arrived with (over HTTP with `requireBearerAuth`, the transport-verified token), or unset if there was none. Errors thrown by `onRejected` are logged and ignored; the call is rejected with the original error either way.
+
 ## McpToolRegistry API
 
 The registry is the core of the library. It is injectable in any NestJS service when any of the three entry point modules is imported.
@@ -1060,7 +1202,7 @@ Called automatically by the module's discovery phase. You don't call these direc
 | `registerTool(metadata, handler, guards?)` | Register a tool with optional guards. Throws on duplicate name.                                                                                            |
 | `registerResource(metadata, handler)`      | Register a resource. Throws on duplicate name.                                                                                                             |
 | `registerPrompt(metadata, handler)`        | Register a prompt. Throws on duplicate name.                                                                                                               |
-| `registerInterceptor(interceptor)`         | Register a `McpToolInterceptor` for all tool executions.                                                                                                   |
+| `registerInterceptor(interceptor)`         | Register a `McpToolInterceptor` for all tool executions (and its `onRejected`, if any, for rejected calls).                                                |
 | `setGuardResolver(resolver)`               | Set the function used to resolve guard class instances. Called automatically by all modules.                                                               |
 | `setProviderResolver(resolver)`            | Set the function used to resolve `listStrategy` / `completeStrategy` classes. Called automatically by all modules.                                         |
 | `resolveProvider(cls)`                     | Resolve a class through the provider resolver. Throws if no resolver is set.                                                                               |
@@ -1075,16 +1217,16 @@ this.registry.registerTool({ name: 'ping', description: 'Health check' }, async 
 
 ### Runtime control and subscriptions
 
-| Method                                                                      | Description                                                                                                                                                                                      |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `setToolEnabled(name, enabled)`                                             | Show/hide a tool on every wired server, and remember it for servers wired later. Throws if the tool is unknown or no server has ever been wired. See [Tool enable/disable](#tool-enabledisable). |
-| `isToolEnabled(name)`                                                       | Whether a tool is enabled (`true` unless `setToolEnabled(name, false)` was called).                                                                                                              |
-| `setToolEnabledDelegate(delegate)`                                          | Internal hook added by `wireRegistryToServer` for each wired server; returns a remover. Use `setToolEnabled()` instead.                                                                          |
-| `notifyResourceUpdated(uri)`                                                | Emit a resource-updated event to every `onResourceUpdate` listener (wired servers forward it to clients subscribed to `uri`).                                                                    |
-| `onResourceUpdate(listener)`                                                | Listen for `notifyResourceUpdated` calls. Returns an unsubscribe function.                                                                                                                       |
-| `subscribeResource(uri, sessionId)` / `unsubscribeResource(uri, sessionId)` | Track client subscriptions. Called automatically by the wired `resources/subscribe` handlers.                                                                                                    |
-| `getResourceSubscribers(uri)`                                               | `ReadonlySet<string>` of session IDs subscribed to `uri`.                                                                                                                                        |
-| `removeSessionSubscriptions(sessionId)`                                     | Drop all subscriptions for a session. Called automatically when an HTTP session closes.                                                                                                          |
+| Method                                                                      | Description                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setToolEnabled(name, enabled)`                                             | Show/hide a tool on every wired server, and remember it for servers wired later. Throws if the tool is unknown or nothing serves the registry (see the link). See [Tool enable/disable](#tool-enabledisable). |
+| `isToolEnabled(name)`                                                       | Whether a tool is enabled (`true` unless `setToolEnabled(name, false)` was called).                                                                                                                           |
+| `setToolEnabledDelegate(delegate)`                                          | Internal hook added by `wireRegistryToServer` for each wired server; returns a remover. Use `setToolEnabled()` instead.                                                                                       |
+| `notifyResourceUpdated(uri)`                                                | Emit a resource-updated event to every `onResourceUpdate` listener (wired servers forward it to clients subscribed to `uri`).                                                                                 |
+| `onResourceUpdate(listener)`                                                | Listen for `notifyResourceUpdated` calls. Returns an unsubscribe function.                                                                                                                                    |
+| `subscribeResource(uri, sessionId)` / `unsubscribeResource(uri, sessionId)` | Track client subscriptions. Called automatically by the wired `resources/subscribe` handlers.                                                                                                                 |
+| `getResourceSubscribers(uri)`                                               | `ReadonlySet<string>` of session IDs subscribed to `uri`.                                                                                                                                                     |
+| `removeSessionSubscriptions(sessionId)`                                     | Drop all subscriptions for a session. Called automatically when an HTTP session closes.                                                                                                                       |
 
 ### Introspection
 
@@ -1104,7 +1246,33 @@ this.registry.registerTool({ name: 'ping', description: 'Health check' }, async 
 | `executeToolRaw(name, params, authInfo?, extra?)`     | MCP name   | Raw handler result             | Direct programmatic access, tests |
 | `executeToolWrapped(name, params, authInfo?, extra?)` | MCP name   | `McpToolResult` (auto-wrapped) | MCP HTTP and stdio transports     |
 
-The optional `authInfo` parameter is populated automatically by `wireRegistryToServer` (from the MCP SDK's request handler extra). When calling the registry directly, pass it if you have auth context available. The optional `extra` parameter carries transport-level context (`sessionId`, `signal`, `sendProgress`, `sendLog`, `createMessage`, `elicitInput`, `listRoots`) — also populated automatically by `wireRegistryToServer`. Both methods run the full [execution pipeline](#execution-pipeline): auth strategy → guards → validation → interceptors → handler. `executeToolRaw` throws on any failure (including an unknown tool name); `executeToolWrapped` catches and returns `{ content: [{ type: 'text', text: 'Error executing <name>: <message>' }], isError: true }`.
+The optional `authInfo` parameter is populated automatically by `wireRegistryToServer` (from the MCP SDK's request context, `ctx.http.authInfo`). When calling the registry directly, pass it if you have auth context available. The optional `extra` parameter (`McpToolExecutionExtra`) carries transport-level context (`era`, `sessionId`, `signal`, `inputResponses`, `requestState`, `sendProgress`, `sendLog`, `createMessage`, `elicitInput`, `listRoots`) — also populated automatically by `wireRegistryToServer`. Both methods run the full [execution pipeline](#execution-pipeline): auth strategy → guards → validation → interceptors → handler. `executeToolRaw` throws on any failure (including an unknown tool name), with the original error; `executeToolWrapped` catches and returns `{ content: [{ type: 'text', text: 'Error executing <name>: <message>' }], isError: true }`, where `<message>` is what the client may see (below).
+
+### Error messages
+
+`executeToolWrapped` (and so every MCP transport) logs the full error on the server, but only tells the client:
+
+| The error                                                     | `<message>` the client sees                                       |
+| ------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `McpToolError` (or a subclass such as `McpAccessDeniedError`) | Its message                                                       |
+| A Zod validation error                                        | `Invalid arguments: <path>: <issue>; ...`, so the model can retry |
+| An unknown tool name                                          | `MCP tool "<name>" is not registered.`                            |
+| Anything else                                                 | `Internal error`                                                  |
+
+Exception messages can carry internal details (hostnames, SQL, stack fragments), so a message only reaches the client when you mean it to. Throw `McpToolError` for the ones you do:
+
+```typescript
+import { McpToolError } from '@onivoro/server-mcp';
+
+@McpTool({ name: 'get-invoice', description: 'Get an invoice', schema })
+async getInvoice(params: z.infer<typeof schema>) {
+  const invoice = await this.invoices.find(params.id);
+  if (!invoice) throw new McpToolError(`No invoice with id ${params.id}`);
+  return invoice;
+}
+```
+
+Returning `{ content: [...], isError: true }` yourself also works, and passes through unchanged.
 
 ```typescript
 const result = await this.registry.executeToolRaw('delete-item', { id: '42' }, { token: 'test', clientId: 'cli', scopes: ['write'] });
@@ -1135,7 +1303,7 @@ McpHttpModule.registerAndServeHttp({
     name: 'my-server', // Required. Server name reported to MCP clients.
     version: '1.0.0', // Required. Server version.
     description: 'Optional', // Optional. Human-readable description.
-    instructions: 'Optional', // Optional. Sent in the initialize response.
+    instructions: 'Optional', // Optional. Sent in the initialize response and the server/discover result.
   },
   route: 'mcp', // Optional. Route relative to any Nest global prefix. Default: 'mcp'.
   session: {
@@ -1143,17 +1311,24 @@ McpHttpModule.registerAndServeHttp({
     ttlMinutes: 30, // Optional. Idle session timeout. Default: 30.
     idGenerator: () => crypto.randomUUID(), // Optional. Default: crypto.randomUUID().
     eventStore, // Optional. EventStore for SSE resumability.
+    principal: (authInfo) => authInfo.extra?.sub as string, // Optional. Who owns a session. Default: clientId + extra.sub.
   },
-  enableJsonResponse: true, // Optional. Default: true. false = SSE streams.
-  serverOptions: {}, // Optional. Passed to McpServer (capabilities/instructions are set by the module).
+  enableJsonResponse: false, // Optional. Default: false (SSE responses). true = one JSON body per request.
+  serverOptions: {}, // Optional. Passed to McpServer. The module sets capabilities, and instructions when metadata.instructions is set.
   allowedOrigins: [
-    // Optional. DNS rebinding protection (see below).
+    // Optional. Default: same origin only. '*' allows any. See DNS rebinding protection.
     'http://localhost:3000',
     'https://my-app.example.com',
   ],
+  allowedHosts: ['mcp.example.com'], // Optional. Default: loopback host names on a loopback socket. See below.
   authStrategy: JwtAuthStrategy, // Optional. Existing Nest provider class implementing McpAuthStrategy.
-  requireBearerAuth: true, // Optional. HTTP 401 bearer challenge using authStrategy as OAuthTokenVerifier.
-  // Ignored unless authStrategy is also set.
+  requireBearerAuth: {
+    // Optional. `true` or an object. HTTP 401 bearer challenge using authStrategy as OAuthTokenVerifier.
+    // Ignored unless authStrategy is also set.
+    requiredScopes: ['mcp:use'], // Optional. Scopes every request needs.
+    resourceMetadataUrl: '/.well-known/oauth-protected-resource/mcp', // Optional. Default: derived from the route.
+    expectedResource: 'https://api.example.com/mcp', // Optional. Reject tokens whose resource differs.
+  },
 });
 ```
 
@@ -1165,11 +1340,12 @@ McpStdioModule.registerAndServeStdio({
     name: 'my-server', // Required. Server name reported to MCP clients.
     version: '1.0.0', // Required. Server version.
     description: 'Optional', // Optional. Human-readable description.
-    instructions: 'Optional', // Optional. Sent in the initialize response.
+    instructions: 'Optional', // Optional. Sent in the initialize response and the server/discover result.
   },
-  serverOptions: {}, // Optional. Passed to McpServer (capabilities/instructions are set by the module).
+  serverOptions: {}, // Optional. Passed to McpServer. The module sets capabilities, and instructions when metadata.instructions is set.
   stdin: process.stdin, // Optional. Defaults to process.stdin.
   stdout: process.stdout, // Optional. Defaults to process.stdout.
+  redirectLogsToStderr: true, // Optional. Default: true on process.stdout. See "Logging goes to stderr".
   authStrategy: JwtAuthStrategy, // Optional. Existing Nest provider class implementing McpAuthStrategy.
 });
 ```
@@ -1190,9 +1366,13 @@ McpHttpModule.registerAndServeHttp({
 });
 ```
 
-When enabled, unauthenticated HTTP requests (all methods except `OPTIONS`) are rejected before MCP session or tool handling with a `401` challenge and `WWW-Authenticate` metadata. This is the mechanism MCP clients use to trigger OAuth automatically.
+When enabled, unauthenticated HTTP requests (all methods except `OPTIONS`) are rejected before MCP session or tool handling with a `401` challenge and `WWW-Authenticate` metadata. (The `Host` and `Origin` checks run first and answer `403`, and a stateless server answers `GET`/`DELETE` with `405` before authentication.) This is the mechanism MCP clients use to trigger OAuth automatically.
 
-`requireBearerAuth` only takes effect when `authStrategy` is also set, and that provider must implement the SDK's `OAuthTokenVerifier` (`verifyAccessToken()`); otherwise module init throws. `McpJwtAuthStrategy` from `@onivoro/server-mcp-auth` implements both interfaces.
+`requireBearerAuth` only takes effect when `authStrategy` is also set, and that provider must implement the SDK's `OAuthTokenVerifier` (`verifyAccessToken()`, from `@modelcontextprotocol/server`); otherwise module init throws. `McpJwtAuthStrategy` from `@onivoro/server-mcp-auth` implements both interfaces.
+
+A verifier rejects a token by throwing `new OAuthError(OAuthErrorCode.InvalidToken, message)` (from `@modelcontextprotocol/server`), which becomes the `401` challenge. Any other error, including v1's `InvalidTokenError`, becomes a `500`. The verified token must have an `expiresAt`, or it is rejected.
+
+Authentication applies to clients of both protocol eras: the verified token reaches tools as `context.authInfo` either way.
 
 You can customize the advertised Protected Resource Metadata URL:
 
@@ -1209,6 +1389,13 @@ McpHttpModule.registerAndServeHttp({
 
 `resourceMetadataUrl` must be an absolute URL or a root-relative path (validated at init). If it is omitted, the module derives the RFC 9728 path-specific URL from the MCP route it serves.
 
+`expectedResource` (an absolute URL, validated at init) makes the transport reject, with `401`, any token whose `resource` (as the verifier reports it) isn't this server. It adds to the audience check the verifier does itself; `McpJwtAuthStrategy` reports `resourceIdentifier` as the resource once it has checked the token's `aud`.
+
+Two more things happen on authenticated requests:
+
+- **Scope challenges.** A `tools/call` for a tool guarded by `McpScopeGuard` whose token lacks the scopes gets `403 insufficient_scope`, so the client can ask for them. See [Built-in scope guard](#built-in-scope-guard).
+- **Session ownership.** With stateful sessions, a session belongs to the principal that opened it: by default the token's `clientId` plus `extra.sub` (the JWT subject, which `@onivoro/server-mcp-auth` provides). Another principal presenting the same `Mcp-Session-Id` gets `404`, as if the session didn't exist. Pass `session.principal` to identify owners differently.
+
 Route examples:
 
 | Host app                     | `route`            | MCP endpoint        | Default path-derived PRM URL                                 |
@@ -1220,7 +1407,7 @@ Route examples:
 
 ### Serving the path-derived PRM route yourself
 
-`@onivoro/server-mcp-auth` and `@onivoro/server-mcp-oauth` serve these routes for you. If you write your own controller for them, use the route helpers. Nest 10 and Nest 11 need different wildcard syntax: Nest 11's path-to-regexp v8 rejects `:param(*)`, and Nest 10 misreads `*param`. No single route string works on both.
+`@onivoro/server-mcp-auth` serves these routes for you. (So does the deprecated `@onivoro/server-mcp-oauth`; if you still import both, pass `serveProtectedResourceMetadata: false` to `McpOAuthModule`.) If you write your own controller for them, use the route helpers. Nest 10 and Nest 11 need different wildcard syntax: Nest 11's path-to-regexp v8 rejects `:param(*)`, and Nest 10 misreads `*param`. No single route string works on both.
 
 - `PROTECTED_RESOURCE_WILDCARD` is the wildcard for the installed Nest, computed once when the package loads. It reads the version of `@nestjs/core` resolved from the app's working directory first, then the one this package resolves. If neither can be read, it logs a warning and uses the Nest 11 syntax.
 - `protectedResourceWildcardRoute(nestVersion)` returns `'*resourcePath'` when the major version of `nestVersion` is 11 or higher, and `':resourcePath(*)'` otherwise. Use it to pick the syntax for a version you supply yourself. The parameter is always named `resourcePath`.
@@ -1367,12 +1554,12 @@ For custom authorization logic beyond scope checking, implement a `McpCanActivat
 
 ## Package combinations
 
-| Goal                                           | Packages                                                                         | Notes                                                                      |
-| ---------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Plain MCP server                               | `@onivoro/server-mcp`                                                            | No auth required                                                           |
-| Protected MCP server using external JWT/OAuth  | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth`                               | Use `authStrategy: McpJwtAuthStrategy` and `requireBearerAuth: true`       |
-| Embedded OAuth authorization server only       | `@onivoro/server-mcp-oauth`                                                      | Publishes auth-server endpoints; does not serve or protect tools by itself |
-| Embedded OAuth server plus protected MCP route | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth` + `@onivoro/server-mcp-oauth` | End-to-end issue, discover, challenge, and validate                        |
+| Goal                                           | Packages                                                                         | Notes                                                                                                                                                                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plain MCP server                               | `@onivoro/server-mcp`                                                            | No auth required                                                                                                                                                                                                                                          |
+| Protected MCP server using external JWT/OAuth  | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth`                               | Use `authStrategy: McpJwtAuthStrategy` and `requireBearerAuth: true`                                                                                                                                                                                      |
+| Embedded OAuth authorization server only       | `@onivoro/server-mcp-oauth`                                                      | **Deprecated** — use a dedicated authorization server. Publishes auth-server endpoints; does not serve or protect tools by itself                                                                                                                         |
+| Embedded OAuth server plus protected MCP route | `@onivoro/server-mcp` + `@onivoro/server-mcp-auth` + `@onivoro/server-mcp-oauth` | **Deprecated** — use a dedicated authorization server with `@onivoro/server-mcp-auth`. End-to-end issue, discover, challenge, and validate; pass `serveProtectedResourceMetadata: false` to `McpOAuthModule` so only `McpAuthModule` serves the PRM route |
 
 See also: [MCP Server Package Guide](https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-package-guide.md)
 
@@ -1380,17 +1567,32 @@ See also: [MCP Server Package Guide](https://github.com/onivoro/monorepo/blob/ma
 
 The package test suite covers:
 
-- Streamable HTTP session lifecycle and stale-session recovery
-- stdio transport wiring
-- registry discovery and execution
-- HTTP bearer challenge behavior and PRM URL derivation
+- Streamable HTTP session lifecycle, stale-session recovery, and session ownership
+- stateless HTTP: `405` for `GET`/`DELETE`, ignored session headers, and the capabilities it advertises
+- `Origin` and `Host` validation
+- stdio transport wiring and its stderr logging
+- registry discovery and execution, including which error messages reach the client
+- end to end over HTTP, with the MCP SDK's own v2 client in both protocol eras against stateful and stateless servers: `inputRequired` (bridged to elicitation for 2025-era clients), progress, log levels, list-changed notifications over `subscriptions/listen`, and resource updates
+- end to end over stdio in both eras, including list-changed notifications
+- in memory against the SDK client (2025 protocol): prompt completions, progress, log levels, sampling, structured output, error messages
+- HTTP bearer challenge behavior, `insufficient_scope` challenges, and PRM URL derivation
 - auth strategy resolution through Nest DI
 - the PRM route helpers: wildcard syntax per Nest major, reading the installed Nest version and its fallback, and trailing-slash handling
 
 ## Troubleshooting
 
-- `Invalid session ID`
-  Restart the client or ensure the first request after reconnect is `initialize`. HTTP sessions are in-memory by default.
+- `Session not found` (404)
+  Restart the client or ensure the first request after reconnect is `initialize`. HTTP sessions are in-memory by default. With bearer auth, the session may also belong to a different user than the token's.
+- `403` with `Origin "..." is not allowed` or `Host "..." is not allowed`
+  A browser-based client on another origin needs `allowedOrigins`. A server reached through a host name on a loopback address needs `allowedHosts`, or a proxy that sends `X-Forwarded-*` headers. See [DNS rebinding protection](#dns-rebinding-protection).
+- `405` on `GET` or `DELETE`
+  Expected in stateless mode (no `session` config): there is no stream to open and no session to delete. 2026-07-28 clients never send them.
+- Progress or logs never arrive
+  They need SSE responses (`enableJsonResponse: false`, the default). A 2026-07-28 client only gets log messages for requests that name a log level.
+- A tool that returns `inputRequired(...)` fails for a 2025-era client
+  The SDK has to send that client requests: use stateful `session` and SSE responses, or stdio. The client must also support elicitation (or whatever the tool asks for).
+- A 2026-07-28 client never hears about new tools or resource updates
+  It has to open a `subscriptions/listen` stream; the SDK client does that when you configure `listChanged`, or call `client.listen(...)`.
 - Anonymous requests still work
   Set `requireBearerAuth: true`. An `authStrategy` alone does not force an HTTP `401` challenge.
 - Fastify does not work
@@ -1400,33 +1602,37 @@ The package test suite covers:
 
 ## DNS rebinding protection
 
-The MCP spec (2025-03-26+) recommends that Streamable HTTP servers validate the `Origin` header to prevent DNS rebinding attacks — where a malicious website makes requests to a locally-running MCP server from the browser.
+The MCP spec requires Streamable HTTP servers to validate the `Origin` header, and to answer an invalid one with `403`. That protects a server from web pages: in a DNS rebinding attack, a malicious site points its own host name at the server's address (typically `127.0.0.1`), so the browser treats requests to a locally running MCP server as same-origin.
 
-Enable it by setting `allowedOrigins` in the HTTP module config:
+The module checks every request, before authentication:
+
+- **`Origin`.** A request without `Origin` is allowed; non-browser MCP clients (Claude Desktop, Claude Code, curl) don't send it. With `allowedOrigins` set, the origin must be in the list (`'*'` allows any). Without it, only the server's own origin is allowed: the origin's host (and port) must match the request's, taken from `X-Forwarded-Host` when a proxy sets it, else `Host`.
+- **`Host`.** With `allowedHosts` set, the `Host` header must be in the list (`host` or `host:port`, case-insensitive). Without it, a request that arrives on a loopback address (`127.0.0.1`, `::1`) must name `localhost`, `127.0.0.1` or `[::1]`, unless it carries `X-Forwarded-For`, `X-Forwarded-Host` or `Forwarded` (a local reverse proxy forwarding the public host name; a browser can't add those to a cross-origin request without a CORS preflight). Other requests aren't checked.
+
+A rebound page sends a matching `Origin` and `Host`, so the `Host` check is what stops it for local servers. Set `allowedHosts` when a server reached by its own host name must also be protected.
 
 ```typescript
 McpHttpModule.registerAndServeHttp({
   metadata: { name: 'my-server', version: '1.0.0' },
-  allowedOrigins: ['http://localhost:3000', 'https://my-app.example.com'],
+  allowedOrigins: ['http://localhost:6274', 'https://my-app.example.com'], // e.g. MCP Inspector, a web client
+  allowedHosts: ['mcp.example.com', 'localhost:3000'],
 });
 ```
 
-When `allowedOrigins` is set:
-
-- Requests **with** an `Origin` header not in the list are rejected with `403 Forbidden`.
-- Requests **without** an `Origin` header are always allowed — non-browser MCP clients (Claude Desktop, Claude Code, curl, MCP Inspector) don't send `Origin`.
-- When not set, Origin validation is disabled (backward-compatible default).
+Browser-based clients on another origin, such as MCP Inspector connecting directly from its web UI, need their origin in `allowedOrigins`.
 
 ## CORS
 
 The library exports constants for MCP protocol compliance:
 
-| Export                     | Values                                                                                                            |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `MCP_CORS_METHODS`         | `GET`, `POST`, `DELETE`, `OPTIONS`                                                                                |
-| `MCP_CORS_ALLOWED_HEADERS` | `Content-Type`, `Accept`, `Authorization`, `x-api-key`, `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Last-Event-ID` |
-| `MCP_CORS_EXPOSED_HEADERS` | `Mcp-Session-Id`, `Mcp-Protocol-Version`                                                                          |
-| `MCP_CORS_CONFIG`          | Complete CORS config object combining the above (pass directly to `app.enableCors()`)                             |
+| Export                     | Values                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MCP_CORS_METHODS`         | `GET`, `POST`, `DELETE`, `OPTIONS`                                                                                                          |
+| `MCP_CORS_ALLOWED_HEADERS` | `Content-Type`, `Accept`, `Authorization`, `x-api-key`, `Mcp-Session-Id`, `Mcp-Protocol-Version`, `Last-Event-ID`, `Mcp-Method`, `Mcp-Name` |
+| `MCP_CORS_EXPOSED_HEADERS` | `Mcp-Session-Id`, `Mcp-Protocol-Version`, `WWW-Authenticate`                                                                                |
+| `MCP_CORS_CONFIG`          | Complete CORS config object combining the above (pass directly to `app.enableCors()`)                                                       |
+
+2026-07-28 clients send `Mcp-Method` and `Mcp-Name` on every request. A tool can also ask clients to mirror arguments into `Mcp-Param-<name>` headers; CORS can't allow those by pattern, so a browser client calling such a tool needs them added to `allowedHeaders` by name.
 
 ## Transport lifecycle
 
@@ -1435,17 +1641,28 @@ The library exports constants for MCP protocol compliance:
 This library implements the **Streamable HTTP** transport, not the legacy SSE transport:
 
 - **SSE transport (legacy)**: Two endpoints — `GET /sse` opens a persistent SSE stream for server-to-client messages, `POST /messages` sends client-to-server requests. This was the original MCP HTTP transport.
-- **Streamable HTTP (current)**: A single `/mcp` endpoint (this module handles `POST`, `GET`, `DELETE`, and `OPTIONS` on it). Responses can be either JSON or SSE streams depending on the `Accept` header. When a client sends `text/event-stream` in its accept header, the server can stream responses over the same POST connection.
+- **Streamable HTTP (current)**: A single `/mcp` endpoint (this module handles `POST`, `GET`, `DELETE`, and `OPTIONS` on it). By default each POST is answered with an SSE stream, which carries progress, log messages and server-to-client requests sent while a tool runs, then the result. With `enableJsonResponse: true`, each POST gets a single JSON body instead, and those in-flight messages can't be sent.
+
+The endpoint serves both protocol eras. Each POST is classified by the SDK (`isLegacyRequest`):
+
+- **2026-07-28 requests** carry the protocol version in `_meta`. They go to the SDK's `createMcpHandler`, which builds a server for the request and discards it afterwards. There are no sessions and no `initialize`, whatever the `session` config says; clients find out about changes on `subscriptions/listen` streams, which the handler keeps open and the module feeds from the registry.
+- **Everything else** — `initialize`, requests without the 2026 `_meta`, and all `GET`/`DELETE` — is a 2025-era client's, and is served as below, statelessly or with sessions.
 
 By default, HTTP MCP is stateless. When `session` is omitted, the server does
 not emit `Mcp-Session-Id`, and each request can be handled by any instance.
 This is the recommended mode for load-balanced request/response tool servers
 where auth is carried by each HTTP request, such as OAuth bearer-token protected
-tool APIs.
+tool APIs. (2026-07-28 clients are served statelessly in either mode.)
 
-In stateless mode each POST gets its own MCP server, which is unwired from the
-registry and closed when the response closes. (In stateful mode the same happens
-to a server whose request never initializes a session.)
+In stateless mode each 2025-era POST gets its own MCP server, which is unwired
+from the registry and closed when the response closes. (In stateful mode the same
+happens to a server whose request never initializes a session.) A stateless server
+answers `GET` and `DELETE` with `405`, since there is no standalone stream or
+session, and ignores any `Mcp-Session-Id` header. For 2025-era clients it
+advertises `listChanged: false` and resource `subscribe: false`, because it has no
+stream for notifications outside a request, and their tools get no
+`createMessage`, `elicitInput` or `listRoots` and can't use `inputRequired`,
+because a per-request server can't send requests back.
 
 Stateless mode is MCP spec-compliant: Streamable HTTP servers may assign session
 IDs, but are not required to. If a server does assign one, clients must send it
@@ -1464,11 +1681,14 @@ McpHttpModule.registerAndServeHttp({
 });
 ```
 
-When `session` is present, the server creates an `Mcp-Session-Id` during
-initialization and requires clients to send that ID on subsequent requests.
-Use this for single-instance servers, sticky-routed deployments, resource
-subscriptions, server-initiated messages, resumable SSE streams, or deliberate
-per-session server state.
+When `session` is present, the server creates an `Mcp-Session-Id` when a
+2025-era client initializes and requires it on that client's later requests.
+Use this when 2025-era clients need resource subscriptions, list-changed
+notifications, `inputRequired` or other server-to-client requests, resumable SSE
+streams, or deliberate per-session server state, on a single instance or a
+sticky-routed deployment. 2026-07-28 clients get subscriptions, list-changed
+notifications and `inputRequired` without sessions; their protocol has no
+resumable streams or per-session state.
 
 Stateful sessions are created on the first `POST /mcp` initialize handshake,
 destroyed on `DELETE /mcp` or idle TTL expiry, and cleaned up on application
@@ -1476,11 +1696,11 @@ shutdown.
 
 #### Resumability
 
-MCP clients can reconnect after a network drop and resume their SSE stream from where they left off. This requires an `EventStore` implementation that persists outgoing events so they can be replayed on reconnect.
+2025-era clients can reconnect after a network drop and resume their SSE stream from where they left off. This requires an `EventStore` implementation that persists outgoing events so they can be replayed on reconnect. (Spec 2026-07-28 drops resumability: a 2026-07-28 client whose stream breaks retries the request.)
 
 ```typescript
 import { randomUUID } from 'node:crypto';
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import type { JSONRPCMessage } from '@modelcontextprotocol/server';
 import type { EventId, EventStore, StreamId } from '@onivoro/server-mcp';
 
 // In-memory store for development (events are lost on restart)
@@ -1514,27 +1734,30 @@ McpHttpModule.registerAndServeHttp({
   session: {
     eventStore, // Enable resumability
   },
-  enableJsonResponse: false, // Use SSE streams (required for resumability)
 });
 ```
 
-For production, implement `EventStore` with a persistent backend (Redis, database). The `enableJsonResponse` option should be set to `false` when using resumability, since JSON responses are not streamable.
+For production, implement `EventStore` with a persistent backend (Redis, database). Resumability needs SSE responses, so leave `enableJsonResponse` at its default (`false`).
 
 Additional transport options:
 
-| Option                | Default               | Description                                                        |
-| --------------------- | --------------------- | ------------------------------------------------------------------ |
-| `session`             | `undefined`           | Omit for stateless mode. Configure to enable stateful MCP sessions |
-| `session.ttlMinutes`  | `30`                  | Idle timeout for stateful sessions                                 |
-| `session.idGenerator` | `crypto.randomUUID()` | Custom stateful session ID generator                               |
-| `session.eventStore`  | `undefined`           | Event store for SSE resumability                                   |
-| `enableJsonResponse`  | `true`                | Return JSON instead of SSE streams                                 |
+| Option                | Default                             | Description                                                                               |
+| --------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| `session`             | `undefined`                         | Omit for stateless mode. Configure to enable stateful MCP sessions                        |
+| `session.ttlMinutes`  | `30`                                | Idle timeout for stateful sessions                                                        |
+| `session.idGenerator` | `crypto.randomUUID()`               | Custom stateful session ID generator                                                      |
+| `session.eventStore`  | `undefined`                         | Event store for SSE resumability                                                          |
+| `session.principal`   | `clientId` + `extra.sub`            | Who owns a session; see [Transport-level authentication](#transport-level-authentication) |
+| `enableJsonResponse`  | `false`                             | Return one JSON body instead of an SSE stream                                             |
+| `allowedOrigins`      | same origin only                    | See [DNS rebinding protection](#dns-rebinding-protection)                                 |
+| `allowedHosts`        | loopback names on a loopback socket | See [DNS rebinding protection](#dns-rebinding-protection)                                 |
 
 ### Stdio (`McpStdioModule`)
 
-A single `McpServer` is created and connected to `StdioServerTransport` during `onModuleInit`. There are no sessions — the server runs for the lifetime of the process.
+`onModuleInit` starts `serveStdio` on a `StdioServerTransport`. The `McpServer` is built when the client's first message arrives, for the era that message speaks (the SDK may also build and discard one to answer a `server/discover` probe). There are no sessions — the connection lasts for the lifetime of the process.
 
 - The server starts automatically when the NestJS application context initializes.
+- Nest's logs go to stderr, since stdout carries the protocol. See [Logging goes to stderr](#logging-goes-to-stderr).
 - The transport and server are closed on application shutdown (`onModuleDestroy`).
 - Use `NestFactory.createApplicationContext()` instead of `NestFactory.create()` — there's no HTTP listener.
 
@@ -1569,7 +1792,9 @@ McpAuthInfo; // { token, clientId, scopes, expiresAt?, resource?, extra? }
 McpAuthStrategy; // Interface — resolveAuth(authInfo?) for centralized auth validation and enrichment
 markMcpAuthInfoResolved; // (authInfo) => authInfo — in-process callers: skip the auth strategy for this exact object (guards still run)
 isMcpAuthInfoResolved; // (authInfo?) => boolean — whether that exact object was marked
-McpToolContext; // { toolName, params, metadata, authInfo?, sessionId?, signal?, sendProgress?, sendLog?, createMessage?, elicitInput?, listRoots? }
+McpToolContext; // { toolName, params, metadata, authInfo?, era?, sessionId?, signal?, sendProgress?, sendLog?, inputResponses?, requestState?, createMessage?, elicitInput?, listRoots? }
+McpToolExecutionExtra; // The transport-level part of McpToolContext — executeToolRaw/executeToolWrapped's `extra`
+McpProtocolEra; // 'modern' (spec 2026-07-28) | 'legacy' (2025-11-25 and earlier)
 McpLogLevel; // 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'
 
 // Guards
@@ -1579,7 +1804,11 @@ McpGuardMetadata; // { guardClass, config? }
 McpScopeGuard; // Built-in guard — checks authInfo.scopes against required scopes
 
 // Interceptors
-McpToolInterceptor; // Interface — intercept(context, next) onion-model wrapping
+McpToolInterceptor; // Interface — intercept(context, next) onion-model wrapping; optional onRejected(context, error)
+
+// Errors
+McpToolError; // Error whose message is shown to the MCP client
+McpAccessDeniedError; // McpToolError thrown when a guard rejects a call; guardName holds the guard class name
 
 // Registration change events
 McpRegistrationChangeType; // 'tool' | 'resource' | 'prompt'
@@ -1595,8 +1824,9 @@ McpPrompt; // Method decorator for prompts
 mcpSchemaToJsonSchema; // z.ZodObject → JSON Schema object (via zod v4 native z.toJSONSchema)
 
 // Wiring helpers
-wireRegistryToServer; // Register all entries onto McpServer + subscribe to future changes; returns unsubscribe fn
-buildCapabilities; // Build MCP capabilities object from current registry state
+wireRegistryToServer; // (registry, server, options?) — register all entries onto McpServer + subscribe to future changes; returns unsubscribe fn
+WireRegistryToServerOptions; // { requestScopedMessages?, unsolicitedMessages?, era?, followRegistry? } — the server's era and what its transport can deliver
+buildCapabilities; // (registry, { logging?, notifications? }?) — build MCP capabilities object from current registry state
 wrapResourceResult; // Auto-wrap raw handler return → McpResourceResult
 wrapPromptResult; // Auto-wrap raw handler return → McpPromptResult
 
@@ -1605,22 +1835,27 @@ PROTECTED_RESOURCE_WILDCARD; // '*resourcePath' or ':resourcePath(*)', for the i
 protectedResourceWildcardRoute; // (nestVersion) => '*resourcePath' (Nest 11+) or ':resourcePath(*)' (Nest 10)
 wildcardParamToPath; // (string | string[] | undefined) => path string; joins Nest 11 segments with '/', drops trailing slashes
 
-// SDK re-exports (types)
+// SDK re-exports (from @modelcontextprotocol/server)
+inputRequired; // Build an InputRequiredResult: inputRequired({ inputRequests, requestState? }), inputRequired.elicit(...), .elicitUrl(...)
+acceptedContent; // (inputResponses, key, schema?) => the accepted, validated answer, or undefined
+inputResponse; // (inputResponses, key) => the answer as { kind: 'missing' | 'elicit' | 'sampling' | 'roots', ... }
+createRequestStateCodec; // Sign and verify requestState carried across inputRequired rounds
+InputRequiredResult; // Type — what inputRequired() returns
 EventStore; // Interface for SSE resumability event storage
 StreamId; // String alias for stream identifiers
 EventId; // String alias for event identifiers
 
 // Interfaces
 McpModuleConfig; // Configuration for McpHttpModule.registerAndServeHttp()
-McpHttpSessionConfig; // { ttlMinutes?, idGenerator?, eventStore? } — McpModuleConfig.session
+McpHttpSessionConfig; // { ttlMinutes?, idGenerator?, eventStore?, principal? } — McpModuleConfig.session
 McpModuleAsyncOptions; // { route?, imports?, inject?, useFactory } for McpHttpModule.registerAndServeHttpAsync()
 McpAsyncModuleConfig; // Omit<McpModuleConfig, 'route'> — what the async useFactory returns
 McpStdioConfig; // Configuration for McpStdioModule.registerAndServeStdio()
-McpStdioAsyncOptions; // { imports?, inject?, useFactory } for McpStdioModule.registerAndServeStdioAsync()
+McpStdioAsyncOptions; // { imports?, inject?, useFactory, redirectLogsToStderr? } for McpStdioModule.registerAndServeStdioAsync()
 McpServerMetadata; // { name, version, description?, instructions? }
 McpToolMetadata; // { name, description, title?, schema?, outputSchema?, aliases?, annotations?, icons? }
 McpToolAnnotations; // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
-McpIcon; // { url: string, mediaType?, size? } — icon for tools/resources/prompts
+McpIcon; // { src: string, mimeType?, sizes?: string[], theme?: 'light' | 'dark' } — icon for tools/resources/prompts
 McpResourceMetadata; // { name, uri, title?, description?, mimeType?, size?, icons?, annotations?, isTemplate?, listStrategy?, completeStrategy? }
 McpResourceAnnotations; // { audience?, priority?, lastModified? } — annotations for resources
 McpPromptMetadata; // { name, title?, description?, argsSchema?, icons?, completeStrategy? }
@@ -1629,8 +1864,9 @@ McpPromptMetadata; // { name, title?, description?, argsSchema?, icons?, complet
 McpResourceListStrategy; // Interface — list() for resource template list callbacks
 McpCompletionStrategy; // Interface — complete(argName, value, context?) for completion callbacks
 
-// Service
+// Services
 McpHttpService; // HTTP session manager — handleRequest(req, res); exported only by McpHttpModule
+McpStderrLogger; // Nest ConsoleLogger that writes every level to stderr, for stdio servers
 
 // Constants
 MCP_MODULE_CONFIG; // DI token for McpHttpModule config
@@ -1647,27 +1883,30 @@ MCP_CORS_CONFIG; // Complete CORS config object (methods, allowedHeaders, expose
 
 ## Companion libraries
 
-| Library                                                                                            | Purpose                                                                                                   |
-| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| [`@onivoro/server-mcp-llm-adapter`](https://www.npmjs.com/package/@onivoro/server-mcp-llm-adapter) | Generic LLM adapter — Bedrock Converse, OpenAI, Anthropic, Gemini, Mistral                                |
-| [`@onivoro/server-mcp-auth`](https://www.npmjs.com/package/@onivoro/server-mcp-auth)               | Resource server auth — JWT validation, JWKS, scope auto-discovery, RFC 9728 Protected Resource Metadata   |
-| [`@onivoro/server-mcp-oauth`](https://www.npmjs.com/package/@onivoro/server-mcp-oauth)             | Embedded OAuth 2.1 authorization server — wraps SDK's `OAuthServerProvider` + `mcpAuthRouter` into NestJS |
-| [`@onivoro/create-mcp-server`](https://www.npmjs.com/package/@onivoro/create-mcp-server)           | Scaffold CLI — `npx @onivoro/create-mcp-server` bootstraps a ready-to-run NestJS MCP server               |
+| Library                                                                                            | Purpose                                                                                                                                              |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`@onivoro/server-mcp-llm-adapter`](https://www.npmjs.com/package/@onivoro/server-mcp-llm-adapter) | Generic LLM adapter — Bedrock Converse, OpenAI, Anthropic, Gemini, Mistral                                                                           |
+| [`@onivoro/server-mcp-auth`](https://www.npmjs.com/package/@onivoro/server-mcp-auth)               | Resource server auth — JWT validation, JWKS, scope auto-discovery, RFC 9728 Protected Resource Metadata                                              |
+| [`@onivoro/server-mcp-oauth`](https://www.npmjs.com/package/@onivoro/server-mcp-oauth)             | **Deprecated.** Embedded OAuth 2.1 authorization server — wraps the SDK's frozen `mcpAuthRouter` (`@modelcontextprotocol/server-legacy`) into NestJS |
+| [`@onivoro/create-mcp-server`](https://www.npmjs.com/package/@onivoro/create-mcp-server)           | Scaffold CLI — `npx @onivoro/create-mcp-server` bootstraps a ready-to-run NestJS MCP server                                                          |
 
 ## Peer dependencies
 
 ```json
 {
-  "@modelcontextprotocol/sdk": "^1.31.0",
+  "@modelcontextprotocol/node": "^2.1.1",
+  "@modelcontextprotocol/server": "^2.3.1",
   "@nestjs/common": "^10.0.0 || ^11.0.0",
   "@nestjs/core": "^10.0.0 || ^11.0.0",
   "express": "^4.0.0 || ^5.0.0",
   "reflect-metadata": "^0.1.12 || ^0.2.0",
-  "zod": "^4.0.0"
+  "zod": "^4.2.0"
 }
 ```
 
-`express` is optional: only its types are used, by `McpHttpModule`.
+`express` is optional: only its types are used, by `McpHttpModule`. The MCP SDK's v2 packages need Node 20 or later and zod 4.2 or later.
+
+Coming from a version built on `@modelcontextprotocol/sdk` 1.x: replace it with the two SDK packages above. Code that imports from the SDK directly moves too (`McpServer`, `OAuthTokenVerifier`, `AuthInfo` and `EventStore` now come from `@modelcontextprotocol/server`), and a verifier must throw `OAuthError` (see [Transport-level authentication](#transport-level-authentication)). Resource and prompt handlers receive the SDK's v2 request context (`ctx`) where they used to get v1's `extra`. `McpIcon` uses the spec's field names (`src`, `mimeType`, `sizes`).
 
 ## Recommended patterns
 

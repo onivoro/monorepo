@@ -1,4 +1,4 @@
-import { DynamicModule, Module } from '@nestjs/common';
+import { DynamicModule, Logger, Module } from '@nestjs/common';
 import type { McpAuthConfig } from './mcp-auth-config';
 import type { McpAuthAsyncOptions } from './mcp-auth-async-options';
 import type { McpCognitoAuthConfig } from './mcp-cognito-auth-config';
@@ -43,7 +43,7 @@ import { McpProtectedResourceController } from './mcp-protected-resource.control
 @Module({})
 export class McpAuthModule {
   static configureJwt(config: McpAuthConfig): DynamicModule {
-    const validatedConfig = validateAuthConfig(config);
+    const validatedConfig = validateAuthConfig(validateJwtAudience(config));
     const controllers =
       (validatedConfig.serveProtectedResourceMetadata ?? true)
         ? [McpProtectedResourceController]
@@ -76,7 +76,9 @@ export class McpAuthModule {
         {
           provide: MCP_AUTH_CONFIG,
           useFactory: async (...args: unknown[]) =>
-            validateAuthConfig(await options.useFactory(...args)),
+            validateAuthConfig(
+              validateJwtAudience(await options.useFactory(...args)),
+            ),
           inject: options.inject || [],
         },
         McpJwksService,
@@ -169,6 +171,28 @@ export class McpAuthModule {
   static registerAsync(options: McpAuthAsyncOptions): DynamicModule {
     return this.configureJwtAsync(options);
   }
+}
+
+/**
+ * The spec requires a server to accept only tokens issued for it. A generic JWT config
+ * must say how to recognize those: `audience`, `resourceIdentifier`, or an explicit
+ * `allowAnyAudience` for issuers that bind tokens some other way. (Cognito binds them by
+ * `client_id`, which `configureCognito` checks, so this applies to `configureJwt` only.)
+ */
+function validateJwtAudience(config: McpAuthConfig): McpAuthConfig {
+  if (config.audience || config.resourceIdentifier) return config;
+
+  if (!config.allowAnyAudience) {
+    throw new Error(
+      'McpAuthModule.configureJwt requires audience or resourceIdentifier, so that only tokens issued for this server are accepted. ' +
+        'Set allowAnyAudience: true only if the issuer binds tokens to this server some other way.',
+    );
+  }
+
+  new Logger('McpAuthModule').warn(
+    'allowAnyAudience is set: tokens are accepted whatever their audience. Make sure the issuer only issues tokens meant for this server.',
+  );
+  return config;
 }
 
 function validateAuthConfig(config: McpAuthConfig): McpAuthConfig {

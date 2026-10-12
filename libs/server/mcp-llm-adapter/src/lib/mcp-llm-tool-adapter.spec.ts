@@ -215,6 +215,59 @@ describe('McpLlmToolAdapter', () => {
       expect(results[1].error).toContain('boom');
     });
 
+    it('should report a tool that returns isError as a failure', async () => {
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
+      registry.registerTool(
+        { name: 'soft-fail', description: 'd' },
+        jest.fn().mockResolvedValue({
+          content: [
+            { type: 'text', text: 'Quota exceeded' },
+            { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+            { type: 'text', text: 'Try tomorrow' },
+          ],
+          isError: true,
+        }),
+      );
+      registry.registerTool(
+        { name: 'bare-fail', description: 'd' },
+        jest.fn().mockResolvedValue({ content: [], isError: true }),
+      );
+
+      const [soft, bare] = await adapter.executeToolsForProvider([
+        { providerName: 'soft-fail', params: {}, id: 'x' },
+        { providerName: 'bare-fail', params: {} },
+      ]);
+
+      expect(soft).toEqual({
+        providerName: 'soft-fail',
+        id: 'x',
+        error: 'Quota exceeded\nTry tomorrow',
+        success: false,
+      });
+      expect(bare.error).toBe('Tool execution failed');
+      await expect(
+        adapter.executeToolForProvider('soft-fail', {}),
+      ).rejects.toThrow('Quota exceeded\nTry tomorrow');
+    });
+
+    it('should report a tool that asks for input (inputRequired) as a failure', async () => {
+      const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
+      registry.registerTool(
+        { name: 'needs-input', description: 'd' },
+        jest.fn().mockResolvedValue({
+          resultType: 'input_required',
+          inputRequests: { confirm: { method: 'elicitation/create' } },
+        }),
+      );
+
+      const [result] = await adapter.executeToolsForProvider([
+        { providerName: 'needs-input', params: {} },
+      ]);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('needs input from the user');
+    });
+
     it('should report unknown provider names as errors without blocking siblings', async () => {
       const adapter = new McpLlmToolAdapter(registry, SIMPLE_CONFIG);
       registry.registerTool(
@@ -280,13 +333,11 @@ describe('McpLlmToolAdapter', () => {
 
   describe('output schema forwarding', () => {
     it('should use formatToolWithOutput when config provides it and tool has outputSchema', () => {
-      const formatToolWithOutput = jest
-        .fn()
-        .mockReturnValue({
-          name: 'extended',
-          inputSchema: {},
-          outputSchema: {},
-        });
+      const formatToolWithOutput = jest.fn().mockReturnValue({
+        name: 'extended',
+        inputSchema: {},
+        outputSchema: {},
+      });
       const config: LlmAdapterConfig<any> = {
         ...SIMPLE_CONFIG,
         formatToolWithOutput,

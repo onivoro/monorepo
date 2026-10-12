@@ -3,6 +3,19 @@ import { buildPrompts } from './prompts';
 import { generate } from './generator';
 import type { ScaffoldOptions, Transport } from './types';
 
+/** A mistake in how the CLI was invoked: reported as a plain message, without a stack. */
+export class CliUsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CliUsageError';
+  }
+}
+
+/** Why `--oauth` is gone, for anyone still passing it. */
+export const OAUTH_FLAG_REMOVED_MESSAGE =
+  '--oauth has been removed: @onivoro/server-mcp-oauth, the embedded OAuth server it added, is deprecated. ' +
+  'Use --auth, and run a dedicated authorization server (such as Amazon Cognito, Auth0, Entra ID or Keycloak) whose tokens @onivoro/server-mcp-auth validates.';
+
 export function parseArgs(argv: string[]): {
   skip: boolean;
   overrides: Partial<ScaffoldOptions>;
@@ -24,8 +37,7 @@ export function parseArgs(argv: string[]): {
     } else if (arg === '--auth') {
       overrides.auth = true;
     } else if (arg === '--oauth') {
-      overrides.oauth = true;
-      overrides.auth = true;
+      throw new CliUsageError(OAUTH_FLAG_REMOVED_MESSAGE);
     } else if (!arg.startsWith('-') && !overrides.projectName) {
       overrides.projectName = arg;
     }
@@ -49,7 +61,6 @@ export async function run(argv: string[]): Promise<void> {
       projectName: defaults.projectName,
       transport: defaults.transport,
       auth: overrides.auth ?? false,
-      oauth: overrides.oauth ?? false,
     };
   } else {
     const answers = await prompts(buildPrompts(defaults), {
@@ -63,17 +74,12 @@ export async function run(argv: string[]): Promise<void> {
       projectName: answers.projectName ?? defaults.projectName,
       transport: answers.transport ?? defaults.transport,
       auth: answers.auth ?? false,
-      oauth: answers.oauth ?? false,
     };
 
     // Apply CLI overrides on top of prompt answers
     if (overrides.projectName) options.projectName = overrides.projectName;
     if (overrides.transport) options.transport = overrides.transport;
     if (overrides.auth) options.auth = true;
-    if (overrides.oauth) {
-      options.oauth = true;
-      options.auth = true;
-    }
   }
 
   await generate(options);

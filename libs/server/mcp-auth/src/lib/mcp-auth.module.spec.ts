@@ -19,6 +19,7 @@ describe('McpAuthModule', () => {
       imports: [
         McpAuthModule.configureJwt({
           jwksUri: 'https://example.com/.well-known/jwks.json',
+          audience: 'https://mcp.example.com',
           issuer: 'https://example.com',
           resourceServerUrl: 'https://api.example.com/mcp',
         }),
@@ -36,6 +37,7 @@ describe('McpAuthModule', () => {
       imports: [
         McpAuthModule.register({
           jwksUri: 'https://example.com/.well-known/jwks.json',
+          audience: 'https://mcp.example.com',
           issuer: 'https://example.com',
           resourceServerUrl: 'https://api.example.com/mcp',
         }),
@@ -71,6 +73,7 @@ describe('McpAuthModule', () => {
       imports: [
         McpAuthModule.configureJwt({
           jwksUri: 'https://example.com/.well-known/jwks.json',
+          audience: 'https://mcp.example.com',
           resourceServerUrl: 'https://api.example.com/mcp',
           issuer: 'https://auth.example.com',
         }),
@@ -90,6 +93,7 @@ describe('McpAuthModule', () => {
       imports: [
         McpAuthModule.configureJwt({
           jwksUri: 'https://example.com/.well-known/jwks.json',
+          audience: 'https://mcp.example.com',
           serveProtectedResourceMetadata: false,
         }),
       ],
@@ -105,6 +109,7 @@ describe('McpAuthModule', () => {
         McpAuthModule.configureJwtAsync({
           useFactory: () => ({
             jwksUri: 'https://example.com/.well-known/jwks.json',
+            audience: 'https://mcp.example.com',
             issuer: 'https://example.com',
             resourceServerUrl: 'https://api.example.com/mcp',
           }),
@@ -115,6 +120,7 @@ describe('McpAuthModule', () => {
     expect(module.get(McpJwtAuthStrategy)).toBeDefined();
     expect(module.get(MCP_AUTH_CONFIG)).toEqual({
       jwksUri: 'https://example.com/.well-known/jwks.json',
+      audience: 'https://mcp.example.com',
       issuer: 'https://example.com',
       resourceServerUrl: 'https://api.example.com/mcp',
     });
@@ -142,6 +148,7 @@ describe('McpAuthModule', () => {
       imports: [
         McpAuthModule.configureJwt({
           jwksUri: 'https://example.com/.well-known/jwks.json',
+          audience: 'https://mcp.example.com',
           serveProtectedResourceMetadata: false,
         }),
       ],
@@ -157,6 +164,7 @@ describe('McpAuthModule', () => {
       imports: [
         McpAuthModule.configureJwt({
           jwksUri: 'https://example.com/.well-known/jwks.json',
+          audience: 'https://mcp.example.com',
           serveProtectedResourceMetadata: false,
         }),
       ],
@@ -169,25 +177,33 @@ describe('McpAuthModule', () => {
   });
 
   it('should validate required Cognito config fields', () => {
-    expect(() => McpAuthModule.configureCognito({
-      region: '',
-      userPoolId: 'pool',
-      clientId: 'client',
-      resourceServerUrl: 'https://api.example.com/mcp',
-    })).toThrow(/region/);
+    expect(() =>
+      McpAuthModule.configureCognito({
+        region: '',
+        userPoolId: 'pool',
+        clientId: 'client',
+        resourceServerUrl: 'https://api.example.com/mcp',
+      }),
+    ).toThrow(/region/);
   });
 
   it('should reject missing resourceServerUrl when protected resource metadata is enabled', () => {
-    expect(() => McpAuthModule.configureJwt({
-      jwksUri: 'https://example.com/.well-known/jwks.json',
-      issuer: 'https://example.com',
-    })).toThrow(/resourceServerUrl/);
+    expect(() =>
+      McpAuthModule.configureJwt({
+        jwksUri: 'https://example.com/.well-known/jwks.json',
+        audience: 'https://mcp.example.com',
+        issuer: 'https://example.com',
+      }),
+    ).toThrow(/resourceServerUrl/);
   });
 
   it('should reject missing authorization server sources when protected resource metadata is enabled', () => {
-    expect(() => McpAuthModule.configureJwt({
-      jwksUri: 'https://example.com/.well-known/jwks.json',
-      resourceServerUrl: 'https://api.example.com/mcp',
-    })).toThrow(/authorizationServers or issuer/);
+    expect(() =>
+      McpAuthModule.configureJwt({
+        jwksUri: 'https://example.com/.well-known/jwks.json',
+        audience: 'https://mcp.example.com',
+        resourceServerUrl: 'https://api.example.com/mcp',
+      }),
+    ).toThrow(/authorizationServers or issuer/);
   });
 });

@@ -69,6 +69,7 @@ function authImports(resourceServerUrl, route) {
     McpAuthModule.configureJwt({
       jwksUri: 'https://auth.example.com/.well-known/jwks.json',
       issuer: 'https://auth.example.com',
+      audience: resourceServerUrl,
       resourceServerUrl,
     }),
     McpHttpModule.registerAndServeHttp({

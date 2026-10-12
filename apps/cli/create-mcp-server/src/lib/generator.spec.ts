@@ -1,7 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { generate, applyReplacements, processPackageJson, composeAppModule } from './generator';
+import {
+  generate,
+  applyReplacements,
+  processPackageJson,
+  composeAppModule,
+} from './generator';
 import type { ScaffoldOptions } from './types';
 
 function makeTempDir(): string {
@@ -22,7 +27,9 @@ describe('applyReplacements', () => {
   });
 
   it('should return unchanged content when no tokens match', () => {
-    expect(applyReplacements('no tokens here', { __X__: 'y' })).toBe('no tokens here');
+    expect(applyReplacements('no tokens here', { __X__: 'y' })).toBe(
+      'no tokens here',
+    );
   });
 });
 
@@ -33,46 +40,37 @@ describe('processPackageJson', () => {
     '  "dependencies": {',
     '    "@onivoro/server-mcp": "^__LIB_VERSION__",',
     '__AUTH_DEP__',
-    '__OAUTH_DEP__',
     '    "zod": "^4.0.0"',
     '  }',
     '}',
   ].join('\n');
 
   it('should include auth dep when auth=true', () => {
-    const result = processPackageJson(template, {
-      projectName: 'test',
-      transport: 'http',
-      auth: true,
-      oauth: false,
-    }, '1.0.0');
+    const result = processPackageJson(
+      template,
+      {
+        projectName: 'test',
+        transport: 'http',
+        auth: true,
+      },
+      '1.0.0',
+    );
     expect(result).toContain('"@onivoro/server-mcp-auth": "^1.0.0"');
     expect(result).not.toContain('__AUTH_DEP__');
-    expect(result).not.toContain('__OAUTH_DEP__');
-  });
-
-  it('should include both deps when oauth=true', () => {
-    const result = processPackageJson(template, {
-      projectName: 'test',
-      transport: 'http',
-      auth: true,
-      oauth: true,
-    }, '2.0.0');
-    expect(result).toContain('"@onivoro/server-mcp-auth": "^2.0.0"');
-    expect(result).toContain('"@onivoro/server-mcp-oauth": "^2.0.0"');
   });
 
   it('should strip dep lines when auth=false', () => {
-    const result = processPackageJson(template, {
-      projectName: 'test',
-      transport: 'http',
-      auth: false,
-      oauth: false,
-    }, '1.0.0');
+    const result = processPackageJson(
+      template,
+      {
+        projectName: 'test',
+        transport: 'http',
+        auth: false,
+      },
+      '1.0.0',
+    );
     expect(result).not.toContain('server-mcp-auth');
-    expect(result).not.toContain('server-mcp-oauth');
     expect(result).not.toContain('__AUTH_DEP__');
-    expect(result).not.toContain('__OAUTH_DEP__');
   });
 });
 
@@ -82,7 +80,6 @@ describe('composeAppModule', () => {
       projectName: 'test',
       transport: 'http',
       auth: false,
-      oauth: false,
     });
     expect(result).toContain('McpHttpModule');
     expect(result).not.toContain('McpStdioModule');
@@ -96,7 +93,6 @@ describe('composeAppModule', () => {
       projectName: 'test',
       transport: 'stdio',
       auth: false,
-      oauth: false,
     });
     expect(result).toContain('McpStdioModule');
     expect(result).not.toContain('McpHttpModule');
@@ -107,7 +103,6 @@ describe('composeAppModule', () => {
       projectName: 'test',
       transport: 'both',
       auth: false,
-      oauth: false,
     });
     expect(result).toContain('McpHttpModule');
     expect(result).toContain('McpStdioModule');
@@ -118,12 +113,29 @@ describe('composeAppModule', () => {
       projectName: 'test',
       transport: 'http',
       auth: true,
-      oauth: false,
     });
     expect(result).toContain('McpAuthModule');
     expect(result).toContain('McpJwtAuthStrategy');
     expect(result).toContain('authStrategy: McpJwtAuthStrategy');
     expect(result).toContain('process.env.JWKS_URI');
+    // Everything McpAuthModule.configureJwt() requires to start, plus the 401 challenge.
+    expect(result).toContain('McpAuthModule.configureJwt({');
+    expect(result).toContain('audience: process.env.JWT_AUDIENCE!');
+    expect(result).toContain(
+      'resourceServerUrl: process.env.MCP_RESOURCE_URL!',
+    );
+    expect(result).toContain('requireBearerAuth: true');
+  });
+
+  it('should turn off protected resource metadata for a stdio-only server with auth', () => {
+    const result = composeAppModule({
+      projectName: 'test',
+      transport: 'stdio',
+      auth: true,
+    });
+    expect(result).toContain('serveProtectedResourceMetadata: false');
+    expect(result).not.toContain('resourceServerUrl');
+    expect(result).not.toContain('requireBearerAuth');
   });
 
   it('should not include auth when auth=false', () => {
@@ -131,21 +143,20 @@ describe('composeAppModule', () => {
       projectName: 'test',
       transport: 'http',
       auth: false,
-      oauth: false,
     });
     expect(result).not.toContain('McpAuthModule');
     expect(result).not.toContain('McpJwtAuthStrategy');
     expect(result).not.toContain('authStrategy');
   });
 
-  it('should include oauth placeholder when oauth=true', () => {
-    const result = composeAppModule({
-      projectName: 'test',
-      transport: 'http',
-      auth: true,
-      oauth: true,
-    });
-    expect(result).toContain('McpOAuthModule');
+  it('should never reference the deprecated OAuth package', () => {
+    for (const transport of ['http', 'stdio', 'both'] as const) {
+      for (const auth of [true, false]) {
+        expect(
+          composeAppModule({ projectName: 'test', transport, auth }),
+        ).not.toMatch(/mcp-oauth|McpOAuthModule/);
+      }
+    }
   });
 
   it('should embed project name in metadata', () => {
@@ -153,7 +164,6 @@ describe('composeAppModule', () => {
       projectName: 'my-cool-server',
       transport: 'http',
       auth: false,
-      oauth: false,
     });
     expect(result).toContain("name: 'my-cool-server'");
   });
@@ -174,7 +184,6 @@ describe('generate', () => {
     projectName: 'test-server',
     transport: 'http',
     auth: false,
-    oauth: false,
   };
 
   it('should create project directory with expected files', async () => {
@@ -186,9 +195,17 @@ describe('generate', () => {
     expect(fs.existsSync(path.join(outDir, '.gitignore'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'src', 'main.ts'))).toBe(true);
     expect(fs.existsSync(path.join(outDir, 'src', 'app.module.ts'))).toBe(true);
-    expect(fs.existsSync(path.join(outDir, 'src', 'tools', 'example.tool.ts'))).toBe(true);
-    expect(fs.existsSync(path.join(outDir, 'src', 'resources', 'example.resource.ts'))).toBe(true);
-    expect(fs.existsSync(path.join(outDir, 'src', 'prompts', 'example.prompt.ts'))).toBe(true);
+    expect(
+      fs.existsSync(path.join(outDir, 'src', 'tools', 'example.tool.ts')),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(outDir, 'src', 'resources', 'example.resource.ts'),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(outDir, 'src', 'prompts', 'example.prompt.ts')),
+    ).toBe(true);
   });
 
   it('should not create .env.example when auth=false', async () => {
@@ -202,6 +219,7 @@ describe('generate', () => {
     await generate({ ...baseOptions, auth: true }, outDir);
     expect(fs.existsSync(path.join(outDir, '.env.example'))).toBe(true);
     expect(readGenerated(outDir, '.env.example')).toContain('JWKS_URI');
+    expect(readGenerated(outDir, '.env.example')).toContain('MCP_RESOURCE_URL');
   });
 
   it('should replace __PROJECT_NAME__ in generated files', async () => {
@@ -247,25 +265,26 @@ describe('generate', () => {
     expect(pkg.dependencies['@onivoro/server-mcp-auth']).toBeDefined();
   });
 
-  it('should include oauth dep in package.json when oauth=true', async () => {
-    const outDir = path.join(tmpDir, 'oauth-pkg');
-    await generate({ ...baseOptions, auth: true, oauth: true }, outDir);
+  it('should never add the deprecated OAuth packages to package.json', async () => {
+    const outDir = path.join(tmpDir, 'no-oauth');
+    await generate({ ...baseOptions, auth: true }, outDir);
     const pkg = JSON.parse(readGenerated(outDir, 'package.json'));
-    expect(pkg.dependencies['@onivoro/server-mcp-auth']).toBeDefined();
-    expect(pkg.dependencies['@onivoro/server-mcp-oauth']).toBeDefined();
+    expect(pkg.dependencies['@onivoro/server-mcp-oauth']).toBeUndefined();
+    expect(
+      pkg.dependencies['@modelcontextprotocol/server-legacy'],
+    ).toBeUndefined();
   });
 
-  it('should not include auth/oauth deps when not selected', async () => {
+  it('should not include auth deps when not selected', async () => {
     const outDir = path.join(tmpDir, 'no-deps');
     await generate(baseOptions, outDir);
     const pkg = JSON.parse(readGenerated(outDir, 'package.json'));
     expect(pkg.dependencies['@onivoro/server-mcp-auth']).toBeUndefined();
-    expect(pkg.dependencies['@onivoro/server-mcp-oauth']).toBeUndefined();
   });
 
   it('should have no remaining placeholder tokens in generated files', async () => {
     const outDir = path.join(tmpDir, 'clean');
-    await generate({ ...baseOptions, auth: true, oauth: true }, outDir);
+    await generate({ ...baseOptions, auth: true }, outDir);
 
     const files = [
       'package.json',
@@ -290,7 +309,9 @@ describe('generate', () => {
     fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(path.join(outDir, 'file.txt'), 'existing');
 
-    await expect(generate(baseOptions, outDir)).rejects.toThrow('already exists and is not empty');
+    await expect(generate(baseOptions, outDir)).rejects.toThrow(
+      'already exists and is not empty',
+    );
   });
 
   it('should include McpHttpModule in app.module for http transport', async () => {

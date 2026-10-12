@@ -52,6 +52,14 @@ export interface McpAuthConfig {
   /** RFC 8707 resource indicator. When set, the provider checks the token's `aud` matches. */
   resourceIdentifier?: string;
 
+  /**
+   * Accept tokens whatever their `aud`. `configureJwt` otherwise requires `audience` or
+   * `resourceIdentifier`, because the MCP spec requires servers to reject tokens that were
+   * not issued for them. Only set this when the issuer binds tokens to this server some
+   * other way. Logs a warning at startup.
+   */
+  allowAnyAudience?: boolean;
+
   // --- Protected Resource Metadata (RFC 9728) ---
 
   /** Base URL of this MCP server. Used as the `resource` field in PRM. Required when `serveProtectedResourceMetadata` is `true`. */

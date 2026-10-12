@@ -10,8 +10,10 @@ import { McpResource } from './mcp-resource.decorator';
 import { McpPrompt } from './mcp-prompt.decorator';
 import { z } from 'zod';
 
-jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+jest.mock('@modelcontextprotocol/server', () => ({
+  ...jest.requireActual('@modelcontextprotocol/server'),
   McpServer: jest.fn().mockImplementation(() => ({
+    isConnected: jest.fn().mockReturnValue(false),
     registerTool: jest.fn(),
     registerResource: jest.fn(),
     registerPrompt: jest.fn(),
@@ -21,16 +23,23 @@ jest.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   ResourceTemplate: jest.fn(),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => ({
-  StreamableHTTPServerTransport: jest.fn().mockImplementation((opts: any) => ({
-    handleRequest: jest.fn().mockResolvedValue(undefined),
-    close: jest.fn().mockResolvedValue(undefined),
-  })),
+jest.mock('@modelcontextprotocol/node', () => ({
+  ...jest.requireActual('@modelcontextprotocol/node'),
+  NodeStreamableHTTPServerTransport: jest
+    .fn()
+    .mockImplementation((opts: any) => ({
+      handleRequest: jest.fn().mockResolvedValue(undefined),
+      close: jest.fn().mockResolvedValue(undefined),
+    })),
 }));
 
 @Injectable()
 class TestToolService {
-  @McpTool({ name: 'test-tool', description: 'A test tool', schema: z.object({ input: z.string().describe('test input') }) })
+  @McpTool({
+    name: 'test-tool',
+    description: 'A test tool',
+    schema: z.object({ input: z.string().describe('test input') }),
+  })
   async myTool(params: { input: string }) {
     return { content: [{ type: 'text', text: `echo: ${params.input}` }] };
   }
@@ -43,7 +52,11 @@ class TestToolService {
 
 @Injectable()
 class TestResourceService {
-  @McpResource({ name: 'test-resource', uri: 'test://data', description: 'Test resource' })
+  @McpResource({
+    name: 'test-resource',
+    uri: 'test://data',
+    description: 'Test resource',
+  })
   async myResource() {
     return { contents: [{ uri: 'test://data', text: 'resource data' }] };
   }
@@ -53,7 +66,9 @@ class TestResourceService {
 class TestPromptService {
   @McpPrompt({ name: 'test-prompt', description: 'A test prompt' })
   async myPrompt() {
-    return { messages: [{ role: 'user', content: { type: 'text', text: 'hello' } }] };
+    return {
+      messages: [{ role: 'user', content: { type: 'text', text: 'hello' } }],
+    };
   }
 }
 
@@ -134,7 +149,9 @@ describe('McpHttpModule', () => {
       await module.init();
 
       const registry = module.get(McpToolRegistry);
-      const result = await registry.executeToolWrapped('test-tool', { input: 'hello' });
+      const result = await registry.executeToolWrapped('test-tool', {
+        input: 'hello',
+      });
 
       expect(result).toEqual({
         content: [{ type: 'text', text: 'echo: hello' }],
@@ -196,12 +213,14 @@ describe('McpHttpModule', () => {
       const controller = dynamicModule.controllers?.[0] as any;
       const requestMethods = getControllerRequestMethods(controller);
 
-      expect(requestMethods).toEqual(expect.arrayContaining([
-        RequestMethod.DELETE,
-        RequestMethod.GET,
-        RequestMethod.OPTIONS,
-        RequestMethod.POST,
-      ]));
+      expect(requestMethods).toEqual(
+        expect.arrayContaining([
+          RequestMethod.DELETE,
+          RequestMethod.GET,
+          RequestMethod.OPTIONS,
+          RequestMethod.POST,
+        ]),
+      );
       expect(requestMethods).not.toContain(RequestMethod.ALL);
       expect(requestMethods).not.toContain(RequestMethod.SEARCH);
     });
@@ -277,7 +296,12 @@ describe('McpHttpModule', () => {
 
       resolveAuth(authInfo: McpAuthInfo | undefined) {
         resolveAuthSpy(authInfo);
-        return authInfo ? { ...authInfo, extra: { enriched: true, dependency: this.dependency.mark } } : undefined;
+        return authInfo
+          ? {
+              ...authInfo,
+              extra: { enriched: true, dependency: this.dependency.mark },
+            }
+          : undefined;
       }
     }
 
@@ -304,15 +328,21 @@ describe('McpHttpModule', () => {
 
       const registry = module.get(McpToolRegistry);
       let handlerAuth: any;
-      registry.registerTool({ name: 'auth-test', description: 'd' }, jest.fn().mockImplementation((_p: any, ctx: any) => {
-        handlerAuth = ctx.authInfo;
-        return 'ok';
-      }));
+      registry.registerTool(
+        { name: 'auth-test', description: 'd' },
+        jest.fn().mockImplementation((_p: any, ctx: any) => {
+          handlerAuth = ctx.authInfo;
+          return 'ok';
+        }),
+      );
 
       const mockAuth = { token: 'test', clientId: 'c', scopes: [] };
       await registry.executeToolRaw('auth-test', {}, mockAuth);
       expect(resolveAuthSpy).toHaveBeenCalledWith(mockAuth);
-      expect(handlerAuth.extra).toEqual({ enriched: true, dependency: authDependency.mark });
+      expect(handlerAuth.extra).toEqual({
+        enriched: true,
+        dependency: authDependency.mark,
+      });
 
       await module.close();
     });
@@ -330,10 +360,13 @@ describe('McpHttpModule', () => {
 
       const registry = module.get(McpToolRegistry);
       let handlerAuth: any;
-      registry.registerTool({ name: 'auth-test', description: 'd' }, jest.fn().mockImplementation((_p: any, ctx: any) => {
-        handlerAuth = ctx.authInfo;
-        return 'ok';
-      }));
+      registry.registerTool(
+        { name: 'auth-test', description: 'd' },
+        jest.fn().mockImplementation((_p: any, ctx: any) => {
+          handlerAuth = ctx.authInfo;
+          return 'ok';
+        }),
+      );
 
       const mockAuth = { token: 'test', clientId: 'c', scopes: [] };
       await registry.executeToolRaw('auth-test', {}, mockAuth);
@@ -431,8 +464,11 @@ describe('McpHttpModule', () => {
       const registry = module.get(McpToolRegistry);
       const result = await registry.executeToolWrapped('failing-tool', {});
 
-      expect((result.content[0] as any).text).toContain('Error executing failing-tool');
-      expect((result.content[0] as any).text).toContain('tool exploded');
+      expect((result.content[0] as any).text).toContain(
+        'Error executing failing-tool',
+      );
+      // The error's own message stays on the server; it could carry internal details.
+      expect((result.content[0] as any).text).not.toContain('tool exploded');
 
       await module.close();
     });
@@ -442,6 +478,8 @@ describe('McpHttpModule', () => {
 function getControllerRequestMethods(controller: any): RequestMethod[] {
   return Object.getOwnPropertyNames(controller.prototype)
     .filter((name) => name !== 'constructor')
-    .map((name) => Reflect.getMetadata(METHOD_METADATA, controller.prototype[name]))
+    .map((name) =>
+      Reflect.getMetadata(METHOD_METADATA, controller.prototype[name]),
+    )
     .filter((method) => typeof method === 'number');
 }

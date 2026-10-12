@@ -152,8 +152,15 @@ describe(createMcpAuditProviders.name, () => {
         resourceType: 'invoice',
         resourceIds: [7],
         toolName: 'get-invoice',
-        context,
+        outcome: 'success',
+        context: {
+          ...context,
+          authInfo: { ...context.authInfo, token: undefined },
+        },
       },
     ]);
+    expect(
+      moduleRef.get(TestSink).events[0].context.authInfo,
+    ).not.toHaveProperty('token');
   });
 });

@@ -7,6 +7,7 @@ export { McpRegistryModule } from './lib/mcp-registry.module';
 export { McpHttpService } from './lib/mcp-http.service';
 export { McpToolRegistry } from './lib/mcp-tool-registry';
 export { McpScopeGuard } from './lib/mcp-scope-guard';
+export { McpStderrLogger } from './lib/mcp-stderr-logger';
 
 // Decorators
 export { McpTool } from './lib/mcp-tool.decorator';
@@ -61,6 +62,7 @@ export { McpGuardMetadata } from './lib/mcp-guard-metadata';
 // Tool context & interceptors
 export { McpToolContext } from './lib/mcp-tool-context';
 export { McpToolInterceptor } from './lib/mcp-tool-interceptor';
+export { McpToolError, McpAccessDeniedError } from './lib/mcp-tool-error';
 export { McpLogLevel } from './lib/mcp-log-level';
 
 // Content types & results
@@ -96,14 +98,28 @@ export {
 } from './lib/protected-resource-wildcard-route';
 
 // Wiring utilities
-export { wireRegistryToServer } from './lib/wire-registry-to-server';
+export {
+  wireRegistryToServer,
+  WireRegistryToServerOptions,
+} from './lib/wire-registry-to-server';
 export { buildCapabilities } from './lib/build-capabilities';
 export { wrapResourceResult } from './lib/wrap-resource-result';
 export { wrapPromptResult } from './lib/wrap-prompt-result';
 
-// Re-exported SDK types
+// Re-exported SDK types and helpers
 export type {
   EventStore,
   StreamId,
   EventId,
-} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+  InputRequiredResult,
+} from '@modelcontextprotocol/server';
+// For tools that ask the client for input (spec 2026-07-28 multi round-trip requests,
+// bridged to server-to-client requests for 2025-era clients).
+export {
+  inputRequired,
+  acceptedContent,
+  inputResponse,
+  createRequestStateCodec,
+} from '@modelcontextprotocol/server';
+export { McpProtocolEra } from './lib/mcp-protocol-era';
+export { McpToolExecutionExtra } from './lib/mcp-tool-execution-extra';

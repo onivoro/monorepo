@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
-import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import type { OAuthError } from '@modelcontextprotocol/server';
+import { invalidTokenError, isInvalidTokenError } from './invalid-token-error';
 import type { McpAuthInfo } from '@onivoro/server-mcp';
 import type { McpAuthConfig } from './mcp-auth-config';
 import type { McpCognitoAuthConfig } from './mcp-cognito-auth-config';
@@ -40,7 +41,7 @@ export class McpCognitoAuthStrategy extends McpJwtAuthStrategy {
    * (signature, issuer, expiry, `token_use: 'access'`), but the token may come
    * from `clientId` or any of `inProcessClientIds`. Not used by the MCP route.
    *
-   * Throws `InvalidTokenError` when the token is rejected.
+   * Throws an `invalid_token` `OAuthError` when the token is rejected.
    */
   async verifyInProcessAccessToken(token: string): Promise<McpAuthInfo> {
     try {
@@ -51,7 +52,7 @@ export class McpCognitoAuthStrategy extends McpJwtAuthStrategy {
         scopes: [],
       });
       if (!resolved) {
-        throw new InvalidTokenError('Invalid access token');
+        throw invalidTokenError('Invalid access token');
       }
       this.assertCognitoAccessToken(token, [
         this.cognitoConfig.clientId,
@@ -70,15 +71,11 @@ export class McpCognitoAuthStrategy extends McpJwtAuthStrategy {
     const payload = jwt.decode(token);
 
     if (!payload || typeof payload === 'string') {
-      throw new InvalidTokenError(
-        'Invalid JWT: unable to decode token payload',
-      );
+      throw invalidTokenError('Invalid JWT: unable to decode token payload');
     }
 
     if (payload['token_use'] !== 'access') {
-      throw new InvalidTokenError(
-        'Invalid JWT: expected a Cognito access token',
-      );
+      throw invalidTokenError('Invalid JWT: expected a Cognito access token');
     }
 
     const actualClientId =
@@ -86,21 +83,21 @@ export class McpCognitoAuthStrategy extends McpJwtAuthStrategy {
         ? payload['client_id']
         : undefined;
     if (!actualClientId || !acceptedClientIds.includes(actualClientId)) {
-      throw new InvalidTokenError(
+      throw invalidTokenError(
         `Invalid JWT: unexpected client_id "${actualClientId ?? 'missing'}"`,
       );
     }
   }
 
-  protected override toInvalidTokenError(error: unknown): InvalidTokenError {
-    if (error instanceof InvalidTokenError) {
+  protected override toInvalidTokenError(error: unknown): OAuthError {
+    if (isInvalidTokenError(error)) {
       return error;
     }
 
     const message =
       error instanceof Error ? error.message : 'Invalid access token';
     this.cognitoLogger.warn(`Cognito MCP token validation failed: ${message}`);
-    return new InvalidTokenError(message);
+    return invalidTokenError(message);
   }
 }
 

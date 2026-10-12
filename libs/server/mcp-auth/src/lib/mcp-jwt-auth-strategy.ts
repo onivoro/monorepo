@@ -1,9 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import type { McpAuthStrategy, McpAuthInfo } from '@onivoro/server-mcp';
-import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
+import type { OAuthError } from '@modelcontextprotocol/server';
+import { invalidTokenError, isInvalidTokenError } from './invalid-token-error';
+import type {
+  AuthInfo,
+  OAuthTokenVerifier,
+} from '@modelcontextprotocol/server';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
 import type { McpAuthConfig } from './mcp-auth-config';
 import { McpJwksService } from './mcp-jwks.service';
@@ -29,7 +32,9 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
 
   // -- McpAuthStrategy interface --
 
-  async resolveAuth(authInfo: McpAuthInfo | undefined): Promise<McpAuthInfo | undefined> {
+  async resolveAuth(
+    authInfo: McpAuthInfo | undefined,
+  ): Promise<McpAuthInfo | undefined> {
     if (!authInfo?.token) return undefined;
     try {
       return await this.validateAndEnrich(authInfo.token);
@@ -43,7 +48,7 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
   async verifyAccessToken(token: string): Promise<AuthInfo> {
     const mcpAuth = await this.resolveAuth({ token, clientId: '', scopes: [] });
     if (!mcpAuth) {
-      throw new InvalidTokenError('Invalid access token');
+      throw invalidTokenError('Invalid access token');
     }
     return {
       token: mcpAuth.token,
@@ -61,12 +66,12 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
     // 1. Decode header to get kid
     const decoded = jwt.decode(token, { complete: true });
     if (!decoded || typeof decoded === 'string') {
-      throw new InvalidTokenError('Invalid JWT: unable to decode token');
+      throw invalidTokenError('Invalid JWT: unable to decode token');
     }
 
     const kid = decoded.header.kid;
     if (!kid) {
-      throw new InvalidTokenError('Invalid JWT: missing kid in token header');
+      throw invalidTokenError('Invalid JWT: missing kid in token header');
     }
 
     // 2. Fetch signing key
@@ -85,7 +90,8 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
 
     // 4. Extract clientId
     const clientIdClaim = this.config.clientIdClaim ?? 'client_id';
-    const clientId = (payload[clientIdClaim] as string) ?? payload.sub ?? 'unknown';
+    const clientId =
+      (payload[clientIdClaim] as string) ?? payload.sub ?? 'unknown';
 
     // 5. Extract scopes
     const scopes = this.extractScopes(payload);
@@ -96,10 +102,15 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
     // 7. Extract resource
     const resource = this.config.resourceIdentifier ?? undefined;
 
-    // 8. Extract extra claims
+    // 8. Extract extra claims. `sub` always comes along: it identifies the user (unlike
+    // `clientId`, which every user of one OAuth client shares), and the HTTP transport
+    // binds sessions to it.
     const extra: Record<string, unknown> = {};
+    if (typeof payload.sub === 'string') extra['sub'] = payload.sub;
     if (this.config.extraClaims) {
-      for (const [claimName, extraKey] of Object.entries(this.config.extraClaims)) {
+      for (const [claimName, extraKey] of Object.entries(
+        this.config.extraClaims,
+      )) {
         if (payload[claimName] !== undefined) {
           extra[extraKey] = payload[claimName];
         }
@@ -128,13 +139,17 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
           : [];
 
     if (!audiences.includes(this.config.resourceIdentifier)) {
-      throw new InvalidTokenError(
+      throw invalidTokenError(
         `Invalid JWT: token audience does not include required resource "${this.config.resourceIdentifier}"`,
       );
     }
   }
 
-  private verifyJwt(token: string, pem: string, verifyOptions: jwt.VerifyOptions): jwt.JwtPayload {
+  private verifyJwt(
+    token: string,
+    pem: string,
+    verifyOptions: jwt.VerifyOptions,
+  ): jwt.JwtPayload {
     try {
       return jwt.verify(token, pem, verifyOptions) as jwt.JwtPayload;
     } catch (error) {
@@ -142,14 +157,15 @@ export class McpJwtAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
     }
   }
 
-  protected toInvalidTokenError(error: unknown): InvalidTokenError {
-    if (error instanceof InvalidTokenError) {
+  protected toInvalidTokenError(error: unknown): OAuthError {
+    if (isInvalidTokenError(error)) {
       return error;
     }
 
-    const message = error instanceof Error ? error.message : 'Invalid access token';
+    const message =
+      error instanceof Error ? error.message : 'Invalid access token';
     this.logger.warn(`JWT validation failed: ${message}`);
-    return new InvalidTokenError(message);
+    return invalidTokenError(message);
   }
 
   private extractScopes(payload: jwt.JwtPayload): string[] {
