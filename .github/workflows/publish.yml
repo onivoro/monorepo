@@ -90,6 +90,21 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
 
+      # Prints the claims (never the token) of the identity token npm exchanges for a publish token, so a
+      # trusted-publishing mismatch ("OIDC token exchange error - package not found") shows which field differs
+      - name: Show OIDC claims
+        run: |
+          node -e '
+            const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+            url.searchParams.set("audience", "npm:registry.npmjs.org");
+            fetch(url, { headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` } })
+              .then((response) => response.json())
+              .then(({ value }) => {
+                const claims = JSON.parse(Buffer.from(value.split(".")[1], "base64url").toString());
+                console.log(JSON.stringify(claims, null, 2));
+              });
+          '
+
       # Skips versions already on npm, so rerunning the job after a partial failure picks up where it stopped
       - name: Publish
         env:
