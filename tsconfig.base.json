@@ -57,6 +57,7 @@
       "@onivoro/server-aws-s3": ["libs/server/aws-s3/src/index.ts"],
       "@onivoro/server-aws-sns": ["libs/server/aws-sns/src/index.ts"],
       "@onivoro/server-aws-sqs": ["libs/server/aws-sqs/src/index.ts"],
+      "@onivoro/server-aws-ssm": ["libs/server/aws-ssm/src/index.ts"],
       "@onivoro/server-aws-sts": ["libs/server/aws-sts/src/index.ts"],
       "@onivoro/server-cli": ["libs/server/cli/src/index.ts"],
       "@onivoro/server-common": ["libs/server/common/src/index.ts"],
