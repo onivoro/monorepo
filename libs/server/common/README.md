@@ -156,22 +156,38 @@ export class UsersController {
 
 ### EnvironmentClass
 
-`EnvironmentClass(envFileKey?)` turns a class into a config object populated from `process.env`. If `envFileKey` is given, `process.env[envFileKey]` is treated as a path to a `.env` file that is loaded first (plus `.env.local` if present), via `loadDotEnvForKey`. Constructing the class returns a plain object; each own property is set to `process.env[<property name>]` when that variable is defined, otherwise it keeps its initializer value, and `<ClassName> MISSING ENV VAR <key>` is logged when both the env value and the initializer are empty.
+`EnvironmentClass(envFileKey?)` turns a class into a config object populated from `process.env`. If `envFileKey` is given, `process.env[envFileKey]` is treated as a path to a `.env` file that is loaded first (plus `.env.local` if present), via `loadDotEnvForKey`. Constructing the class returns a plain object.
 
 ```typescript
-import { EnvironmentClass } from '@onivoro/server-common';
+import { EnvironmentClass, EnvRequired } from '@onivoro/server-common';
 
 // ENV_FILE=.env.development node main.js
 @EnvironmentClass('ENV_FILE')
 export class AppConfig {
-  API_URL = '';
-  DATABASE_URL = '';
+  @EnvRequired() DATABASE_URL!: string;
+  API_URL?: string;
+  PORT = '3000';
 }
 
-const config = new AppConfig(); // { API_URL: process.env.API_URL ?? '', DATABASE_URL: process.env.DATABASE_URL ?? '' }
+const config = new AppConfig();
+// { DATABASE_URL: process.env.DATABASE_URL, API_URL: process.env.API_URL, PORT: process.env.PORT ?? '3000' }
 ```
 
-Give every property an initializer so it exists on the instance regardless of compiler settings. Initializers act as defaults: a defined env var (even an empty string) overrides them, an unset one leaves them in place.
+Each property is set to `process.env[<property name>]` when that variable is defined, even as an empty string. Otherwise it keeps its initializer, so use an initializer only for a real default like `PORT = '3000'`. A property with neither a value nor an initializer stays `undefined`.
+
+#### Declaring properties
+
+The decorator finds properties by constructing the class and reading its keys, plus every property marked with `@EnvRequired()` or `@EnvOptional()`:
+
+- **`@EnvRequired()`** properties must end up non-empty. If any are `undefined`, `null` or `''` after the values are applied, construction throws one error, `<ClassName> is missing required values: <key>, <key>`. The `!` in `DATABASE_URL!: string` satisfies `strictPropertyInitialization`, and it's accurate because the property either gets a value or the constructor throws.
+- **`@EnvOptional()`** properties may be empty, and no warning is logged when they are.
+- **Undecorated properties** log `<ClassName> MISSING ENV VAR <key>` when they end up empty. That includes an env var set to `''`, which replaces a non-empty initializer.
+
+An undecorated property without an initializer, like `API_URL?: string`, exists at runtime only when the class is compiled with `useDefineForClassFields: true`. That's TypeScript's default when `target` is `ES2022` or later. With `useDefineForClassFields: false` or an older `target`, TypeScript emits nothing for it, and the property is silently never read. Babel 7's TypeScript plugin also drops such fields by default, which matters if Jest runs through Babel. If you can't rely on that setting, mark the property with `@EnvOptional()`, or give it a real default.
+
+Subclasses include the decorated properties of their parent classes. A decorated class can extend another decorated class: constructing the subclass populates every property once, with the subclass's settings, and the parent's decorator does nothing. An undecorated subclass is populated by its parent's decorator.
+
+`getEnvRequiredMembers(ctr)` returns a class's required property names, `getEnvDecoratedMembers(ctr)` returns all decorated ones, and `getEnvMembers(ctr)` returns every property the decorators will read.
 
 ## DTOs
 
@@ -316,6 +332,23 @@ generateAppMetadata('api-orders', 'apps/api-orders');
 ```
 
 `loadEnvFile` uses Node's `process.loadEnvFile` (Node 20.12+) and warns if the file does not exist.
+
+`populateEnvironmentInstance(ctr, resolve, { source?, describe?, instance? })` is the logic behind `EnvironmentClass`, exported for building variants that read from other sources. It works in four steps:
+
+1. It constructs `ctr`, or uses `instance` if given. For each property from `getEnvMembers(ctr)`, it sets the property to `resolve(<property name>)` when that returns something other than `undefined`. Otherwise the initializer stays.
+2. It logs `<ClassName> MISSING <source> <describe(key)>` for each undecorated property that ended up empty (`undefined`, `null` or `''`).
+3. It throws if any `@EnvRequired` property ended up empty, naming each one with `describe(key)`.
+4. It returns a plain object.
+
+`source` defaults to `ENV VAR` and `describe` defaults to the property name.
+
+To build your own class decorator, use `wrapEnvironmentClass(ctr, construct)`. It returns a subclass whose constructor returns `construct()`, except while a decorated subclass or `constructRaw` is constructing it, when it builds a plain instance. That prevents a decorated parent from populating itself inside a decorated child. `constructRaw(ctr)` constructs a decorated class without running its decorator, and `isEnvironmentClass(ctr)` reports whether a class was made by `wrapEnvironmentClass`.
+
+```typescript
+import { populateEnvironmentInstance } from '@onivoro/server-common';
+
+const config = populateEnvironmentInstance(AppConfig, (key) => secrets[key] ?? process.env[key]);
+```
 
 ### Files
 
