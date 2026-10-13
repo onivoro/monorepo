@@ -189,6 +189,8 @@ Subclasses include the decorated properties of their parent classes. A decorated
 
 `getEnvRequiredMembers(ctr)` returns a class's required property names, `getEnvDecoratedMembers(ctr)` returns all decorated ones, and `getEnvMembers(ctr)` returns every property the decorators will read.
 
+To read values from AWS Systems Manager Parameter Store as well, use `SSMEnvironmentClass` from [`@onivoro/server-aws-ssm`](../aws-ssm/).
+
 ## DTOs
 
 All DTOs are classes with `@nestjs/swagger` property metadata.
