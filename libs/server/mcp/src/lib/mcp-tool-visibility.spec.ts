@@ -234,4 +234,77 @@ describe('wireRegistryToServer with visibleTools', () => {
     registry.setToolEnabled('public', true);
     expect(tools['public'].enabled).toBe(true);
   });
+
+  it('applies a new set of visible tools with setVisibleTools, until it is unwired', async () => {
+    const registry = buildRegistry();
+    registry.setToolVisibility({ toolVisibility: 'authorized' });
+    const server = new McpServer({ name: 's', version: '1' });
+    const wiring = wireRegistryToServer(registry, server, {
+      visibleTools: await registry.resolveVisibleTools(auth()),
+    });
+    expect(registered(server)).toEqual(['public']);
+
+    wiring.setVisibleTools(await registry.resolveVisibleTools(auth('admin')));
+    expect(registered(server)).toEqual(['admin', 'public']);
+
+    // Later registrations and setToolEnabled follow the latest set.
+    registry.registerTool(
+      { name: 'late-admin', description: 'la' },
+      async () => 'la',
+      [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
+    );
+    await settle();
+    expect(registered(server)).toEqual(['admin', 'late-admin', 'public']);
+    registry.setToolEnabled('admin', false);
+    expect((server as any)._registeredTools['admin'].enabled).toBe(false);
+
+    wiring.setVisibleTools(await registry.resolveVisibleTools(auth()));
+    await settle();
+    expect(registered(server)).toEqual(['public']);
+
+    wiring.setVisibleTools(undefined);
+    expect(registered(server)).toEqual([
+      'admin',
+      'admin-write',
+      'late-admin',
+      'public',
+    ]);
+    expect((server as any)._registeredTools['admin'].enabled).toBe(false);
+
+    wiring();
+    wiring.setVisibleTools(await registry.resolveVisibleTools(auth()));
+    expect(registered(server)).toEqual([
+      'admin',
+      'admin-write',
+      'late-admin',
+      'public',
+    ]);
+  });
+
+  it('ignores a decision about a tool made for a set that has since been replaced', async () => {
+    const registry = buildRegistry();
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => (release = resolve));
+    registry.setToolVisibility({
+      toolFilter: async (tool, authInfo) => {
+        if (tool.name === 'late' && !authInfo?.scopes.includes('admin')) {
+          await blocked;
+          return true;
+        }
+        return tool.name !== 'late';
+      },
+    });
+    const server = new McpServer({ name: 's', version: '1' });
+    const wiring = wireRegistryToServer(registry, server, {
+      visibleTools: await registry.resolveVisibleTools(auth()),
+    });
+
+    // Decided for the first set only after the second replaced it: dropped.
+    registry.registerTool({ name: 'late', description: 'l' }, async () => 'l');
+    wiring.setVisibleTools(await registry.resolveVisibleTools(auth('admin')));
+    release();
+    await settle();
+    await settle();
+    expect(registered(server)).not.toContain('late');
+  });
 });

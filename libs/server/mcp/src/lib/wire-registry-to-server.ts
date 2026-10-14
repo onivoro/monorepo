@@ -82,6 +82,24 @@ export interface WireRegistryToServerOptions {
   visibleTools?: McpVisibleTools;
 }
 
+/**
+ * What `wireRegistryToServer` returns: call it to stop following the registry (when the
+ * server closes). `setVisibleTools` changes which tools the server's caller sees, for a
+ * long-lived server whose caller's auth changed (a stateful HTTP session whose client stepped
+ * up to a token with more scopes): tools that became visible are registered, tools that no
+ * longer are removed, and the SDK sends `tools/list_changed` for each. Later registrations
+ * and `setToolEnabled` follow the latest set. Pass `undefined` for every tool.
+ */
+export type McpServerWiring = (() => void) & {
+  setVisibleTools(visibleTools: McpVisibleTools | undefined): void;
+};
+
+interface WiredTool {
+  enable(): void;
+  disable(): void;
+  remove(): void;
+}
+
 /** Per-server state shared by everything wired onto that server. */
 interface ServerWiring {
   requestScopedMessages: boolean;
@@ -188,7 +206,7 @@ function wireToolToServer(
   registry: McpToolRegistry,
   server: McpServer,
   toolName: string,
-  registeredTools: Map<string, { enable(): void; disable(): void }>,
+  registeredTools: Map<string, WiredTool>,
   wiring: ServerWiring,
 ): void {
   const entry = registry.getTool(toolName);
@@ -406,13 +424,14 @@ function withdrawUnsolicitedCapabilities(
  * Use it when bringing your own transport via McpRegistryModule.registerOnly(), and call it
  * before connecting the server. Describe the server in `options`.
  *
- * @returns A function that stops following the registry. Call it when the server closes.
+ * @returns A function that stops following the registry (call it when the server closes),
+ *   with a `setVisibleTools` method; see `McpServerWiring`.
  */
 export function wireRegistryToServer(
   registry: McpToolRegistry,
   server: McpServer,
   options: WireRegistryToServerOptions = {},
-): () => void {
+): McpServerWiring {
   const unsolicitedMessages = options.unsolicitedMessages !== false;
   const followRegistry = options.followRegistry !== false;
   const wiring: ServerWiring = {
@@ -420,25 +439,42 @@ export function wireRegistryToServer(
     era: options.era ?? 'legacy',
   };
 
-  const registeredTools = new Map<
-    string,
-    { enable(): void; disable(): void }
-  >();
+  const registeredTools = new Map<string, WiredTool>();
 
-  const { visibleTools } = options;
+  let visibleTools = options.visibleTools;
   let following = true;
 
+  const wireIfMissing = (name: string) => {
+    if (!registeredTools.has(name)) {
+      wireToolToServer(registry, server, name, registeredTools, wiring);
+    }
+  };
+
+  const removeIfWired = (name: string) => {
+    const registered = registeredTools.get(name);
+    if (!registered) return;
+    registeredTools.delete(name);
+    registered.remove();
+  };
+
   /**
-   * Wires a tool once `visibleTools` has decided it is visible. `evaluate` remembers its
-   * decisions, so asking again about a tool already decided costs nothing.
+   * Registers or removes a tool on this server according to the current `visibleTools`. A
+   * tool it hasn't decided yet (registered after it was resolved) is decided first, and the
+   * answer applied only if `visibleTools` hasn't been replaced meanwhile. `evaluate`
+   * remembers its decisions.
    */
-  const wireToolIfVisible = (name: string) => {
-    visibleTools!
+  const applyVisibility = (name: string) => {
+    const current = visibleTools;
+    if (!current) return wireIfMissing(name);
+    if (current.decided(name)) {
+      return current.has(name) ? wireIfMissing(name) : removeIfWired(name);
+    }
+    current
       .evaluate(name)
       .then((visible) => {
-        if (visible && following && !registeredTools.has(name)) {
-          wireToolToServer(registry, server, name, registeredTools, wiring);
-        }
+        if (!following || visibleTools !== current) return;
+        if (visible) wireIfMissing(name);
+        else removeIfWired(name);
       })
       .catch((err) =>
         console.error(
@@ -448,14 +484,18 @@ export function wireRegistryToServer(
       );
   };
 
-  for (const { metadata } of registry.getTools()) {
-    if (visibleTools && !visibleTools.has(metadata.name)) {
-      // Hidden, or registered while the visibility was being resolved (after its snapshot,
-      // and before this server was listening for registrations): decide now.
-      wireToolIfVisible(metadata.name);
-      continue;
+  const setVisibleTools = (next: McpVisibleTools | undefined) => {
+    if (!following) return;
+    visibleTools = next;
+    for (const { metadata } of registry.getTools()) {
+      applyVisibility(metadata.name);
     }
-    wireToolToServer(registry, server, metadata.name, registeredTools, wiring);
+  };
+
+  // Tools registered while `visibleTools` was being resolved (after its snapshot, and before
+  // this server listened for registrations) are decided here too.
+  for (const { metadata } of registry.getTools()) {
+    applyVisibility(metadata.name);
   }
 
   for (const { metadata } of registry.getResources()) {
@@ -469,9 +509,12 @@ export function wireRegistryToServer(
   if (!unsolicitedMessages) withdrawUnsolicitedCapabilities(registry, server);
 
   if (!followRegistry) {
-    return () => {
-      following = false;
-    };
+    return Object.assign(
+      () => {
+        following = false;
+      },
+      { setVisibleTools },
+    );
   }
 
   // Wire enable/disable delegate so registry.setToolEnabled() works. Tools this server's
@@ -549,11 +592,7 @@ export function wireRegistryToServer(
     (type, name) => {
       switch (type) {
         case 'tool':
-          if (!visibleTools) {
-            wireToolToServer(registry, server, name, registeredTools, wiring);
-            break;
-          }
-          wireToolIfVisible(name);
+          applyVisibility(name);
           break;
         case 'resource':
           wireResourceToServer(registry, server, name, wiring);
@@ -565,10 +604,13 @@ export function wireRegistryToServer(
     },
   );
 
-  return () => {
-    following = false;
-    unsubRegistrationChanges();
-    unsubResourceUpdates();
-    unsubToolEnabled();
-  };
+  return Object.assign(
+    () => {
+      following = false;
+      unsubRegistrationChanges();
+      unsubResourceUpdates();
+      unsubToolEnabled();
+    },
+    { setVisibleTools },
+  );
 }

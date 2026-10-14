@@ -236,6 +236,7 @@ export class McpToolRegistry {
 
     return {
       has: (name) => settled.get(name) === true,
+      decided: (name) => settled.has(name),
       evaluate,
     };
   }

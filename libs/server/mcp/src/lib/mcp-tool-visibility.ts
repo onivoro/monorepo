@@ -51,6 +51,8 @@ export interface McpToolVisibilityOptions {
 export interface McpVisibleTools {
   /** Whether the tool is visible, for tools registered when this was resolved. */
   has(name: string): boolean;
+  /** Whether the tool has been decided (`has` then answers for it). */
+  decided(name: string): boolean;
   /** Decides (once, then remembers) for a tool registered later. */
   evaluate(name: string): Promise<boolean>;
 }

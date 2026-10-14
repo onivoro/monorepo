@@ -36,9 +36,10 @@ class TokenAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
     if (!scopes) {
       throw new OAuthError(OAuthErrorCode.InvalidToken, 'Unknown token');
     }
+    // One client for every token, so a stepped-up token is the same session principal.
     return {
       token,
-      clientId: token,
+      clientId: 'visibility-client',
       scopes,
       expiresAt: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -461,6 +462,133 @@ describe('Per-caller tool visibility over HTTP', () => {
         if (!names.includes('meanwhile')) await sleep(10);
       }
       expect(names).toEqual(['admin-only', 'meanwhile', 'public']);
+      await client.close();
+    });
+  });
+
+  describe('a stateful session whose token changes', () => {
+    let app: any;
+    let url: URL;
+    const toolFilter = jest.fn(() => true);
+
+    beforeEach(async () => {
+      toolFilter.mockClear();
+      ({ app, url } = await startApp({
+        session: {},
+        toolVisibility: 'authorized',
+        toolFilter,
+      }));
+    });
+
+    afterEach(async () => {
+      await app?.close();
+    });
+
+    /** A 2025-era client whose bearer token can change between requests, as after step-up. */
+    async function connectWithToken(initialToken: string) {
+      const auth = { token: initialToken };
+      const client = new Client(
+        { name: 'step-up-client', version: '1.0.0' },
+        { versionNegotiation: { mode: 'legacy' } },
+      );
+      const transport = new StreamableHTTPClientTransport(url, {
+        fetch: (input, init) => {
+          const headers = new Headers(init?.headers);
+          headers.set('Authorization', `Bearer ${auth.token}`);
+          return fetch(input, { ...init, headers });
+        },
+      });
+      await client.connect(transport);
+      await client.listTools();
+      // Let the standalone SSE stream, where list-changed notifications go, open.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      let toolsChanged = 0;
+      client.setNotificationHandler('notifications/tools/list_changed', () => {
+        toolsChanged++;
+      });
+      return { client, transport, auth, toolsChanged: () => toolsChanged };
+    }
+
+    async function until(condition: () => boolean) {
+      for (let i = 0; i < 100 && !condition(); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(condition()).toBe(true);
+    }
+
+    it('shows and runs a tool after the client steps up to a token with its scope', async () => {
+      const { client, transport, auth, toolsChanged } =
+        await connectWithToken('agent-token');
+      const sessionId = transport.sessionId;
+      expect(await toolNames(client)).toEqual(['public']);
+
+      await expect(
+        client.callTool({ name: 'admin-only', arguments: {} }),
+      ).rejects.toThrow(/Insufficient scope/);
+
+      auth.token = 'admin-token';
+      const result: any = await client.callTool({
+        name: 'admin-only',
+        arguments: {},
+      });
+
+      expect(result.content[0].text).toBe('admin');
+      expect(adminCalls).toEqual(['admin-only']);
+      expect(transport.sessionId).toBe(sessionId);
+      expect(await toolNames(client)).toEqual(['admin-only', 'public']);
+      await until(() => toolsChanged() >= 1);
+      await client.close();
+    });
+
+    it('hides the tool again when a later request carries a token without the scope', async () => {
+      const { client, auth, toolsChanged } =
+        await connectWithToken('admin-token');
+      expect(await toolNames(client)).toEqual(['admin-only', 'public']);
+
+      auth.token = 'agent-token';
+
+      expect(await toolNames(client)).toEqual(['public']);
+      await until(() => toolsChanged() >= 1);
+      await expect(
+        client.callTool({ name: 'admin-only', arguments: {} }),
+      ).rejects.toThrow(/Insufficient scope/);
+      expect(adminCalls).toEqual([]);
+      await client.close();
+    });
+
+    it('does not resolve the visibility again for the same token', async () => {
+      const { client } = await connectWithToken('admin-token');
+      const calls = toolFilter.mock.calls.length;
+
+      expect(await toolNames(client)).toEqual(['admin-only', 'public']);
+      await client.callTool({ name: 'public', arguments: {} });
+      expect(await toolNames(client)).toEqual(['admin-only', 'public']);
+
+      expect(toolFilter.mock.calls.length).toBe(calls);
+      await client.close();
+    });
+
+    it('keeps setToolEnabled and later registrations in step with the latest token', async () => {
+      const registry = app.get(McpToolRegistry) as McpToolRegistry;
+      const { client, auth } = await connectWithToken('agent-token');
+      registry.setToolEnabled('admin-only', false);
+
+      auth.token = 'admin-token';
+      expect(await toolNames(client)).toEqual(['public']);
+      registry.setToolEnabled('admin-only', true);
+      registry.registerTool(
+        { name: 'late-admin', description: 'Admins, later' },
+        async () => 'late admin',
+        [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
+      );
+      let names: string[] = [];
+      for (let i = 0; i < 50 && !names.includes('late-admin'); i++) {
+        names = await toolNames(client);
+        if (!names.includes('late-admin')) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      }
+      expect(names).toEqual(['admin-only', 'late-admin', 'public']);
       await client.close();
     });
   });
