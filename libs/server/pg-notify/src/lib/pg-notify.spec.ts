@@ -186,8 +186,8 @@ describe('createNotifyTrigger', () => {
       triggerName: 'trg_outbox_high_priority',
     });
 
-    expect(queries[0]).toContain('FUNCTION notify_outbox_high_priority()');
-    expect(queries[1]).toContain('CREATE TRIGGER trg_outbox_high_priority');
+    expect(queries[0]).toContain('FUNCTION "notify_outbox_high_priority"()');
+    expect(queries[1]).toContain('CREATE TRIGGER "trg_outbox_high_priority"');
   });
 });
 

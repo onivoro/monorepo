@@ -1,30 +1,47 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
-// A value import, not `import type`: Nest injects by the emitted paramtype.
-import { DataSource } from 'typeorm';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  forwardRef,
+} from '@nestjs/common';
+import type { DataSource } from 'typeorm';
+import {
+  NotifyPayloadOptions,
+  NotifyQueryable,
+  PG_NOTIFY_MAX_PAYLOAD_BYTES,
+  fitNotifyPayload,
+} from './notify-query';
+
+export { PG_NOTIFY_MAX_PAYLOAD_BYTES };
+
+export type PgNotifyPublisherOptions = NotifyPayloadOptions;
 
 /**
- * Postgres caps a NOTIFY payload at 8000 bytes and rejects anything larger,
- * failing the statement rather than truncating.
+ * The DataSource class, resolved when Nest injects the publisher rather than
+ * when this module loads, so that importing this package never loads typeorm.
+ *
+ * A plain `import { DataSource } from 'typeorm'` is needed for Nest to inject
+ * by type, and it makes typeorm a hard runtime dependency of every consumer --
+ * including those that construct the publisher themselves with a pg pool.
  */
-export const PG_NOTIFY_MAX_PAYLOAD_BYTES = 8000;
-
-export interface PgNotifyPublisherOptions {
-  /**
-   * What to send when a payload will not fit.
-   *
-   * Returning a smaller envelope -- an id the receiver can use to read the row
-   * itself -- keeps delivery working for large events. Returning undefined
-   * drops the notification, which is logged.
-   */
-  onOversized?: (payload: string, channel: string) => string | undefined;
-}
+const typeormDataSource = forwardRef(
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  () => require('typeorm').DataSource,
+);
 
 @Injectable()
 export class PgNotifyPublisher {
   private readonly logger = new Logger(PgNotifyPublisher.name);
 
+  /**
+   * @param dataSource where notifications are sent from: a TypeORM
+   *   `DataSource` (what Nest injects), or anything with `query(text, values)`
+   *   such as a `pg` `Pool`. Each publish takes its own connection from it.
+   */
   constructor(
-    private readonly dataSource: DataSource,
+    @Inject(typeormDataSource)
+    private readonly dataSource: DataSource | NotifyQueryable,
     @Optional() private readonly options: PgNotifyPublisherOptions = {},
   ) {}
 
@@ -38,6 +55,10 @@ export class PgNotifyPublisher {
    * notification can arrive for a transaction that later rolls back; a receiver
    * that reads the row back will simply find nothing, which is the safer of the
    * two failure modes.
+   *
+   * To notify inside a transaction instead -- delivered only if it commits, as
+   * a transactional outbox needs -- use `notifyInTransaction` or
+   * `buildNotifyQuery` on the transaction's own connection.
    */
   async publish(channel: string, payload: string): Promise<void> {
     const sized = this.withinLimit(channel, payload);
@@ -51,28 +72,18 @@ export class PgNotifyPublisher {
   }
 
   private withinLimit(channel: string, payload: string): string | undefined {
-    if (byteLength(payload) <= PG_NOTIFY_MAX_PAYLOAD_BYTES) return payload;
+    const fitted = fitNotifyPayload(channel, payload, this.options);
+    if (fitted.sent) return fitted.payload;
 
-    const fallback = this.options.onOversized?.(payload, channel);
-
-    if (fallback === undefined) {
+    if (fitted.reason === 'oversized') {
       this.logger.warn(
-        `Dropped a ${byteLength(payload)} byte notification on "${channel}": over the ${PG_NOTIFY_MAX_PAYLOAD_BYTES} byte limit and no onOversized handler is configured`,
+        `Dropped a ${fitted.bytes} byte notification on "${channel}": over the ${PG_NOTIFY_MAX_PAYLOAD_BYTES} byte limit and no onOversized handler is configured`,
       );
-      return undefined;
-    }
-
-    if (byteLength(fallback) > PG_NOTIFY_MAX_PAYLOAD_BYTES) {
+    } else {
       this.logger.error(
-        `Dropped a notification on "${channel}": onOversized returned ${byteLength(fallback)} bytes, still over the limit`,
+        `Dropped a notification on "${channel}": onOversized returned ${fitted.bytes} bytes, still over the limit`,
       );
-      return undefined;
     }
-
-    return fallback;
+    return undefined;
   }
-}
-
-function byteLength(value: string): number {
-  return Buffer.byteLength(value, 'utf8');
 }

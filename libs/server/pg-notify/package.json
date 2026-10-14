@@ -29,6 +29,11 @@
     "pg-listen": "^1.7.0",
     "typeorm": "^0.3.0"
   },
+  "peerDependenciesMeta": {
+    "typeorm": {
+      "optional": true
+    }
+  },
   "files": [
     "**/*.js",
     "**/*.d.ts",

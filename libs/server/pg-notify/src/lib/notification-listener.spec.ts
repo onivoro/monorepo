@@ -2,7 +2,10 @@ import { Logger } from '@nestjs/common';
 import { EventEmitter } from 'events';
 import createPgSubscriber from 'pg-listen';
 import type { DataSource } from 'typeorm';
-import { NotificationListener } from './notification-listener';
+import {
+  NotificationListener,
+  NotificationListenerConnection,
+} from './notification-listener';
 
 jest.mock('pg-listen', () => ({ __esModule: true, default: jest.fn() }));
 
@@ -58,6 +61,7 @@ describe('NotificationListener', () => {
 
   beforeEach(() => {
     jest.useFakeTimers();
+    connection = dataSource;
     subscribers = [];
     jest.mocked(createPgSubscriber).mockReset();
     jest.mocked(createPgSubscriber).mockImplementation(() => {
@@ -81,8 +85,10 @@ describe('NotificationListener', () => {
     jest.restoreAllMocks();
   });
 
+  let connection: NotificationListenerConnection = dataSource;
+
   async function started() {
-    const listener = new TestListener('events', dataSource);
+    const listener = new TestListener('events', connection);
     await listener.onModuleInit();
     return listener;
   }
@@ -91,20 +97,22 @@ describe('NotificationListener', () => {
     it('creates the subscriber from the typeorm postgres driver options', async () => {
       await started();
 
-      expect(createPgSubscriber).toHaveBeenCalledWith({
-        connectionString: 'postgres://u:p@db:5432/app',
-        host: 'db',
-        user: 'u',
-        password: 'p',
-        database: 'app',
-        port: 5432,
-        ssl: false,
-        connectionTimeoutMillis: 1234,
-        application_name: 'api',
-        max: 7,
-        retryTimeout: 30_000,
-        keepAlive: true,
-      });
+      expect(createPgSubscriber).toHaveBeenCalledWith(
+        {
+          connectionString: 'postgres://u:p@db:5432/app',
+          host: 'db',
+          user: 'u',
+          password: 'p',
+          database: 'app',
+          port: 5432,
+          ssl: false,
+          connectionTimeoutMillis: 1234,
+          application_name: 'api',
+          max: 7,
+          keepAlive: true,
+        },
+        { retryTimeout: 30_000 },
+      );
     });
 
     it('lets driver extras override the retry timeout', async () => {
@@ -114,9 +122,51 @@ describe('NotificationListener', () => {
 
       await new TestListener('events', ds).onModuleInit();
 
-      expect(jest.mocked(createPgSubscriber).mock.calls[0][0]).toEqual(
-        expect.objectContaining({ retryTimeout: 5 }),
+      // pg-listen reads its retry settings from its second argument only
+      const [config, options] = jest.mocked(createPgSubscriber).mock.calls[0];
+      expect(options).toEqual({ retryTimeout: 5 });
+      expect(config).not.toHaveProperty('retryTimeout');
+    });
+
+    it('accepts a pg connection string instead of a DataSource', async () => {
+      await new TestListener(
+        'events',
+        'postgres://u:p@db:5432/app',
+      ).onModuleInit();
+
+      expect(createPgSubscriber).toHaveBeenCalledWith(
+        { connectionString: 'postgres://u:p@db:5432/app' },
+        { retryTimeout: 30_000 },
       );
+      expect(subscribers[0].listenTo).toHaveBeenCalledWith('events');
+    });
+
+    it('accepts a pg client config instead of a DataSource', async () => {
+      const config = {
+        host: 'db',
+        user: 'u',
+        password: 'p',
+        database: 'app',
+        ssl: { rejectUnauthorized: false },
+      };
+
+      await new TestListener('events', config).onModuleInit();
+
+      expect(createPgSubscriber).toHaveBeenCalledWith(config, {
+        retryTimeout: 30_000,
+      });
+    });
+
+    it('moves pg-listen retry settings out of a pg config, without mutating it', async () => {
+      const config = { host: 'db', retryTimeout: 9, retryLimit: 4 };
+
+      await new TestListener('events', config).onModuleInit();
+
+      expect(createPgSubscriber).toHaveBeenCalledWith(
+        { host: 'db' },
+        { retryTimeout: 9, retryLimit: 4 },
+      );
+      expect(config).toEqual({ host: 'db', retryTimeout: 9, retryLimit: 4 });
     });
 
     it('connects, listens to the channel and logs', async () => {
@@ -180,151 +230,163 @@ describe('NotificationListener', () => {
     });
   });
 
-  describe('onModuleDestroy', () => {
-    it('removes the exact listener it added, unlistens and closes', async () => {
-      const listener = await started();
-      const [subscriber] = subscribers;
-
-      await listener.onModuleDestroy();
-
-      expect(subscriber.notifications.listenerCount('events')).toBe(0);
-      expect(subscriber.unlisten).toHaveBeenCalledWith('events');
-      expect(subscriber.close).toHaveBeenCalled();
-      expect(logSpy).toHaveBeenCalledWith(
-        'Unlistening to pg "events" notifications',
-      );
+  // the reconnect and teardown behaviour must not depend on how the
+  // connection was described
+  describe.each([
+    ['a TypeORM DataSource', dataSource],
+    ['a pg connection string', 'postgres://u:p@db:5432/app'],
+    ['a pg client config', { host: 'db', user: 'u', database: 'app' }],
+  ] as [string, NotificationListenerConnection][])('with %s', (_, conn) => {
+    beforeEach(() => {
+      connection = conn;
     });
 
-    it('swallows errors while closing a broken subscriber', async () => {
-      const listener = await started();
-      subscribers[0].unlisten.mockRejectedValue(new Error('dead'));
+    describe('onModuleDestroy', () => {
+      it('removes the exact listener it added, unlistens and closes', async () => {
+        const listener = await started();
+        const [subscriber] = subscribers;
 
-      await expect(listener.onModuleDestroy()).resolves.toBeUndefined();
-    });
+        await listener.onModuleDestroy();
 
-    it('is safe to call when never initialised', async () => {
-      await expect(
-        new TestListener('events', dataSource).onModuleDestroy(),
-      ).resolves.toBeUndefined();
-      expect(createPgSubscriber).not.toHaveBeenCalled();
-    });
-
-    it('cancels a pending re-initialisation', async () => {
-      const listener = await started();
-      subscribers[0].events.emit('error', new Error('gone'));
-
-      await listener.onModuleDestroy();
-      jest.advanceTimersByTime(60_000);
-      await flush();
-
-      expect(subscribers).toHaveLength(1);
-    });
-
-    it('ignores subscriber errors after shutdown', async () => {
-      const listener = await started();
-      const [subscriber] = subscribers;
-      await listener.onModuleDestroy();
-
-      subscriber.events.emit('error', new Error('late'));
-      jest.advanceTimersByTime(60_000);
-      await flush();
-
-      expect(subscribers).toHaveLength(1);
-    });
-  });
-
-  describe('when pg-listen gives up', () => {
-    it('logs instead of crashing and re-initialises after 1s', async () => {
-      const listener = await started();
-      const [first] = subscribers;
-
-      expect(() =>
-        first.events.emit('error', new Error('timeout reached')),
-      ).not.toThrow();
-      expect(errorSpy).toHaveBeenCalledWith(
-        'pg "events" notification client failed: timeout reached',
-      );
-
-      jest.advanceTimersByTime(999);
-      await flush();
-      expect(subscribers).toHaveLength(1);
-
-      jest.advanceTimersByTime(1);
-      await flush();
-
-      expect(first.close).toHaveBeenCalled();
-      expect(subscribers).toHaveLength(2);
-      expect(subscribers[1].listenTo).toHaveBeenCalledWith('events');
-
-      subscribers[1].notifications.emit('events', { id: 'after' });
-      expect(listener.received).toEqual([{ id: 'after' }]);
-    });
-
-    it('never schedules two re-initialisations at once', async () => {
-      await started();
-
-      subscribers[0].events.emit('error', new Error('a'));
-      subscribers[0].events.emit('error', new Error('b'));
-      jest.advanceTimersByTime(1_000);
-      await flush();
-
-      expect(subscribers).toHaveLength(2);
-    });
-
-    it('backs off exponentially, capped at 30s, while re-initialisation keeps failing', async () => {
-      await started();
-      jest.mocked(createPgSubscriber).mockImplementation(() => {
-        const subscriber = fakeSubscriber();
-        subscriber.connect.mockRejectedValue(new Error('still down'));
-        subscribers.push(subscriber);
-        return subscriber as any;
+        expect(subscriber.notifications.listenerCount('events')).toBe(0);
+        expect(subscriber.unlisten).toHaveBeenCalledWith('events');
+        expect(subscriber.close).toHaveBeenCalled();
+        expect(logSpy).toHaveBeenCalledWith(
+          'Unlistening to pg "events" notifications',
+        );
       });
 
-      subscribers[0].events.emit('error', new Error('gone'));
+      it('swallows errors while closing a broken subscriber', async () => {
+        const listener = await started();
+        subscribers[0].unlisten.mockRejectedValue(new Error('dead'));
 
-      const expectedDelays = [
-        1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
-      ];
-      for (const [attempt, delay] of expectedDelays.entries()) {
-        jest.advanceTimersByTime(delay - 1);
+        await expect(listener.onModuleDestroy()).resolves.toBeUndefined();
+      });
+
+      it('is safe to call when never initialised', async () => {
+        await expect(
+          new TestListener('events', dataSource).onModuleDestroy(),
+        ).resolves.toBeUndefined();
+        expect(createPgSubscriber).not.toHaveBeenCalled();
+      });
+
+      it('cancels a pending re-initialisation', async () => {
+        const listener = await started();
+        subscribers[0].events.emit('error', new Error('gone'));
+
+        await listener.onModuleDestroy();
+        jest.advanceTimersByTime(60_000);
         await flush();
-        expect(subscribers).toHaveLength(attempt + 1);
+
+        expect(subscribers).toHaveLength(1);
+      });
+
+      it('ignores subscriber errors after shutdown', async () => {
+        const listener = await started();
+        const [subscriber] = subscribers;
+        await listener.onModuleDestroy();
+
+        subscriber.events.emit('error', new Error('late'));
+        jest.advanceTimersByTime(60_000);
+        await flush();
+
+        expect(subscribers).toHaveLength(1);
+      });
+    });
+
+    describe('when pg-listen gives up', () => {
+      it('logs instead of crashing and re-initialises after 1s', async () => {
+        const listener = await started();
+        const [first] = subscribers;
+
+        expect(() =>
+          first.events.emit('error', new Error('timeout reached')),
+        ).not.toThrow();
+        expect(errorSpy).toHaveBeenCalledWith(
+          'pg "events" notification client failed: timeout reached',
+        );
+
+        jest.advanceTimersByTime(999);
+        await flush();
+        expect(subscribers).toHaveLength(1);
 
         jest.advanceTimersByTime(1);
         await flush();
-        expect(subscribers).toHaveLength(attempt + 2);
-      }
 
-      expect(errorSpy).toHaveBeenCalledWith(
-        'could not re-establish pg "events" notifications: still down',
-      );
-    });
+        expect(first.close).toHaveBeenCalled();
+        expect(subscribers).toHaveLength(2);
+        expect(subscribers[1].listenTo).toHaveBeenCalledWith('events');
 
-    it('resets the backoff after a successful re-initialisation', async () => {
-      await started();
-      let failures = 2;
-      jest.mocked(createPgSubscriber).mockImplementation(() => {
-        const subscriber = fakeSubscriber();
-        if (failures-- > 0)
-          subscriber.connect.mockRejectedValue(new Error('down'));
-        subscribers.push(subscriber);
-        return subscriber as any;
+        subscribers[1].notifications.emit('events', { id: 'after' });
+        expect(listener.received).toEqual([{ id: 'after' }]);
       });
 
-      subscribers[0].events.emit('error', new Error('gone'));
-      jest.advanceTimersByTime(1_000); // attempt fails
-      await flush();
-      jest.advanceTimersByTime(2_000); // attempt fails
-      await flush();
-      jest.advanceTimersByTime(4_000); // attempt succeeds
-      await flush();
-      expect(subscribers).toHaveLength(4);
+      it('never schedules two re-initialisations at once', async () => {
+        await started();
 
-      subscribers[3].events.emit('error', new Error('gone again'));
-      jest.advanceTimersByTime(1_000);
-      await flush();
+        subscribers[0].events.emit('error', new Error('a'));
+        subscribers[0].events.emit('error', new Error('b'));
+        jest.advanceTimersByTime(1_000);
+        await flush();
 
-      expect(subscribers).toHaveLength(5);
+        expect(subscribers).toHaveLength(2);
+      });
+
+      it('backs off exponentially, capped at 30s, while re-initialisation keeps failing', async () => {
+        await started();
+        jest.mocked(createPgSubscriber).mockImplementation(() => {
+          const subscriber = fakeSubscriber();
+          subscriber.connect.mockRejectedValue(new Error('still down'));
+          subscribers.push(subscriber);
+          return subscriber as any;
+        });
+
+        subscribers[0].events.emit('error', new Error('gone'));
+
+        const expectedDelays = [
+          1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
+        ];
+        for (const [attempt, delay] of expectedDelays.entries()) {
+          jest.advanceTimersByTime(delay - 1);
+          await flush();
+          expect(subscribers).toHaveLength(attempt + 1);
+
+          jest.advanceTimersByTime(1);
+          await flush();
+          expect(subscribers).toHaveLength(attempt + 2);
+        }
+
+        expect(errorSpy).toHaveBeenCalledWith(
+          'could not re-establish pg "events" notifications: still down',
+        );
+      });
+
+      it('resets the backoff after a successful re-initialisation', async () => {
+        await started();
+        let failures = 2;
+        jest.mocked(createPgSubscriber).mockImplementation(() => {
+          const subscriber = fakeSubscriber();
+          if (failures-- > 0)
+            subscriber.connect.mockRejectedValue(new Error('down'));
+          subscribers.push(subscriber);
+          return subscriber as any;
+        });
+
+        subscribers[0].events.emit('error', new Error('gone'));
+        jest.advanceTimersByTime(1_000); // attempt fails
+        await flush();
+        jest.advanceTimersByTime(2_000); // attempt fails
+        await flush();
+        jest.advanceTimersByTime(4_000); // attempt succeeds
+        await flush();
+        expect(subscribers).toHaveLength(4);
+
+        subscribers[3].events.emit('error', new Error('gone again'));
+        jest.advanceTimersByTime(1_000);
+        await flush();
+
+        expect(subscribers).toHaveLength(5);
+      });
     });
   });
 });
