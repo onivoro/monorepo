@@ -406,6 +406,70 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
       await moduleRef.close();
     });
 
+    it('is ready once a 2026-07-28 client that opens without probing is answered', async () => {
+      // The SDK client always probes, so this client is hand-written JSON-RPC lines.
+      const { moduleRef, stdin, stdout } = await startChannel();
+      const stdio = moduleRef.get(McpStdioService);
+      const buffer = new ReadBuffer();
+      const fromServer: JSONRPCMessage[] = [];
+      const waiting: Array<() => void> = [];
+      stdout.on('data', (chunk: Buffer) => {
+        buffer.append(chunk);
+        for (let m = buffer.readMessage(); m; m = buffer.readMessage()) {
+          fromServer.push(m);
+          waiting.splice(0).forEach((wake) => wake());
+        }
+      });
+      const nextFromServer = async (index: number) => {
+        while (fromServer.length <= index) {
+          await new Promise<void>((resolve) => waiting.push(resolve));
+        }
+        return fromServer[index];
+      };
+
+      expect(stdio.isConnected()).toBe(false);
+      const connected = stdio.whenConnected();
+      stdin.write(
+        serializeMessage({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: {
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+              'io.modelcontextprotocol/clientInfo': {
+                name: 'raw-client',
+                version: '1.0.0',
+              },
+              'io.modelcontextprotocol/clientCapabilities': {},
+            },
+          },
+        }),
+      );
+
+      const answer: any = await nextFromServer(0);
+      expect(answer.id).toBe(1);
+      expect(answer.result.tools.map((tool: any) => tool.name)).toContain(
+        'whoami',
+      );
+      await connected;
+      expect(stdio.isConnected()).toBe(true);
+      expect(stdio.getProtocolEra()).toBe('modern');
+
+      await expect(
+        stdio.sendNotification('notifications/claude/channel', {
+          content: 'unprobed',
+          meta: { run_id: '7' },
+        }),
+      ).resolves.toBe(true);
+      expect(await nextFromServer(1)).toEqual({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel',
+        params: { content: 'unprobed', meta: { run_id: '7' } },
+      });
+      await moduleRef.close();
+    });
+
     it('rejects pending and later whenConnected calls once the module shuts down', async () => {
       const { moduleRef } = await startChannel();
       const stdio = moduleRef.get(McpStdioService);
