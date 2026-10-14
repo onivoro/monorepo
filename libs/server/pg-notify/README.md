@@ -17,9 +17,10 @@ npm install typeorm   # only if you pass TypeORM DataSources
 ```
 
 Peer dependencies: `@nestjs/common` (10 or 11), `pg` (7.x or 8.x, as `pg-listen`
-requires), `pg-listen` (^1.7), and optionally `typeorm` (^0.3). The package loads `typeorm` only when
-Nest resolves `PgNotifyPublisher` as a plain class provider (to inject the
-`DataSource` by type), so without TypeORM nothing needs it installed. Its types are still referenced from the declarations, which
+requires), `pg-listen` (^1.7), and optionally `typeorm` (^0.3). The package
+loads `typeorm` only when Nest resolves `PgNotifyPublisher` as a plain class
+provider (to inject the `DataSource` by type), so without TypeORM nothing needs
+it installed. Its types are still referenced from the declarations, which
 compile without it under `skipLibCheck` (the Nest default).
 
 ## Listening
@@ -66,6 +67,10 @@ export class OutboxListener extends NotificationListener<OutboxEvent> {
 }
 ```
 
+The constructor throws for a channel that is empty, over 63 bytes or contains a
+NUL character: `LISTEN` would quietly truncate a long one and wait on a channel
+nothing sends to.
+
 The accepted types are exported as `NotificationListenerConnection`
 (`DataSource | PgClientConfig | string`) and `PgClientConfig` (the
 `connectionConfig` that `pg-listen` takes, i.e. `pg`'s `ClientConfig`). A
@@ -106,12 +111,13 @@ one that is easy to miss:
    listener.
 
 Concretely: `pg-listen` is given a 30 second `retryTimeout` (in its options
-argument; versions before this one put it in the connection settings, where
-`pg-listen` never read it, so the 3 second default stayed in force). When it still gives
-up, the listener tears the subscriber down and builds a new one after 1s, then
-2s, 4s, and so on, capped at 30s, resetting after a successful subscribe.
-Reconnection is unbounded with capped backoff. Bounded attempts end in a process
-that is running and permanently deaf, which is the failure nobody notices.
+argument; 25.0.2 and earlier put it in the connection settings, where
+`pg-listen` never read it, so the 3 second default stayed in force). When it
+still gives up, the listener tears the subscriber down and builds a new one
+after 1s, then 2s, 4s, and so on, capped at 30s, resetting after a successful
+subscribe. Reconnection is unbounded with capped backoff. Bounded attempts end
+in a process that is running and permanently deaf, which is the failure nobody
+notices.
 
 ## Publishing
 
@@ -185,14 +191,14 @@ before it commits; a receiver that reads the row back finds nothing, which is
 the safer of the two failure modes. When that is not acceptable, see the next
 section.
 
-**It respects the payload limit.** Postgres requires a payload shorter than
-8000 bytes, so the largest it accepts is 7999 UTF-8 bytes (exported as
+**It respects the payload limit.** Postgres requires a payload shorter than 8000
+bytes, so the largest it accepts is 7999 UTF-8 bytes (exported as
 `PG_NOTIFY_MAX_PAYLOAD_BYTES`); exactly 8000 is already too long. It rejects an
-oversized payload outright, failing the statement and taking the caller with it. Oversized payloads are
-dropped with a warning, or reshaped by an `onOversized(payload, channel)`
-handler. If the handler returns `undefined`, or a replacement that is still over
-the limit, the notification is dropped and logged; `publish` does not throw in
-either case:
+oversized payload outright, failing the statement and taking the caller with it.
+Oversized payloads are dropped with a warning, or reshaped by an
+`onOversized(payload, channel)` handler. If the handler returns `undefined`, or
+a replacement that is still over the limit, the notification is dropped and
+logged; `publish` does not throw in either case:
 
 ```ts
 new PgNotifyPublisher(dataSource, {
@@ -309,28 +315,36 @@ lowercased, so `Notify_Outbox` is `notify_outbox`; a
 double-quoted part is taken literally, so `'"MyFn"'` is `MyFn` and
 `'app."MyFn"'` is `MyFn` in `app`. The generated defaults follow the same
 folding. So for options that produced valid SQL before, a down migration
-written against an earlier version drops the same objects it created -- except
-names over 63 bytes, which now throw (see Behaviour changes), and a
-three-part `db.schema.name` function name, which also throws. A name
+written against an earlier version drops the same objects it created; the one
+exception is a three-part `db.schema.name` function name, which now throws.
+Whitespace around a name and its dots is ignored, as it was in SQL. A name
 that does not parse as SQL (`'notify-outbox'`) could not have worked before and
 is now taken whole, literally. A trigger name cannot be schema-qualified, and a
 function name has at most two parts; either mistake throws.
 
 **Limits.** Empty names, and names or channels containing a NUL character,
-throw. So does any identifier over 63 bytes -- Postgres would silently truncate
-it, and two long tables sharing a prefix would then share a trigger function --
-and a channel over 63 bytes, which `pg_notify` would reject on every write. A
-long table name needs an explicit `functionName` and `triggerName`.
+throw, and so does a channel over 63 bytes, which `pg_notify` would reject on
+every write. Identifiers over 63 bytes (table, schema, column, function and
+trigger names, generated or explicit) are cut exactly as Postgres cuts them: to
+at most 63 bytes of UTF-8, on a character boundary, so a name with multi-byte
+characters can end up shorter than 63 bytes. That keeps migrations written
+against earlier versions, which let Postgres do the cutting, working both ways:
+re-run on a fresh database, and rolled back. The cost is the one Postgres
+already had: two long names that share their first 63 bytes name the same
+object. Two tables whose names share a long prefix would share
+`notify_<prefix>` and `trg_notify_<prefix>`, so the second `createNotifyTrigger`
+would replace the first one's function; give such tables explicit, short
+`functionName` and `triggerName`s.
 
-**Schemas.** Pass `schema`, or a schema-qualified `table` such as
-`'app.outbox'` (split at the first dot). The table and the trigger function are
-then both qualified with that schema, unless `functionName` names its own. When `schema` is given, `table` is taken
-whole, so a table whose name contains a dot is written
-`{ schema: 'public', table: 'odd.name' }`. Without either, the function is
-created in the first schema of the `search_path`, as before. The trigger is created with `CREATE TRIGGER`
-(not `OR REPLACE`, which needs Postgres 14), so running it twice for the same
-trigger name fails rather than silently replacing an existing trigger; run
-`dropNotifyTrigger` first to re-create one.
+**Schemas.** Pass `schema`, or a schema-qualified `table` such as `'app.outbox'`
+(split at the first dot). The table and the trigger function are then both
+qualified with that schema, unless `functionName` names its own. When `schema`
+is given, `table` is taken whole, so a table whose name contains a dot is
+written `{ schema: 'public', table: 'odd.name' }`. Without either, the function
+is created in the first schema of the `search_path`, as before. The trigger is
+created with `CREATE TRIGGER` (not `OR REPLACE`, which needs Postgres 14), so
+running it twice for the same trigger name fails rather than silently replacing
+an existing trigger; run `dropNotifyTrigger` first to re-create one.
 
 Keep `columns` small, for the same payload-limit reason. The function picks the
 row by `TG_OP` when it runs: `OLD` for a `DELETE`, `NEW` otherwise. So one
@@ -388,12 +402,17 @@ migrator, the script can also be run as-is in `up`/`down` with
 `sql.raw(buildNotifyTriggerSql(outboxTrigger)).execute(db)` (it has no
 parameters, so `pg` runs both statements in one call).
 
-The quoting helpers are exported too: `quotePgIdentifier(name)` and
-`quotePgLiteral(value)`.
+The quoting helpers are exported too: `quotePgIdentifier(name)`,
+`quotePgLiteral(value)` and `truncatePgIdentifier(name)`. `quotePgIdentifier`
+is strict and throws for a name over 63 bytes rather than let Postgres cut it;
+the trigger builders instead pass each name through `truncatePgIdentifier`
+first, for the compatibility reasons above.
 
-## Behaviour changes
+## Behaviour changes since 25.0.2
 
-Changes in this release that existing users should check:
+The monorepo keeps no changelog, so the changes since
+`@onivoro/server-pg-notify` 25.0.2 that existing users should check are listed
+here:
 
 1. **Payload limit.** `PG_NOTIFY_MAX_PAYLOAD_BYTES` is now 7999, the largest
    payload Postgres accepts. It was 8000, which let an exactly-8000-byte
@@ -408,11 +427,13 @@ Changes in this release that existing users should check:
    that were valid unquoted resolve to the same objects as before (see
    "Function and trigger names" above), including schema-qualified and
    double-quoted `functionName`s, so existing down migrations still work.
-4. **Long names throw.** A generated or explicit name over 63 bytes, or a
-   channel over 63 bytes, now throws instead of being truncated by Postgres.
-   An older migration on a long table name that relied on that truncation
-   needs `functionName` / `triggerName` set to the truncated names it created
-   (the first 63 bytes).
+4. **Channels are checked.** A channel that is empty, over 63 bytes or
+   contains a NUL character now throws up front: when a `NotificationListener`
+   is constructed, from `PgNotifyPublisher.publish`, `buildNotifyQuery` and
+   `notifyInTransaction`, and from the trigger builders. Before, a long
+   channel failed at `pg_notify` time, and `LISTEN` silently truncated it and
+   listened on a channel nothing sent to. Long identifiers, by contrast, are
+   still cut as Postgres cuts them (see "Limits" above).
 5. **Trigger function body.** The generated function now chooses `OLD` or
    `NEW` by `TG_OP`, so a trigger mixing `DELETE` with other events sends real
    values on delete instead of `null`s. Re-run `createNotifyTrigger` (it uses

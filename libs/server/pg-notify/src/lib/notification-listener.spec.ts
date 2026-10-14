@@ -115,6 +115,19 @@ describe('NotificationListener', () => {
       );
     });
 
+    // LISTEN would quietly truncate a long channel and hear nothing
+    it('rejects a channel postgres cannot carry, at construction', () => {
+      expect(() => new TestListener('', dataSource)).toThrow('cannot be empty');
+      expect(() => new TestListener('c'.repeat(64), dataSource)).toThrow(
+        'Postgres allows at most 63',
+      );
+      expect(() => new TestListener('c'.repeat(64), 'postgres://db')).toThrow(
+        'Postgres allows at most 63',
+      );
+      expect(() => new TestListener('c'.repeat(63), dataSource)).not.toThrow();
+      expect(createPgSubscriber).not.toHaveBeenCalled();
+    });
+
     it('lets driver extras override the retry timeout', async () => {
       const ds = {
         driver: { options: { ...driverOptions, extra: { retryTimeout: 5 } } },

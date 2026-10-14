@@ -6,6 +6,7 @@ import {
   dropNotifyTrigger,
   quotePgIdentifier,
   quotePgLiteral,
+  truncatePgIdentifier,
 } from './create-notify-trigger';
 
 const outbox: CreateNotifyTriggerOptions = {
@@ -284,34 +285,83 @@ describe('function and trigger names', () => {
     );
   });
 
-  // postgres truncates longer names silently, so two long tables sharing a
-  // prefix would end up with the same trigger function
-  it('throws rather than let postgres truncate a generated name', () => {
-    const table = 'a'.repeat(50);
+  // earlier versions let postgres cut long names; old migrations, re-run on a
+  // fresh database or rolled back, must reach the same objects
+  it('cuts long generated names to 63 bytes, as postgres did', () => {
+    const table = 'a'.repeat(60);
+    const sql = buildNotifyTriggerSql({ ...outbox, table });
 
-    expect(() => buildNotifyTriggerSql({ ...outbox, table })).toThrow(
-      `The generated function name "notify_${table}_changed" is over Postgres' 63 byte limit`,
+    const fn = `notify_${table}_changed`.slice(0, 63);
+    const trigger = `trg_notify_${table}_changed`.slice(0, 63);
+    expect(sql).toContain(`FUNCTION "${fn}"()`);
+    expect(sql).toContain(`CREATE TRIGGER "${trigger}"`);
+    expect(sql).toContain(`ON "${table}"`);
+    expect(buildDropNotifyTriggerSql({ ...outbox, table })).toContain(
+      `DROP TRIGGER IF EXISTS "${trigger}" ON "${table}"`,
     );
-    expect(() =>
-      buildNotifyTriggerSql({ ...outbox, table, functionName: 'notify_long' }),
-    ).toThrow('The generated trigger name');
-    expect(
-      buildNotifyTriggerSql({
-        ...outbox,
-        table,
-        functionName: 'notify_long',
-        triggerName: 'trg_long',
-      }),
-    ).toContain('CREATE TRIGGER "trg_long"');
   });
 
-  it('throws for any identifier over 63 bytes', () => {
+  it('cuts explicit names, tables, schemas and columns the same way', () => {
+    const long = 'L'.repeat(70);
+    const sql = buildNotifyTriggerSql({
+      schema: `s${long}`,
+      table: `t${long}`,
+      channel: 'c',
+      columns: [`c${long}`],
+      functionName: `f${long}`,
+      triggerName: `"T${long}"`,
+    });
+    const cut = (name: string) => name.slice(0, 63);
+
+    expect(sql).toContain(`"${cut(`s${long}`)}"."${cut(`t${long}`)}"`);
+    expect(sql).toContain(
+      `"${cut(`s${long}`)}"."${cut(`f${long}`.toLowerCase())}"()`,
+    );
+    expect(sql).toContain(`CREATE TRIGGER "${cut(`T${long}`)}"`);
+    // the JSON key is a string, not an identifier: it is sent whole
+    expect(sql).toContain(`'c${long}', notify_row."${cut(`c${long}`)}"`);
+  });
+
+  // postgres cuts on a character boundary, so the result can be under 63
+  it('never splits a multi-byte character', () => {
+    // 'é' is 2 bytes: 'x' + 31 of them is 63 bytes, 'xx' + 31 would be 64
+    expect(truncatePgIdentifier('x' + 'é'.repeat(40))).toBe(
+      'x' + 'é'.repeat(31),
+    );
+    expect(truncatePgIdentifier('xx' + 'é'.repeat(40))).toBe(
+      'xx' + 'é'.repeat(30),
+    );
+    // a 4-byte character straddling byte 63 is dropped whole
+    expect(truncatePgIdentifier('x'.repeat(61) + '𝍧')).toBe('x'.repeat(61));
+    expect(truncatePgIdentifier('x'.repeat(59) + '𝍧')).toBe(
+      'x'.repeat(59) + '𝍧',
+    );
+    expect(truncatePgIdentifier('short')).toBe('short');
+  });
+
+  it('keeps quotePgIdentifier itself strict', () => {
     expect(() => quotePgIdentifier('x'.repeat(64))).toThrow(
       'is 64 bytes; Postgres allows at most 63',
     );
     expect(quotePgIdentifier('x'.repeat(63))).toBe(`"${'x'.repeat(63)}"`);
-    expect(() => sqlFor({ table: 'outbox', schema: 's'.repeat(64) })).toThrow(
-      '64 bytes',
+  });
+
+  // earlier versions emitted these unquoted, and SQL ignores the whitespace
+  it('ignores whitespace around function and trigger names and their dots', () => {
+    expect(
+      sqlFor({
+        functionName: '  app . Notify_Outbox\n',
+        triggerName: '\tTrg ',
+      }),
+    ).toBe(
+      'DROP TRIGGER IF EXISTS "trg" ON "outbox"; DROP FUNCTION IF EXISTS "app"."notify_outbox"();',
+    );
+    expect(sqlFor({ functionName: ' "My Fn" ' })).toContain(
+      'DROP FUNCTION IF EXISTS "My Fn"()',
+    );
+    // a name that still does not parse is taken literally, minus the padding
+    expect(sqlFor({ functionName: ' notify-outbox ' })).toContain(
+      'DROP FUNCTION IF EXISTS "notify-outbox"()',
     );
   });
 });

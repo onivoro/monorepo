@@ -58,6 +58,18 @@ describe('PgNotifyPublisher', () => {
     expect(calls[0].params).toEqual(['events', 'hello']);
   });
 
+  it('rejects a channel postgres would reject, without querying', async () => {
+    const { dataSource, calls } = fakeDataSource();
+    const publisher = new PgNotifyPublisher(dataSource);
+
+    await expect(publisher.publish('', 'x')).rejects.toThrow('cannot be empty');
+    await expect(publisher.publish('c'.repeat(64), 'x')).rejects.toThrow(
+      'Postgres allows at most 63',
+    );
+    await expect(publisher.publishJson('a\0b', {})).rejects.toThrow('NUL');
+    expect(calls).toHaveLength(0);
+  });
+
   it('serializes json payloads', async () => {
     const { dataSource, calls } = fakeDataSource();
     await new PgNotifyPublisher(dataSource).publishJson('events', { a: 1 });

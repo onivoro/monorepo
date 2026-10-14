@@ -57,13 +57,35 @@ const EVENTS = new Set(['INSERT', 'UPDATE', 'DELETE']);
  *
  * Throws for a name over 63 bytes, which Postgres would otherwise truncate
  * without error -- so two long names sharing a prefix would silently become
- * the same object.
+ * the same object. (The trigger builders do not use this strict check: they
+ * truncate long names as Postgres does, with {@link truncatePgIdentifier}, so
+ * migrations written against earlier versions keep working.)
  */
 export function quotePgIdentifier(name: string): string {
   assertSqlText(name, 'identifier');
   if (name === '') throw new Error('A Postgres identifier cannot be empty');
   assertIdentifierLength(name);
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Shortens a name exactly as Postgres does an identifier that is too long: to
+ * at most 63 bytes (NAMEDATALEN - 1) of UTF-8, cut on a character boundary
+ * (pg_mbcliplen), so the result can be shorter than 63 bytes when the cut
+ * would fall inside a multi-byte character. Shorter names are returned as is.
+ */
+export function truncatePgIdentifier(name: string): string {
+  if (Buffer.byteLength(name, 'utf8') <= PG_MAX_IDENTIFIER_BYTES) return name;
+
+  let out = '';
+  let bytes = 0;
+  for (const char of name) {
+    const size = Buffer.byteLength(char, 'utf8');
+    if (bytes + size > PG_MAX_IDENTIFIER_BYTES) break;
+    out += char;
+    bytes += size;
+  }
+  return out;
 }
 
 /**
@@ -140,8 +162,7 @@ function createStatements(options: CreateNotifyTriggerOptions): string[] {
 
   const payload = options.columns
     .map(
-      (column) =>
-        `${quotePgLiteral(column)}, notify_row.${quotePgIdentifier(column)}`,
+      (column) => `${quotePgLiteral(column)}, notify_row.${quoteName(column)}`,
     )
     .join(',\n          ');
 
@@ -200,14 +221,15 @@ function names(options: CreateNotifyTriggerOptions) {
 
   const qualify = (name: string, inSchema = schema) =>
     inSchema === undefined
-      ? quotePgIdentifier(name)
-      : `${quotePgIdentifier(inSchema)}.${quotePgIdentifier(name)}`;
+      ? quoteName(name)
+      : `${quoteName(inSchema)}.${quoteName(name)}`;
 
   let fn: string;
   if (options.functionName === undefined) {
-    fn = qualify(defaultName(`notify_${table}_changed`, 'function'));
+    fn = qualify(defaultName(`notify_${table}_changed`));
   } else {
-    const parts = sqlName(options.functionName);
+    const functionName = trimSpace(options.functionName);
+    const parts = sqlName(functionName);
     if (parts && parts.length > 2) {
       throw new Error(
         `functionName ${JSON.stringify(options.functionName)} has too many parts: use name or schema.name`,
@@ -216,22 +238,21 @@ function names(options: CreateNotifyTriggerOptions) {
     fn =
       parts?.length === 2
         ? qualify(parts[1], parts[0])
-        : qualify(parts?.[0] ?? options.functionName);
+        : qualify(parts?.[0] ?? functionName);
   }
 
   let trigger: string;
   if (options.triggerName === undefined) {
-    trigger = quotePgIdentifier(
-      defaultName(`trg_notify_${table}_changed`, 'trigger'),
-    );
+    trigger = quoteName(defaultName(`trg_notify_${table}_changed`));
   } else {
-    const parts = sqlName(options.triggerName);
+    const triggerName = trimSpace(options.triggerName);
+    const parts = sqlName(triggerName);
     if (parts && parts.length > 1) {
       throw new Error(
         `triggerName ${JSON.stringify(options.triggerName)} cannot be schema-qualified: a trigger lives in its table's schema`,
       );
     }
-    trigger = quotePgIdentifier(parts?.[0] ?? options.triggerName);
+    trigger = quoteName(parts?.[0] ?? triggerName);
   }
 
   return { table: qualify(table), fn, trigger };
@@ -244,14 +265,19 @@ function names(options: CreateNotifyTriggerOptions) {
  * it created. Otherwise -- a name that could not have worked unquoted -- it is
  * taken literally.
  */
-function defaultName(name: string, kind: 'function' | 'trigger'): string {
-  const folded = PLAIN.test(name) ? fold(name) : name;
-  if (Buffer.byteLength(folded, 'utf8') > PG_MAX_IDENTIFIER_BYTES) {
-    throw new Error(
-      `The generated ${kind} name ${JSON.stringify(folded)} is over Postgres' ${PG_MAX_IDENTIFIER_BYTES} byte limit, which would silently truncate it. Pass ${kind}Name.`,
-    );
-  }
-  return folded;
+function defaultName(name: string): string {
+  return PLAIN.test(name) ? fold(name) : name;
+}
+
+/**
+ * Every identifier the builders emit goes through here: quoted, and cut to 63
+ * bytes the way Postgres would have cut it when earlier versions emitted it,
+ * so a long table's generated names resolve to the objects those versions
+ * created. Long names sharing a 63-byte prefix therefore name the same object;
+ * pass functionName/triggerName to keep them apart.
+ */
+function quoteName(name: string): string {
+  return quotePgIdentifier(truncatePgIdentifier(name));
 }
 
 // Postgres' unquoted identifier: a letter, `_` or any non-ASCII character,
@@ -260,18 +286,27 @@ function defaultName(name: string, kind: 'function' | 'trigger'): string {
 const PLAIN_PART = '[A-Za-z_\\u0080-\\uffff][A-Za-z0-9_$\\u0080-\\uffff]*';
 const PLAIN = new RegExp(`^${PLAIN_PART}$`);
 const PLAIN_PREFIX = new RegExp(`^${PLAIN_PART}`);
+const SPACE = /[ \t\n\r\f\v]/;
+/** Strips the whitespace SQL ignores around a name, as it did unquoted. */
+const trimSpace = (name: string) =>
+  name.replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, '');
 const fold = (name: string) => name.replace(/[A-Z]/g, (c) => c.toLowerCase());
 
 /**
  * Splits a name the way Postgres reads an unquoted SQL name: dot-separated
  * parts, each either a plain identifier (lowercased) or a double-quoted one
- * (taken literally, `""` meaning `"`). Undefined when it does not parse.
+ * (taken literally, `""` meaning `"`). Whitespace around the parts is
+ * ignored, as it was in SQL. Undefined when it does not parse.
  */
 function sqlName(name: string): string[] | undefined {
   const parts: string[] = [];
   let i = 0;
+  const skipSpace = () => {
+    while (i < name.length && SPACE.test(name[i])) i++;
+  };
 
   for (;;) {
+    skipSpace();
     if (name[i] === '"') {
       let part = '';
       for (i++; ; i++) {
@@ -292,6 +327,7 @@ function sqlName(name: string): string[] | undefined {
       i += match[0].length;
     }
 
+    skipSpace();
     if (i === name.length) return parts;
     if (name[i] !== '.') return undefined;
     i++;

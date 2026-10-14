@@ -10,6 +10,7 @@ import {
   NotifyPayloadOptions,
   NotifyQueryable,
   PG_NOTIFY_MAX_PAYLOAD_BYTES,
+  assertNotifyChannel,
   fitNotifyPayload,
 } from './notify-query';
 
@@ -59,8 +60,12 @@ export class PgNotifyPublisher {
    * To notify inside a transaction instead -- delivered only if it commits, as
    * a transactional outbox needs -- use `notifyInTransaction` or
    * `buildNotifyQuery` on the transaction's own connection.
+   *
+   * Rejects, without querying, for a channel Postgres would reject (empty,
+   * over 63 bytes, or containing NUL).
    */
   async publish(channel: string, payload: string): Promise<void> {
+    assertNotifyChannel(channel);
     const sized = this.withinLimit(channel, payload);
     if (sized === undefined) return;
 

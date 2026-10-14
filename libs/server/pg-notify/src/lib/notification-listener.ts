@@ -2,6 +2,7 @@ import { Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import createPgSubscriber, { Subscriber } from 'pg-listen';
 import type { DataSource } from 'typeorm';
 import type { PostgresDriver } from 'typeorm/driver/postgres/PostgresDriver';
+import { assertNotifyChannel } from './notify-query';
 
 /**
  * node-postgres connection settings: `pg`'s `ClientConfig` (host, port, user,
@@ -89,11 +90,16 @@ export abstract class NotificationListener<TNotification>
    *   connection settings, or a connection string. The listener holds its own
    *   dedicated connection either way; typeorm is never loaded for the latter
    *   two.
+   * @throws for a channel Postgres cannot carry (empty, over 63 bytes, or
+   *   containing NUL). LISTEN would quietly truncate a long one and listen on
+   *   a channel nothing sends to.
    */
   constructor(
     protected readonly channel: string,
     private readonly connection: NotificationListenerConnection,
-  ) {}
+  ) {
+    assertNotifyChannel(channel);
+  }
 
   async onModuleInit() {
     // Deliberately not caught. A database that is unreachable at boot should
