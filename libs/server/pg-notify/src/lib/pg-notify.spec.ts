@@ -58,6 +58,18 @@ describe('PgNotifyPublisher', () => {
     expect(calls[0].params).toEqual(['events', 'hello']);
   });
 
+  it('rejects a channel postgres would reject, without querying', async () => {
+    const { dataSource, calls } = fakeDataSource();
+    const publisher = new PgNotifyPublisher(dataSource);
+
+    await expect(publisher.publish('', 'x')).rejects.toThrow('cannot be empty');
+    await expect(publisher.publish('c'.repeat(64), 'x')).rejects.toThrow(
+      'Postgres allows at most 63',
+    );
+    await expect(publisher.publishJson('a\0b', {})).rejects.toThrow('NUL');
+    expect(calls).toHaveLength(0);
+  });
+
   it('serializes json payloads', async () => {
     const { dataSource, calls } = fakeDataSource();
     await new PgNotifyPublisher(dataSource).publishJson('events', { a: 1 });
@@ -65,14 +77,22 @@ describe('PgNotifyPublisher', () => {
     expect(calls[0].params?.[1]).toBe('{"a":1}');
   });
 
-  it('accepts a payload exactly at the limit', async () => {
+  // postgres requires a payload shorter than 8000 bytes: 7999 is the largest
+  it('accepts a 7999 byte payload', async () => {
     const { dataSource, calls } = fakeDataSource();
-    await new PgNotifyPublisher(dataSource).publish(
-      'events',
-      'x'.repeat(PG_NOTIFY_MAX_PAYLOAD_BYTES),
-    );
+    await new PgNotifyPublisher(dataSource).publish('events', 'x'.repeat(7999));
 
     expect(calls).toHaveLength(1);
+    expect(PG_NOTIFY_MAX_PAYLOAD_BYTES).toBe(7999);
+  });
+
+  it('drops an 8000 byte payload, which postgres rejects', async () => {
+    const { dataSource, calls } = fakeDataSource();
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await new PgNotifyPublisher(dataSource).publish('events', 'x'.repeat(8000));
+
+    expect(calls).toHaveLength(0);
   });
 
   // postgres rejects an oversized NOTIFY outright, failing the statement --
@@ -115,13 +135,18 @@ describe('PgNotifyPublisher', () => {
     const { dataSource, calls } = fakeDataSource();
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    // every character is 4 bytes, so half the character budget is over the limit
+    // every character is 4 bytes: 2000 of them are 8000 bytes, 1999 are 7996
     await new PgNotifyPublisher(dataSource).publish(
       'events',
-      '𝍧'.repeat(PG_NOTIFY_MAX_PAYLOAD_BYTES / 2),
+      '𝍧'.repeat(2000),
     );
-
     expect(calls).toHaveLength(0);
+
+    await new PgNotifyPublisher(dataSource).publish(
+      'events',
+      '𝍧'.repeat(1999),
+    );
+    expect(calls).toHaveLength(1);
   });
 });
 
@@ -134,8 +159,8 @@ describe('createNotifyTrigger', () => {
       columns: ['id', 'kind'],
     });
 
-    expect(queries[0]).toContain('json_build_object( \'id\', NEW."id"');
-    expect(queries[0]).toContain('\'kind\', NEW."kind"');
+    expect(queries[0]).toContain('json_build_object( \'id\', notify_row."id"');
+    expect(queries[0]).toContain('\'kind\', notify_row."kind"');
     expect(queries[0]).toContain("pg_notify('outbox_events'");
   });
 
@@ -162,18 +187,22 @@ describe('createNotifyTrigger', () => {
     expect(queries[1]).toContain('AFTER INSERT OR UPDATE ON "outbox"');
   });
 
-  // NEW is not bound in a delete trigger; reading it would raise at runtime
-  it('reads OLD for a delete-only trigger', async () => {
+  // NEW is not bound (or NULL) in a delete trigger, so the row is picked by
+  // TG_OP: a delete sends the deleted row's values, even beside other events
+  it('reads OLD on DELETE and NEW otherwise, chosen at run time', async () => {
     const { runner, queries } = fakeQueryRunner();
     await createNotifyTrigger(runner, {
       table: 'outbox',
       channel: 'c',
       columns: ['id'],
-      events: ['DELETE'],
+      events: ['INSERT', 'DELETE'],
     });
 
-    expect(queries[0]).toContain('OLD."id"');
-    expect(queries[0]).toContain('RETURN OLD');
+    expect(queries[0]).toContain(
+      "IF TG_OP = 'DELETE' THEN notify_row := OLD; ELSE notify_row := NEW; END IF;",
+    );
+    expect(queries[0]).toContain('notify_row."id"');
+    expect(queries[1]).toContain('AFTER INSERT OR DELETE ON "outbox"');
   });
 
   it('honours explicit names so a table can carry several triggers', async () => {
@@ -186,8 +215,8 @@ describe('createNotifyTrigger', () => {
       triggerName: 'trg_outbox_high_priority',
     });
 
-    expect(queries[0]).toContain('FUNCTION notify_outbox_high_priority()');
-    expect(queries[1]).toContain('CREATE TRIGGER trg_outbox_high_priority');
+    expect(queries[0]).toContain('FUNCTION "notify_outbox_high_priority"()');
+    expect(queries[1]).toContain('CREATE TRIGGER "trg_outbox_high_priority"');
   });
 });
 

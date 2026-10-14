@@ -1,7 +1,33 @@
 import { Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import createPgSubscriber, { Subscriber } from 'pg-listen';
 import type { DataSource } from 'typeorm';
-import { PostgresDriver } from 'typeorm/driver/postgres/PostgresDriver';
+import type { PostgresDriver } from 'typeorm/driver/postgres/PostgresDriver';
+import { assertNotifyChannel } from './notify-query';
+
+/**
+ * node-postgres connection settings: `pg`'s `ClientConfig` (host, port, user,
+ * password, database, ssl, connectionString, ...), as pg-listen takes them.
+ */
+export type PgClientConfig = NonNullable<
+  Parameters<typeof createPgSubscriber>[0]
+>;
+
+/**
+ * Where a NotificationListener connects: a TypeORM DataSource using the
+ * Postgres driver, a node-postgres config object, or a connection string.
+ */
+export type NotificationListenerConnection =
+  | DataSource
+  | PgClientConfig
+  | string;
+
+/** pg-listen's own options, which it reads from its second argument. */
+const PG_LISTEN_OPTION_KEYS = [
+  'retryTimeout',
+  'retryInterval',
+  'retryLimit',
+  'paranoidChecking',
+] as const;
 
 /**
  * How long pg-listen keeps trying before it gives up and emits `error`.
@@ -58,10 +84,22 @@ export abstract class NotificationListener<TNotification>
 
   private readonly logger = new Logger(NotificationListener.name);
 
+  /**
+   * @param channel the channel to LISTEN on.
+   * @param connection a TypeORM `DataSource` (Postgres driver), node-postgres
+   *   connection settings, or a connection string. The listener holds its own
+   *   dedicated connection either way; typeorm is never loaded for the latter
+   *   two.
+   * @throws for a channel Postgres cannot carry (empty, over 63 bytes, or
+   *   containing NUL). LISTEN would quietly truncate a long one and listen on
+   *   a channel nothing sends to.
+   */
   constructor(
     protected readonly channel: string,
-    private readonly dataSource: DataSource,
-  ) {}
+    private readonly connection: NotificationListenerConnection,
+  ) {
+    assertNotifyChannel(channel);
+  }
 
   async onModuleInit() {
     // Deliberately not caught. A database that is unreachable at boot should
@@ -84,22 +122,7 @@ export abstract class NotificationListener<TNotification>
   }
 
   private async subscribe() {
-    const pgDriver = this.dataSource.driver as PostgresDriver;
-
-    this.subscriber = createPgSubscriber({
-      connectionString: pgDriver.options.url,
-      host: pgDriver.options.host,
-      user: pgDriver.options.username,
-      password: pgDriver.options.password,
-      database: pgDriver.options.database,
-      port: pgDriver.options.port,
-      ssl: pgDriver.options.ssl,
-      connectionTimeoutMillis: pgDriver.options.connectTimeoutMS,
-      application_name: pgDriver.options.applicationName,
-      max: pgDriver.options.poolSize,
-      retryTimeout: RETRY_TIMEOUT_MS,
-      ...pgDriver.options.extra,
-    });
+    this.subscriber = createPgSubscriber(...subscriberArgs(this.connection));
 
     // Registered BEFORE connect. pg-listen can emit during connection, and an
     // error arriving before the handler exists is the crash this prevents.
@@ -200,4 +223,57 @@ export abstract class NotificationListener<TNotification>
   }
 
   abstract onNotification(payload: TNotification): void | Promise<void>;
+}
+
+/**
+ * pg-listen's two arguments: the pg connection config, and its own options.
+ *
+ * The retry settings belong in the second. They used to be spread into the
+ * first along with the connection settings, where pg-listen never looks, so
+ * the 30s retry window silently stayed at its 3s default. Retry keys found in
+ * the connection settings (typeorm `extra`, or the pg config) are still
+ * honoured -- moved to where pg-listen reads them.
+ */
+function subscriberArgs(
+  connection: NotificationListenerConnection,
+): [PgClientConfig, Record<string, unknown>] {
+  const config: Record<string, unknown> =
+    typeof connection === 'string'
+      ? { connectionString: connection }
+      : isDataSource(connection)
+        ? fromDataSource(connection)
+        : { ...connection };
+
+  const options: Record<string, unknown> = { retryTimeout: RETRY_TIMEOUT_MS };
+  for (const key of PG_LISTEN_OPTION_KEYS) {
+    if (config[key] !== undefined) options[key] = config[key];
+    delete config[key];
+  }
+
+  return [config as PgClientConfig, options];
+}
+
+function isDataSource(
+  connection: Exclude<NotificationListenerConnection, string>,
+): connection is DataSource {
+  const driver = (connection as { driver?: { options?: unknown } }).driver;
+  return typeof driver === 'object' && driver !== null && 'options' in driver;
+}
+
+function fromDataSource(dataSource: DataSource): Record<string, unknown> {
+  const { options } = dataSource.driver as PostgresDriver;
+
+  return {
+    connectionString: options.url,
+    host: options.host,
+    user: options.username,
+    password: options.password,
+    database: options.database,
+    port: options.port,
+    ssl: options.ssl,
+    connectionTimeoutMillis: options.connectTimeoutMS,
+    application_name: options.applicationName,
+    max: options.poolSize,
+    ...options.extra,
+  };
 }
