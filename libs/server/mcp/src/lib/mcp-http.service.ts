@@ -37,13 +37,50 @@ interface SessionEntry {
   lastActivity: number;
   /** Stops following the registry; also changes which tools the session's caller sees. */
   unsubscribeRegistry: McpServerWiring;
-  /** The auth the session's tool visibility was last resolved from (see `visibilityKey`). */
-  visibilityKey?: string;
+  /** Which tokens the session has seen, in order, and which one its tools come from. */
+  visibility?: SessionVisibility;
   /** The latest visibility re-resolution, so they run one at a time per session. */
   visibilityUpdate?: Promise<void>;
   sessionId?: string;
   /** Who opened the session, when the request was authenticated (see `session.principal`). */
   principal?: string;
+}
+
+/**
+ * The tokens (`visibilityKey`s) a stateful session has seen, numbered in the order it first
+ * saw them, and the number of the one its current tool visibility was resolved from. A
+ * session only moves forward: a request whose token is newer than the applied one
+ * re-resolves, an older one is served with the current tools.
+ */
+interface SessionVisibility {
+  seen: Map<string, number>;
+  next: number;
+  applied: number;
+}
+
+/**
+ * How many tokens a session remembers. When it has seen more, it forgets the oldest; a
+ * forgotten token that comes back counts as new.
+ */
+const SESSION_VISIBILITY_HISTORY = 16;
+
+/** The order number of `key` in the session, numbering it if the session hasn't seen it. */
+function sequenceOf(visibility: SessionVisibility, key: string): number {
+  const known = visibility.seen.get(key);
+  if (known !== undefined) return known;
+  const sequence = visibility.next++;
+  visibility.seen.set(key, sequence);
+  if (visibility.seen.size > SESSION_VISIBILITY_HISTORY) {
+    // Map order is insertion order, which is sequence order: drop the oldest that isn't the
+    // applied one.
+    for (const [seenKey, seenSequence] of visibility.seen) {
+      if (seenSequence !== visibility.applied) {
+        visibility.seen.delete(seenKey);
+        break;
+      }
+    }
+  }
+  return sequence;
 }
 
 /**
@@ -224,19 +261,27 @@ export class McpHttpService implements OnModuleDestroy {
     );
     if (res.destroyed || res.writableEnded) return undefined;
     const session = this.createLegacySession(principal, visibleTools);
-    session.visibilityKey = visibilityKey((req as { auth?: AuthInfo }).auth);
+    session.visibility = {
+      seen: new Map([[visibilityKey((req as { auth?: AuthInfo }).auth), 0]]),
+      next: 1,
+      applied: 0,
+    };
     this.closeIfNotStoredWhenResponseCloses(session, res);
     return session;
   }
 
   /**
    * A stateful session decides its tool visibility from the request that opens it. When a
-   * later request carries a different token or scope set (a client that stepped up after a
-   * `403 insufficient_scope`, or one that now uses a narrower token), the visibility is
-   * resolved again from that request's auth before the request is handled, and the
-   * session's server gains or loses tools to match (sending `tools/list_changed`).
-   * Re-resolutions run one at a time per session. Returns `false` when the client went away
-   * meanwhile, so the request isn't handled.
+   * later request carries a token (or scope set) the session hasn't seen before, such as a
+   * client that stepped up after a `403 insufficient_scope` or one that now uses a narrower
+   * token, the visibility is resolved again from that request's auth before the request is
+   * handled, and the session's server gains or loses tools to match (sending
+   * `tools/list_changed`). A request with a token the session has already moved past (an
+   * SSE reconnect or an in-flight request still carrying the old token) is served with the
+   * current tools, and doesn't change them: its calls are still checked by the scope
+   * pre-check and the guards. Re-resolutions run one at a time per session, and one whose
+   * token has been overtaken by the time it runs is dropped. Returns `false` when the client
+   * went away meanwhile, so the request isn't handled.
    */
   private async refreshSessionVisibility(
     session: SessionEntry,
@@ -244,17 +289,20 @@ export class McpHttpService implements OnModuleDestroy {
     res: http.ServerResponse,
   ): Promise<boolean> {
     if (!this.registry.hasToolVisibilityRules()) return true;
+    const visibility = session.visibility;
+    if (!visibility) return true;
     const authInfo = (req as { auth?: AuthInfo }).auth;
-    const key = visibilityKey(authInfo);
-    if (session.visibilityKey === key && !session.visibilityUpdate) return true;
+    const sequence = sequenceOf(visibility, visibilityKey(authInfo));
+    if (sequence <= visibility.applied) return true;
 
     const update = (session.visibilityUpdate ?? Promise.resolve()).then(
       async () => {
-        if (session.visibilityKey === key) return;
+        if (sequence <= visibility.applied) return;
         const visibleTools = await this.resolveVisibleTools(authInfo);
+        if (sequence <= visibility.applied) return;
         // A no-op once the session has closed and stopped following the registry.
         session.unsubscribeRegistry.setVisibleTools(visibleTools);
-        session.visibilityKey = key;
+        visibility.applied = sequence;
       },
     );
     const settled = update.catch((error) =>

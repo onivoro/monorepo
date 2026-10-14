@@ -12,6 +12,7 @@ import { OAuthError, OAuthErrorCode } from '@modelcontextprotocol/server';
 import type { AddressInfo } from 'net';
 import * as http from 'http';
 import { McpHttpModule } from './mcp-http.module';
+import { McpHttpService } from './mcp-http.service';
 import { McpTool } from './mcp-tool.decorator';
 import { McpGuard } from './mcp-guard.decorator';
 import { McpScopeGuard } from './mcp-scope-guard';
@@ -469,9 +470,45 @@ describe('Per-caller tool visibility over HTTP', () => {
   describe('a stateful session whose token changes', () => {
     let app: any;
     let url: URL;
-    const toolFilter = jest.fn(() => true);
+    /** While set, resolving visibility for an admin token waits for `hold.release()`. */
+    let hold:
+      | {
+          entered: Promise<void>;
+          enter(): void;
+          released: Promise<void>;
+          release(): void;
+        }
+      | undefined;
+    const toolFilter = jest.fn(
+      async (_tool: unknown, authInfo: McpAuthInfo | undefined) => {
+        const current = hold;
+        if (current && authInfo?.scopes.includes('admin')) {
+          current.enter();
+          await current.released;
+        }
+        return true;
+      },
+    );
+
+    function holdAdminResolution() {
+      let enter!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => (enter = resolve));
+      const released = new Promise<void>((resolve) => (release = resolve));
+      hold = {
+        entered,
+        enter,
+        released,
+        release: () => {
+          hold = undefined;
+          release();
+        },
+      };
+      return hold;
+    }
 
     beforeEach(async () => {
+      hold = undefined;
       toolFilter.mockClear();
       ({ app, url } = await startApp({
         session: {},
@@ -589,6 +626,89 @@ describe('Per-caller tool visibility over HTTP', () => {
         }
       }
       expect(names).toEqual(['admin-only', 'late-admin', 'public']);
+      await client.close();
+    });
+
+    /** A raw 2025-era `tools/list` on the client's session, with a token of its own. */
+    async function listWithToken(transport: any, token: string) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          authorization: `Bearer ${token}`,
+          'mcp-session-id': transport.sessionId,
+          'mcp-protocol-version': transport._protocolVersion,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'raw',
+          method: 'tools/list',
+          params: {},
+        }),
+      });
+      const body = await response.text();
+      const json = body.startsWith('{')
+        ? JSON.parse(body)
+        : JSON.parse(
+            body
+              .split('\n')
+              .find((line) => line.startsWith('data: '))!
+              .slice('data: '.length),
+          );
+      return (json.result.tools as Array<{ name: string }>)
+        .map((tool) => tool.name)
+        .sort();
+    }
+
+    it('is not narrowed again by a request still carrying the token it moved past', async () => {
+      const { client, transport, auth } = await connectWithToken('agent-token');
+
+      // The stepped-up call's re-resolution is held while an old-token request arrives.
+      const held = holdAdminResolution();
+      auth.token = 'admin-token';
+      const call = client.callTool({ name: 'admin-only', arguments: {} });
+      await held.entered;
+      const oldTokenList = listWithToken(transport, 'agent-token');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      held.release();
+
+      const result: any = await call;
+      expect(result.content[0].text).toBe('admin');
+      expect(adminCalls).toEqual(['admin-only']);
+      expect(await oldTokenList).toEqual(['public']);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      // The session's own server still has the tool. (Asked directly: a request with the new
+      // token would re-resolve on the old code and hide a session left narrowed.)
+      const session = (app.get(McpHttpService) as any).sessions.get(
+        transport.sessionId,
+      );
+      expect(Object.keys(session.server._registeredTools).sort()).toEqual([
+        'admin-only',
+        'public',
+      ]);
+      expect(await toolNames(client)).toEqual(['admin-only', 'public']);
+      await client.close();
+    });
+
+    it('serves a request with a token the session moved past without resolving again or notifying', async () => {
+      const { client, transport, auth, toolsChanged } =
+        await connectWithToken('agent-token');
+      auth.token = 'admin-token';
+      expect(await toolNames(client)).toEqual(['admin-only', 'public']);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const calls = toolFilter.mock.calls.length;
+      const changes = toolsChanged();
+
+      expect(await listWithToken(transport, 'agent-token')).toEqual([
+        'admin-only',
+        'public',
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(toolFilter.mock.calls.length).toBe(calls);
+      expect(toolsChanged()).toBe(changes);
+      expect(await toolNames(client)).toEqual(['admin-only', 'public']);
       await client.close();
     });
   });
