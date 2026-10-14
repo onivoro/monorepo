@@ -53,19 +53,9 @@ function createMcpController(configuredRoute?: string) {
       await this.dispatchMcp(req, res);
     }
 
+    // McpHttpService answers a POST whose body wasn't parsed (415, 400 or 500), after the
+    // Host, Origin and bearer checks.
     private async dispatchMcp(req: Request, res: Response) {
-      if (req.method === 'POST' && typeof (req as any).body === 'undefined') {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32603,
-            message:
-              'Request body not parsed. McpHttpModule requires Express platform with body-parsing middleware.',
-          },
-          id: null,
-        });
-        return;
-      }
       await this.mcpService.handleRequest(req as any, res as any);
     }
   }

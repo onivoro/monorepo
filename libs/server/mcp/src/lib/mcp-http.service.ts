@@ -3,6 +3,7 @@ import {
   bearerAuthChallengeResponse,
   createMcpHandler,
   OAuthError,
+  isJsonContentType,
   isLegacyRequest,
   McpServer,
   verifyBearerToken,
@@ -529,6 +530,79 @@ export class McpHttpService implements OnModuleDestroy {
     );
   }
 
+  /**
+   * Whether the request carries a body, by the same rule body parsers use: a
+   * `Transfer-Encoding` header, or a `Content-Length` above zero.
+   */
+  private hasRequestBody(req: http.IncomingMessage): boolean {
+    if (req.headers['transfer-encoding'] !== undefined) return true;
+    const length = Number(req.headers['content-length']);
+    return Number.isFinite(length) && length > 0;
+  }
+
+  /**
+   * Whether a POST's body went unparsed: `req.body` is unset (Express 5's JSON parser leaves
+   * it so for a request that isn't JSON or has no body, as does an app without body
+   * parsing), or is the `{}` Express 4's parser puts there when there was nothing to parse.
+   * A `{}` that came over the wire is a body, and goes to the SDK like any other.
+   */
+  private isUnparsedBody(req: http.IncomingMessage, body: unknown): boolean {
+    if (body === undefined) return true;
+    const emptyObject =
+      !!body &&
+      typeof body === 'object' &&
+      !Array.isArray(body) &&
+      Object.keys(body).length === 0;
+    return emptyObject && !this.hasRequestBody(req);
+  }
+
+  /**
+   * Answers a POST whose body went unparsed (see `isUnparsedBody`). Express's JSON parser
+   * only skips requests that aren't JSON or have no body, so these are mostly client
+   * errors, answered as the SDK's Streamable HTTP handling (`createMcpHandler`) answers
+   * them:
+   *
+   * - a `Content-Type` that isn't `application/json`: `415`;
+   * - a JSON `Content-Type` with no body: `400` Parse error (`-32700`).
+   *
+   * Only a JSON request that does carry a body can't be the client's fault: body parsing
+   * is missing (another platform, or `bodyParser: false`), so that one is a `500`.
+   */
+  private rejectUnparsedBody(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ) {
+    if (!isJsonContentType(req.headers['content-type'])) {
+      this.sendJsonRpcError(
+        res,
+        415,
+        -32000,
+        'Unsupported Media Type: Content-Type must be application/json',
+      );
+      return;
+    }
+
+    if (!this.hasRequestBody(req)) {
+      this.sendJsonRpcError(
+        res,
+        400,
+        -32700,
+        'Parse error: the request body is not valid JSON',
+      );
+      return;
+    }
+
+    this.logger.error(
+      'A JSON POST arrived with its body unparsed: McpHttpModule needs the Express platform with JSON body parsing.',
+    );
+    this.sendJsonRpcError(
+      res,
+      500,
+      -32603,
+      'Request body not parsed. McpHttpModule requires Express platform with body-parsing middleware.',
+    );
+  }
+
   async handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     if (!this.isHostAllowed(req)) {
       this.sendJsonRpcError(
@@ -577,6 +651,11 @@ export class McpHttpService implements OnModuleDestroy {
       }
 
       const parsedBody = (req as any).body;
+
+      if (req.method === 'POST' && this.isUnparsedBody(req, parsedBody)) {
+        this.rejectUnparsedBody(req, res);
+        return;
+      }
 
       if (req.method === 'POST') {
         const missingScopes = this.getMissingToolScopes(req, parsedBody);

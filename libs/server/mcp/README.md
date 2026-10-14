@@ -170,7 +170,7 @@ export class AppModule {}
 
 ### Platform requirement
 
-`McpHttpModule` requires NestJS's Express platform (`@nestjs/platform-express`), which is the default when you call `NestFactory.create()`. It depends on Express body-parsing middleware to parse incoming request bodies.
+`McpHttpModule` requires NestJS's Express platform (`@nestjs/platform-express`), which is the default when you call `NestFactory.create()`. It depends on Express body-parsing middleware to parse incoming request bodies, so don't create the app with `bodyParser: false`. A POST whose body arrives unparsed is answered as described in [Request bodies](#request-bodies).
 
 If your application uses `@nestjs/platform-fastify`, use `McpRegistryModule.registerOnly()` and write a Fastify-aware controller around `McpHttpService`, which isn't provided by `registerOnly()`: provide it yourself, along with `MCP_MODULE_CONFIG` (an `McpModuleConfig`). `McpHttpService.handleRequest(req, res)` takes raw Node `http.IncomingMessage` and `http.ServerResponse` (`request.raw`, `reply.raw`) and reads the parsed JSON body from `req.body`, so set that from Fastify's parsed body first. Bearer authentication and the auth strategy are set up by `McpHttpModule`; without it, call `httpService.setBearerAuthVerifier(...)` and `registry.setAuthStrategy(...)` yourself. Or serve the registry with the SDK directly (see [Custom transport](#custom-transport)).
 
@@ -1438,7 +1438,7 @@ McpHttpModule.registerAndServeHttp({
 });
 ```
 
-When enabled, unauthenticated HTTP requests (all methods except `OPTIONS`) are rejected before MCP session or tool handling with a `401` challenge and `WWW-Authenticate` metadata. (The `Host` and `Origin` checks run first and answer `403`, and a stateless server answers `GET`/`DELETE` with `405` before authentication.) This is the mechanism MCP clients use to trigger OAuth automatically.
+When enabled, unauthenticated HTTP requests (all methods except `OPTIONS`) are rejected before MCP session or tool handling with a `401` challenge and `WWW-Authenticate` metadata. (The `Host` and `Origin` checks run first and answer `403`, and a stateless server answers `GET`/`DELETE` with `405` before authentication. A POST without a usable body is answered after authentication; see [Request bodies](#request-bodies).) This is the mechanism MCP clients use to trigger OAuth automatically.
 
 `requireBearerAuth` only takes effect when `authStrategy` is also set, and that provider must implement the SDK's `OAuthTokenVerifier` (`verifyAccessToken()`, from `@modelcontextprotocol/server`); otherwise module init throws. `McpJwtAuthStrategy` from `@onivoro/server-mcp-auth` implements both interfaces.
 
@@ -1642,6 +1642,7 @@ The package test suite covers:
 - Streamable HTTP session lifecycle, stale-session recovery, and session ownership
 - stateless HTTP: `405` for `GET`/`DELETE`, ignored session headers, and the capabilities it advertises
 - `Origin` and `Host` validation
+- end to end over HTTP, POSTs whose body went unparsed (with Express 4's parser, and without body parsing as Express 5 leaves them), in both eras and both session modes: `415` for a missing or non-JSON `Content-Type`, `400` Parse error for a JSON POST with no body, `500` only for a JSON body the app didn't parse, all after the `403` `Host`/`Origin` and `401` bearer checks; `npm run smoke:nest11` checks the same on Nest 11 and Express 5
 - stdio transport wiring and its stderr logging
 - registry discovery and execution, including which error messages reach the client
 - end to end over HTTP, with the MCP SDK's own v2 client in both protocol eras against stateful and stateless servers: `inputRequired` (bridged to elicitation for 2025-era clients), progress, log levels, list-changed notifications over `subscriptions/listen`, and resource updates
@@ -1669,8 +1670,12 @@ The package test suite covers:
   Set `requireBearerAuth: true`. An `authStrategy` alone does not force an HTTP `401` challenge.
 - Fastify does not work
   `McpHttpModule` requires Express. Use `McpRegistryModule.registerOnly()` and a custom controller for Fastify.
-- Request body parsing error
-  Ensure the app is using Nest’s Express platform and standard body parsing.
+- `415` with `Unsupported Media Type: Content-Type must be application/json`
+  The POST wasn't sent as `application/json` (or had no `Content-Type`, as with a bare `curl -X POST`). Send the JSON-RPC message with `Content-Type: application/json`. See [Request bodies](#request-bodies).
+- `400` with `Parse error` (`-32700`)
+  The POST was sent as JSON but had no body. (A body that isn't valid JSON gets Express's own `400`, which isn't a JSON-RPC error.)
+- `500` with `Request body not parsed. McpHttpModule requires Express platform with body-parsing middleware.`
+  The client sent a JSON body but the app didn't parse it: the app runs on another platform, or was created with `bodyParser: false`. Use Nest's Express platform with its standard body parsing.
 
 ## DNS rebinding protection
 
@@ -1739,6 +1744,29 @@ because a per-request server can't send requests back.
 Stateless mode is MCP spec-compliant: Streamable HTTP servers may assign session
 IDs, but are not required to. If a server does assign one, clients must send it
 back; if it does not, clients should continue without session headers.
+
+#### Request bodies
+
+The module reads each POST's JSON-RPC message from `req.body`, which Express's JSON
+parser fills in. The parser skips a request that isn't `application/json` or has no
+body, leaving `req.body` unset (Express 5) or `{}` (Express 4). A POST the parser
+skipped is answered after the `Host`, `Origin` and bearer checks, the way the MCP SDK's
+own Streamable HTTP handling answers it, in either protocol era:
+
+| Request                                           | Response                                                                               |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `Content-Type` missing or not `application/json`  | `415`, `-32000` `Unsupported Media Type: Content-Type must be application/json`        |
+| JSON `Content-Type`, no body                      | `400`, `-32700` `Parse error: the request body is not valid JSON`                      |
+| JSON `Content-Type`, a body, but `req.body` unset | `500`, `-32603` `Request body not parsed. McpHttpModule requires Express platform ...` |
+
+Only the last is the server's fault: the client sent JSON and the app didn't parse it,
+because it runs on another platform or was created with `bodyParser: false`. A request
+"has a body" when it carries `Transfer-Encoding` or a `Content-Length` above zero, the
+rule body parsers use. A `{}` the client did send is a body, and goes to the SDK, which
+answers `400` because it isn't a JSON-RPC message. Malformed JSON never reaches the module:
+Express's parser answers it with its own `400`, before the `Host`, `Origin` and bearer
+checks. A custom controller that calls `McpHttpService.handleRequest` gets the same
+answers when it leaves `req.body` unset.
 
 #### Stateful Sessions
 
