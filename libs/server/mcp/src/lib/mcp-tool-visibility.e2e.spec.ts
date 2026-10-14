@@ -10,6 +10,7 @@ import type {
 } from '@modelcontextprotocol/server';
 import { OAuthError, OAuthErrorCode } from '@modelcontextprotocol/server';
 import type { AddressInfo } from 'net';
+import * as http from 'http';
 import { McpHttpModule } from './mcp-http.module';
 import { McpTool } from './mcp-tool.decorator';
 import { McpGuard } from './mcp-guard.decorator';
@@ -327,6 +328,140 @@ describe('Per-caller tool visibility over HTTP', () => {
 
       await admin.close();
       await agent.close();
+    });
+  });
+
+  describe('while the visibility is still being decided', () => {
+    /**
+     * A `toolFilter` that blocks every call made before `release()`, so a test can act while
+     * a server's visibility is being resolved.
+     */
+    function blockingFilter() {
+      let blocking = true;
+      let entered!: () => void;
+      let release!: () => void;
+      const enteredPromise = new Promise<void>(
+        (resolve) => (entered = resolve),
+      );
+      const released = new Promise<void>((resolve) => (release = resolve));
+      return {
+        filter: async () => {
+          if (blocking) {
+            entered();
+            await released;
+          }
+          return true;
+        },
+        entered: enteredPromise,
+        release: () => {
+          blocking = false;
+          release();
+        },
+      };
+    }
+
+    function wiredServers(registry: McpToolRegistry) {
+      return {
+        toolEnabledDelegates: (registry as any).toolEnabledDelegates.size,
+        changeListeners: (registry as any).changeListeners.length,
+      };
+    }
+
+    const sleep = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms));
+
+    let app: any;
+
+    afterEach(async () => {
+      await app?.close();
+      app = undefined;
+    });
+
+    const initialize = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'raw', version: '1.0.0' },
+      },
+    };
+
+    it.each([
+      ['a stateless 2025-era POST', {}, {}],
+      ['a stateful initialize', { session: {} }, {}],
+      [
+        'a stateful initialize naming an unknown session',
+        { session: {} },
+        { 'mcp-session-id': 'gone' },
+      ],
+    ] as Array<[string, Partial<McpModuleConfig>, Record<string, string>]>)(
+      'builds no server for %s whose client went away',
+      async (_name, config, headers) => {
+        const blocker = blockingFilter();
+        let registry: McpToolRegistry;
+        ({ app, registry } = await startApp({
+          ...config,
+          toolVisibility: 'authorized',
+          toolFilter: blocker.filter,
+        }));
+        const { port } = app.getHttpServer().address() as AddressInfo;
+        const before = wiredServers(registry);
+
+        const req = http.request({
+          host: '127.0.0.1',
+          port,
+          path: '/mcp',
+          method: 'POST',
+          headers: {
+            host: `localhost:${port}`,
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+            authorization: 'Bearer admin-token',
+            ...headers,
+          },
+        });
+        req.on('error', () => undefined);
+        req.end(JSON.stringify(initialize));
+
+        await blocker.entered;
+        req.destroy();
+        await sleep(50);
+        blocker.release();
+        await sleep(50);
+
+        expect(wiredServers(registry)).toEqual(before);
+      },
+    );
+
+    it('wires a tool registered meanwhile onto a stateful session that may see it', async () => {
+      const blocker = blockingFilter();
+      let registry: McpToolRegistry;
+      let url: URL;
+      ({ app, registry, url } = await startApp({
+        session: {},
+        toolVisibility: 'authorized',
+        toolFilter: blocker.filter,
+      }));
+
+      const connecting = connect(url, 'legacy', 'admin-token');
+      await blocker.entered;
+      registry.registerTool(
+        { name: 'meanwhile', description: 'Registered while resolving' },
+        async () => 'meanwhile',
+        [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
+      );
+      blocker.release();
+      const client = await connecting;
+
+      let names: string[] = [];
+      for (let i = 0; i < 50 && !names.includes('meanwhile'); i++) {
+        names = await toolNames(client);
+        if (!names.includes('meanwhile')) await sleep(10);
+      }
+      expect(names).toEqual(['admin-only', 'meanwhile', 'public']);
+      await client.close();
     });
   });
 });

@@ -754,6 +754,53 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
           await moduleRef.close();
         });
 
+        it('wires a tool registered while the visibility was being decided', async () => {
+          stdioScopes = ['admin'];
+          let blocking = true;
+          let entered!: () => void;
+          let release!: () => void;
+          const enteredPromise = new Promise<void>((r) => (entered = r));
+          const released = new Promise<void>((r) => (release = r));
+          const { moduleRef, stdin, stdout } = await startScoped({
+            toolVisibility: 'authorized',
+            toolFilter: async () => {
+              if (blocking) {
+                entered();
+                await released;
+              }
+              return true;
+            },
+          });
+          const client = new Client(
+            { name: 'stdio-client', version: '1.0.0' },
+            { versionNegotiation: { mode } },
+          );
+
+          const connecting = client.connect(streamTransport(stdin, stdout));
+          await enteredPromise;
+          moduleRef
+            .get(McpToolRegistry)
+            .registerTool(
+              { name: 'meanwhile', description: 'Registered while resolving' },
+              async () => 'meanwhile',
+              [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
+            );
+          blocking = false;
+          release();
+          await connecting;
+
+          let names: string[] = [];
+          for (let i = 0; i < 50 && !names.includes('meanwhile'); i++) {
+            names = (await client.listTools()).tools.map((tool) => tool.name);
+            if (!names.includes('meanwhile')) {
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+          }
+          expect(names.sort()).toEqual(['admin-only', 'meanwhile', 'public']);
+          await client.close();
+          await moduleRef.close();
+        });
+
         it('applies toolFilter', async () => {
           stdioScopes = ['admin'];
           const { moduleRef, client, names } = await connectScoped(

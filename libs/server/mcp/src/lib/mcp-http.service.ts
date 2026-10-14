@@ -22,6 +22,7 @@ import type { McpModuleConfig } from './mcp-module-config';
 import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpAuthInfo } from './mcp-auth-info';
+import type { McpVisibleTools } from './mcp-tool-visibility';
 import {
   buildMcpServer,
   warnAboutIgnoredCapabilities,
@@ -190,15 +191,32 @@ export class McpHttpService implements OnModuleDestroy {
   }
 
   /**
-   * A 2025-era connection: a stored session when stateful, else one request's worth. The
-   * tools it lists are decided once, from the auth of the request that opens it.
+   * Opens a 2025-era connection for a request. The tools it lists are decided once, from the
+   * auth of the request that opens it, which can take a while (the auth strategy and
+   * `toolFilter` may do I/O). If the client went away meanwhile, its response has already
+   * closed, so nothing is built: a server built now would never be closed and would stay
+   * wired to the registry. Otherwise the server is built and its response's `close` listener
+   * attached in the same tick.
    */
-  private async createLegacySession(
+  private async openLegacySession(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
     principal: string | undefined,
-    authInfo: AuthInfo | undefined,
-  ): Promise<SessionEntry> {
-    const visibleTools = await this.resolveVisibleTools(authInfo);
+  ): Promise<SessionEntry | undefined> {
+    const visibleTools = await this.resolveVisibleTools(
+      (req as { auth?: AuthInfo }).auth,
+    );
+    if (res.destroyed || res.writableEnded) return undefined;
+    const session = this.createLegacySession(principal, visibleTools);
+    this.closeIfNotStoredWhenResponseCloses(session, res);
+    return session;
+  }
 
+  /** A 2025-era connection: a stored session when stateful, else one request's worth. */
+  private createLegacySession(
+    principal: string | undefined,
+    visibleTools: McpVisibleTools | undefined,
+  ): SessionEntry {
     const entry: Partial<SessionEntry> = {
       lastActivity: Date.now(),
       principal,
@@ -617,11 +635,8 @@ export class McpHttpService implements OnModuleDestroy {
       const principal = this.getPrincipal(req);
 
       if (req.method === 'POST' && !sessionId) {
-        const session = await this.createLegacySession(
-          principal,
-          (req as { auth?: AuthInfo }).auth,
-        );
-        this.closeIfNotStoredWhenResponseCloses(session, res);
+        const session = await this.openLegacySession(req, res, principal);
+        if (!session) return;
         await session.transport.handleRequest(req, res, parsedBody);
         return;
       }
@@ -648,11 +663,8 @@ export class McpHttpService implements OnModuleDestroy {
 
       if (!session) {
         if (isInitializeRequest) {
-          const newSession = await this.createLegacySession(
-            principal,
-            (req as { auth?: AuthInfo }).auth,
-          );
-          this.closeIfNotStoredWhenResponseCloses(newSession, res);
+          const newSession = await this.openLegacySession(req, res, principal);
+          if (!newSession) return;
           await newSession.transport.handleRequest(req, res, parsedBody);
           return;
         }

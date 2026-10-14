@@ -426,8 +426,35 @@ export function wireRegistryToServer(
   >();
 
   const { visibleTools } = options;
+  let following = true;
+
+  /**
+   * Wires a tool once `visibleTools` has decided it is visible. `evaluate` remembers its
+   * decisions, so asking again about a tool already decided costs nothing.
+   */
+  const wireToolIfVisible = (name: string) => {
+    visibleTools!
+      .evaluate(name)
+      .then((visible) => {
+        if (visible && following && !registeredTools.has(name)) {
+          wireToolToServer(registry, server, name, registeredTools, wiring);
+        }
+      })
+      .catch((err) =>
+        console.error(
+          `[wireRegistryToServer] Could not wire tool "${name}":`,
+          err,
+        ),
+      );
+  };
+
   for (const { metadata } of registry.getTools()) {
-    if (visibleTools && !visibleTools.has(metadata.name)) continue;
+    if (visibleTools && !visibleTools.has(metadata.name)) {
+      // Hidden, or registered while the visibility was being resolved (after its snapshot,
+      // and before this server was listening for registrations): decide now.
+      wireToolIfVisible(metadata.name);
+      continue;
+    }
     wireToolToServer(registry, server, metadata.name, registeredTools, wiring);
   }
 
@@ -441,9 +468,11 @@ export function wireRegistryToServer(
 
   if (!unsolicitedMessages) withdrawUnsolicitedCapabilities(registry, server);
 
-  if (!followRegistry) return () => {};
-
-  let following = true;
+  if (!followRegistry) {
+    return () => {
+      following = false;
+    };
+  }
 
   // Wire enable/disable delegate so registry.setToolEnabled() works. Tools this server's
   // caller can't see were never wired, so toggling them changes nothing here.
@@ -524,25 +553,7 @@ export function wireRegistryToServer(
             wireToolToServer(registry, server, name, registeredTools, wiring);
             break;
           }
-          visibleTools
-            .evaluate(name)
-            .then((visible) => {
-              if (visible && following && !registeredTools.has(name)) {
-                wireToolToServer(
-                  registry,
-                  server,
-                  name,
-                  registeredTools,
-                  wiring,
-                );
-              }
-            })
-            .catch((err) =>
-              console.error(
-                `[wireRegistryToServer] Could not wire tool "${name}":`,
-                err,
-              ),
-            );
+          wireToolIfVisible(name);
           break;
         case 'resource':
           wireResourceToServer(registry, server, name, wiring);
