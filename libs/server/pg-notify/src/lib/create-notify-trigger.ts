@@ -287,9 +287,9 @@ const PLAIN_PART = '[A-Za-z_\\u0080-\\uffff][A-Za-z0-9_$\\u0080-\\uffff]*';
 const PLAIN = new RegExp(`^${PLAIN_PART}$`);
 const PLAIN_PREFIX = new RegExp(`^${PLAIN_PART}`);
 const SPACE = /[ \t\n\r\f\v]/;
+const EDGE_SPACE = new RegExp(`^${SPACE.source}+|${SPACE.source}+$`, 'g');
 /** Strips the whitespace SQL ignores around a name, as it did unquoted. */
-const trimSpace = (name: string) =>
-  name.replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, '');
+const trimSpace = (name: string) => name.replace(EDGE_SPACE, '');
 const fold = (name: string) => name.replace(/[A-Z]/g, (c) => c.toLowerCase());
 
 /**
