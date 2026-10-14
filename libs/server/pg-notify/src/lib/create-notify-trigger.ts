@@ -1,3 +1,5 @@
+import { PG_MAX_IDENTIFIER_BYTES, assertNotifyChannel } from './notify-query';
+
 export interface CreateNotifyTriggerOptions {
   /**
    * Table the trigger fires on.
@@ -29,7 +31,15 @@ export interface CreateNotifyTriggerOptions {
   /** Which statements fire the trigger. Defaults to INSERT only. */
   events?: ('INSERT' | 'UPDATE' | 'DELETE')[];
 
-  /** Overrides the generated names, when one table carries several triggers. */
+  /**
+   * Overrides the generated names, when one table carries several triggers.
+   *
+   * Read as SQL names, as earlier versions (which emitted them unquoted) had
+   * Postgres read them: `app.notify_outbox` is function `notify_outbox` in
+   * schema `app`, a plain part is lowercased, and a double-quoted part such as
+   * `"MyFn"` is taken literally. A name that does not parse that way is used
+   * whole, as one literal identifier. A trigger name cannot be qualified.
+   */
   functionName?: string;
   triggerName?: string;
 }
@@ -44,10 +54,15 @@ const EVENTS = new Set(['INSERT', 'UPDATE', 'DELETE']);
 /**
  * Quotes a Postgres identifier: wrapped in double quotes, embedded double
  * quotes doubled. The result is always taken literally, case included.
+ *
+ * Throws for a name over 63 bytes, which Postgres would otherwise truncate
+ * without error -- so two long names sharing a prefix would silently become
+ * the same object.
  */
 export function quotePgIdentifier(name: string): string {
   assertSqlText(name, 'identifier');
   if (name === '') throw new Error('A Postgres identifier cannot be empty');
+  assertIdentifierLength(name);
   return `"${name.replace(/"/g, '""')}"`;
 }
 
@@ -87,16 +102,21 @@ export async function createNotifyTrigger(
   queryRunner: NotifyTriggerQueryable,
   options: CreateNotifyTriggerOptions,
 ): Promise<void> {
-  for (const statement of createStatements(options)) {
-    await queryRunner.query(statement);
-  }
+  await runAll(queryRunner, createStatements(options));
 }
 
 export async function dropNotifyTrigger(
   queryRunner: NotifyTriggerQueryable,
   options: CreateNotifyTriggerOptions,
 ): Promise<void> {
-  for (const statement of dropStatements(options)) {
+  await runAll(queryRunner, dropStatements(options));
+}
+
+async function runAll(
+  queryRunner: NotifyTriggerQueryable,
+  statements: string[],
+): Promise<void> {
+  for (const statement of statements) {
     await queryRunner.query(statement);
   }
 }
@@ -116,25 +136,32 @@ function createStatements(options: CreateNotifyTriggerOptions): string[] {
     throw new Error('A notify trigger needs at least one event');
   }
 
-  // DELETE exposes the removed row as OLD; everything else as NEW.
-  const row = events.includes('DELETE') && events.length === 1 ? 'OLD' : 'NEW';
+  assertNotifyChannel(options.channel);
 
   const payload = options.columns
     .map(
       (column) =>
-        `${quotePgLiteral(column)}, ${row}.${quotePgIdentifier(column)}`,
+        `${quotePgLiteral(column)}, notify_row.${quotePgIdentifier(column)}`,
     )
     .join(',\n          ');
 
+  // The row is chosen at run time: OLD for a DELETE (NEW is not bound there,
+  // or is NULL), NEW otherwise -- so one trigger can cover deletes alongside
+  // inserts and updates and still send the deleted row's values. The return
+  // value of an AFTER row trigger is ignored.
   const body = `
     DECLARE
-      payload JSON;
+      notify_row RECORD;
     BEGIN
-      payload := json_build_object(
+      IF TG_OP = 'DELETE' THEN
+        notify_row := OLD;
+      ELSE
+        notify_row := NEW;
+      END IF;
+      PERFORM pg_notify(${quotePgLiteral(options.channel)}, json_build_object(
           ${payload}
-      );
-      PERFORM pg_notify(${quotePgLiteral(options.channel)}, payload::text);
-      RETURN ${row};
+      )::text);
+      RETURN NULL;
     END;
     `;
 
@@ -171,31 +198,104 @@ function names(options: CreateNotifyTriggerOptions) {
     table = table.slice(dot + 1);
   }
 
-  const qualify = (name: string) =>
-    schema === undefined
+  const qualify = (name: string, inSchema = schema) =>
+    inSchema === undefined
       ? quotePgIdentifier(name)
-      : `${quotePgIdentifier(schema)}.${quotePgIdentifier(name)}`;
+      : `${quotePgIdentifier(inSchema)}.${quotePgIdentifier(name)}`;
 
-  return {
-    table: qualify(table),
-    fn: qualify(routineName(options.functionName ?? `notify_${table}_changed`)),
-    trigger: quotePgIdentifier(
-      routineName(options.triggerName ?? `trg_notify_${table}_changed`),
-    ),
-  };
+  let fn: string;
+  if (options.functionName === undefined) {
+    fn = qualify(defaultName(`notify_${table}_changed`, 'function'));
+  } else {
+    const parts = sqlName(options.functionName);
+    if (parts && parts.length > 2) {
+      throw new Error(
+        `functionName ${JSON.stringify(options.functionName)} has too many parts: use name or schema.name`,
+      );
+    }
+    fn =
+      parts?.length === 2
+        ? qualify(parts[1], parts[0])
+        : qualify(parts?.[0] ?? options.functionName);
+  }
+
+  let trigger: string;
+  if (options.triggerName === undefined) {
+    trigger = quotePgIdentifier(
+      defaultName(`trg_notify_${table}_changed`, 'trigger'),
+    );
+  } else {
+    const parts = sqlName(options.triggerName);
+    if (parts && parts.length > 1) {
+      throw new Error(
+        `triggerName ${JSON.stringify(options.triggerName)} cannot be schema-qualified: a trigger lives in its table's schema`,
+      );
+    }
+    trigger = quotePgIdentifier(parts?.[0] ?? options.triggerName);
+  }
+
+  return { table: qualify(table), fn, trigger };
 }
 
 /**
- * Function and trigger names were emitted unquoted before, so Postgres folded
- * them to lower case: a table `Outbox` got `notify_outbox_changed`. Folding the
- * names that were valid unquoted keeps those exact objects, so a down
- * migration written against an earlier version still finds what it created.
- * Anything else -- which could not have worked unquoted -- is taken literally.
+ * A generated name: lowercased when it is a plain identifier, as Postgres
+ * folded it when earlier versions emitted it unquoted (a table `Outbox` got
+ * `notify_outbox_changed`), so a down migration written then still finds what
+ * it created. Otherwise -- a name that could not have worked unquoted -- it is
+ * taken literally.
  */
-function routineName(name: string): string {
-  return /^[A-Za-z_][A-Za-z0-9_$]*$/.test(name)
-    ? name.replace(/[A-Z]/g, (c) => c.toLowerCase())
-    : name;
+function defaultName(name: string, kind: 'function' | 'trigger'): string {
+  const folded = PLAIN.test(name) ? fold(name) : name;
+  if (Buffer.byteLength(folded, 'utf8') > PG_MAX_IDENTIFIER_BYTES) {
+    throw new Error(
+      `The generated ${kind} name ${JSON.stringify(folded)} is over Postgres' ${PG_MAX_IDENTIFIER_BYTES} byte limit, which would silently truncate it. Pass ${kind}Name.`,
+    );
+  }
+  return folded;
+}
+
+// Postgres' unquoted identifier: a letter, `_` or any non-ASCII character,
+// then those, digits or `$`. Folding lowercases ASCII letters only, as it does
+// in a UTF-8 database.
+const PLAIN_PART = '[A-Za-z_\\u0080-\\uffff][A-Za-z0-9_$\\u0080-\\uffff]*';
+const PLAIN = new RegExp(`^${PLAIN_PART}$`);
+const PLAIN_PREFIX = new RegExp(`^${PLAIN_PART}`);
+const fold = (name: string) => name.replace(/[A-Z]/g, (c) => c.toLowerCase());
+
+/**
+ * Splits a name the way Postgres reads an unquoted SQL name: dot-separated
+ * parts, each either a plain identifier (lowercased) or a double-quoted one
+ * (taken literally, `""` meaning `"`). Undefined when it does not parse.
+ */
+function sqlName(name: string): string[] | undefined {
+  const parts: string[] = [];
+  let i = 0;
+
+  for (;;) {
+    if (name[i] === '"') {
+      let part = '';
+      for (i++; ; i++) {
+        if (i >= name.length) return undefined;
+        if (name[i] === '"') {
+          if (name[i + 1] !== '"') break;
+          i++;
+        }
+        part += name[i];
+      }
+      i++;
+      if (part === '') return undefined;
+      parts.push(part);
+    } else {
+      const match = PLAIN_PREFIX.exec(name.slice(i));
+      if (!match) return undefined;
+      parts.push(fold(match[0]));
+      i += match[0].length;
+    }
+
+    if (i === name.length) return parts;
+    if (name[i] !== '.') return undefined;
+    i++;
+  }
 }
 
 function dollarTag(body: string): string {
@@ -206,6 +306,15 @@ function dollarTag(body: string): string {
 
 function script(statements: string[]): string {
   return statements.map((statement) => `${statement};\n`).join('\n');
+}
+
+function assertIdentifierLength(name: string) {
+  const bytes = Buffer.byteLength(name, 'utf8');
+  if (bytes > PG_MAX_IDENTIFIER_BYTES) {
+    throw new Error(
+      `Postgres identifier ${JSON.stringify(name)} is ${bytes} bytes; Postgres allows at most ${PG_MAX_IDENTIFIER_BYTES} and would silently truncate it`,
+    );
+  }
 }
 
 function assertSqlText(value: string, what: string) {

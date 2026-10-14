@@ -27,9 +27,24 @@ describe('buildNotifyQuery', () => {
     });
   });
 
-  it('accepts a payload exactly at the limit', () => {
-    const payload = 'x'.repeat(PG_NOTIFY_MAX_PAYLOAD_BYTES);
+  // postgres requires a payload shorter than 8000 bytes: 7999 is the largest
+  it('accepts a 7999 byte payload', () => {
+    const payload = 'x'.repeat(7999);
     expect(buildNotifyQuery('events', payload)?.payload).toBe(payload);
+    expect(PG_NOTIFY_MAX_PAYLOAD_BYTES).toBe(7999);
+  });
+
+  it('rejects an 8000 byte payload, which postgres would fail', () => {
+    expect(buildNotifyQuery('events', 'x'.repeat(8000))).toBeUndefined();
+  });
+
+  it('sends an 8000 byte payload to onOversized', () => {
+    const onOversized = jest.fn(() => '{"reload":true}');
+
+    expect(
+      buildNotifyQuery('events', 'x'.repeat(8000), { onOversized })?.payload,
+    ).toBe('{"reload":true}');
+    expect(onOversized).toHaveBeenCalled();
   });
 
   it('returns undefined for an oversized payload with no handler', () => {
@@ -37,10 +52,9 @@ describe('buildNotifyQuery', () => {
   });
 
   it('measures the limit in bytes, not characters', () => {
-    // every character is 4 bytes, so half the character budget is over
-    expect(
-      buildNotifyQuery('events', '𝍧'.repeat(PG_NOTIFY_MAX_PAYLOAD_BYTES / 2)),
-    ).toBeUndefined();
+    // every character is 4 bytes: 2000 of them are 8000 bytes, 1999 are 7996
+    expect(buildNotifyQuery('events', '𝍧'.repeat(2000))).toBeUndefined();
+    expect(buildNotifyQuery('events', '𝍧'.repeat(1999))).toBeDefined();
   });
 
   it('sends what onOversized returns, and passes it the payload and channel', () => {
@@ -69,8 +83,25 @@ describe('buildNotifyQuery', () => {
 
   it('returns undefined when the replacement is itself oversized', () => {
     expect(
-      buildNotifyQuery('events', oversized, { onOversized: () => oversized }),
+      buildNotifyQuery('events', oversized, {
+        onOversized: () => 'x'.repeat(8000),
+      }),
     ).toBeUndefined();
+  });
+
+  // pg_notify would fail the statement, aborting the caller's transaction
+  it('throws for a channel postgres would reject', () => {
+    expect(() => buildNotifyQuery('', 'x')).toThrow('cannot be empty');
+    expect(() => buildNotifyQuery('a'.repeat(64), 'x')).toThrow(
+      'is 64 bytes; Postgres allows at most 63',
+    );
+    // bytes, not characters: 16 four-byte characters are 64 bytes
+    expect(() => buildNotifyQuery('𝍧'.repeat(16), 'x')).toThrow('64 bytes');
+    expect(() => buildNotifyQuery('a\0b', 'x')).toThrow('NUL');
+  });
+
+  it('accepts a 63 byte channel', () => {
+    expect(buildNotifyQuery('a'.repeat(63), 'x')?.channel).toBe('a'.repeat(63));
   });
 });
 
@@ -85,6 +116,13 @@ describe('notifyInTransaction', () => {
     expect(calls).toEqual([
       { text: 'SELECT pg_notify($1, $2)', values: ['events', '{"id":"1"}'] },
     ]);
+  });
+
+  it('throws before querying for an invalid channel', async () => {
+    const { client } = fakeClient();
+
+    await expect(notifyInTransaction(client, '', 'x')).rejects.toThrow('empty');
+    expect(client.query).not.toHaveBeenCalled();
   });
 
   it('sends nothing and reports false when the payload is dropped', async () => {

@@ -94,8 +94,10 @@ describe('buildNotifyTriggerSql', () => {
     expect(sql).toContain('CREATE TRIGGER "trg_notify_outbox_changed"');
     expect(sql).toContain('AFTER INSERT ON "outbox"');
     expect(sql).toContain('EXECUTE FUNCTION "notify_outbox_changed"();');
-    expect(sql).toContain(`'id', NEW."id", 'kind', NEW."kind"`);
-    expect(sql).toContain(`PERFORM pg_notify('outbox_events', payload::text)`);
+    expect(sql).toContain(`'id', notify_row."id", 'kind', notify_row."kind"`);
+    expect(sql).toContain(
+      `PERFORM pg_notify('outbox_events', json_build_object(`,
+    );
   });
 
   // earlier versions emitted these names unquoted, so postgres folded them;
@@ -148,12 +150,12 @@ describe('buildNotifyTriggerSql', () => {
     expect(sql).toContain(`FUNCTION "s"""."f""()"()`);
     expect(sql).toContain(`CREATE TRIGGER "t"" ON users"`);
     expect(sql).toContain(
-      `pg_notify('c''); DROP TABLE users; --', payload::text)`,
+      `pg_notify('c''); DROP TABLE users; --', json_build_object(`,
     );
     expect(sql).toContain(
-      `'col"); DROP TABLE users; --', NEW."col""); DROP TABLE users; --"`,
+      `'col"); DROP TABLE users; --', notify_row."col""); DROP TABLE users; --"`,
     );
-    expect(sql).toContain(`'k''ey', NEW."k'ey"`);
+    expect(sql).toContain(`'k''ey', notify_row."k'ey"`);
     // tokenised the way postgres reads it, the hostile text never escapes
     // its quotes: everything outside identifiers and literals is our own SQL
     expect(unquoted(sql)).not.toContain('DROP');
@@ -171,12 +173,29 @@ describe('buildNotifyTriggerSql', () => {
     expect(sql.split('$notify2$')).toHaveLength(3);
   });
 
-  it('reads OLD for a delete-only trigger', () => {
-    const sql = flat(buildNotifyTriggerSql({ ...outbox, events: ['DELETE'] }));
+  it('picks OLD or NEW by TG_OP, whatever the events', () => {
+    for (const events of [
+      ['DELETE'],
+      ['INSERT', 'DELETE'],
+      ['INSERT', 'UPDATE', 'DELETE'],
+    ] as CreateNotifyTriggerOptions['events'][]) {
+      const sql = flat(buildNotifyTriggerSql({ ...outbox, events }));
 
-    expect(sql).toContain('OLD."id"');
-    expect(sql).toContain('RETURN OLD');
-    expect(sql).toContain('AFTER DELETE ON');
+      expect(sql).toContain(
+        "IF TG_OP = 'DELETE' THEN notify_row := OLD; ELSE notify_row := NEW; END IF;",
+      );
+      expect(sql).toContain(`AFTER ${events!.join(' OR ')} ON "outbox"`);
+      expect(sql).not.toMatch(/\b(NEW|OLD)\."/);
+    }
+  });
+
+  it('rejects a channel pg_notify would reject', () => {
+    expect(() => buildNotifyTriggerSql({ ...outbox, channel: '' })).toThrow(
+      'cannot be empty',
+    );
+    expect(() =>
+      buildNotifyTriggerSql({ ...outbox, channel: 'c'.repeat(64) }),
+    ).toThrow('Postgres allows at most 63');
   });
 
   it('rejects events that are not trigger events', () => {
@@ -188,6 +207,111 @@ describe('buildNotifyTriggerSql', () => {
     ).toThrow('Unsupported trigger event');
     expect(() => buildNotifyTriggerSql({ ...outbox, events: [] })).toThrow(
       'at least one event',
+    );
+  });
+});
+
+describe('function and trigger names', () => {
+  const sqlFor = (options: Partial<CreateNotifyTriggerOptions>) =>
+    flat(buildDropNotifyTriggerSql({ ...outbox, ...options }));
+
+  // earlier versions emitted functionName unquoted, so postgres read
+  // 'app.notify_outbox' as schema app, function notify_outbox
+  it('splits a schema-qualified functionName', () => {
+    expect(sqlFor({ functionName: 'app.notify_outbox' })).toContain(
+      'DROP FUNCTION IF EXISTS "app"."notify_outbox"()',
+    );
+  });
+
+  it("lets a qualified functionName's schema win over the table's", () => {
+    expect(
+      sqlFor({ table: 'data.outbox', functionName: 'fns.notify_outbox' }),
+    ).toContain('DROP FUNCTION IF EXISTS "fns"."notify_outbox"()');
+  });
+
+  it("puts an unqualified functionName in the table's schema", () => {
+    expect(
+      sqlFor({ table: 'data.outbox', functionName: 'notify_outbox' }),
+    ).toContain('DROP FUNCTION IF EXISTS "data"."notify_outbox"()');
+  });
+
+  it('folds plain parts and keeps double-quoted parts literally', () => {
+    expect(sqlFor({ functionName: 'App."MyFn"' })).toContain(
+      'DROP FUNCTION IF EXISTS "app"."MyFn"()',
+    );
+    expect(sqlFor({ functionName: '"MyFn"' })).toContain(
+      'DROP FUNCTION IF EXISTS "MyFn"()',
+    );
+    expect(sqlFor({ functionName: '"a.b"' })).toContain(
+      'DROP FUNCTION IF EXISTS "a.b"()',
+    );
+    expect(sqlFor({ functionName: '"say ""hi"""' })).toContain(
+      'DROP FUNCTION IF EXISTS "say ""hi"""()',
+    );
+    expect(sqlFor({ triggerName: '"MyTrigger"' })).toContain(
+      'DROP TRIGGER IF EXISTS "MyTrigger" ON',
+    );
+  });
+
+  // postgres allows non-ASCII characters unquoted, and folds ASCII only
+  it('treats non-ASCII characters as plain, folding only ASCII letters', () => {
+    expect(sqlFor({ table: 'Tâble' })).toContain(
+      'DROP FUNCTION IF EXISTS "notify_tâble_changed"()',
+    );
+    expect(sqlFor({ functionName: 'App.Fünf' })).toContain(
+      'DROP FUNCTION IF EXISTS "app"."fünf"()',
+    );
+    expect(sqlFor({ functionName: 'ÉTAT' })).toContain(
+      'DROP FUNCTION IF EXISTS "État"()',
+    );
+  });
+
+  it('takes a name that does not parse as SQL literally, whole', () => {
+    expect(sqlFor({ functionName: 'notify-outbox' })).toContain(
+      'DROP FUNCTION IF EXISTS "notify-outbox"()',
+    );
+    expect(sqlFor({ functionName: '"unterminated' })).toContain(
+      'DROP FUNCTION IF EXISTS """unterminated"()',
+    );
+  });
+
+  it('rejects qualified trigger names and over-qualified function names', () => {
+    expect(() => sqlFor({ triggerName: 'app.trg' })).toThrow(
+      'cannot be schema-qualified',
+    );
+    expect(() => sqlFor({ functionName: 'db.app.fn' })).toThrow(
+      'too many parts',
+    );
+  });
+
+  // postgres truncates longer names silently, so two long tables sharing a
+  // prefix would end up with the same trigger function
+  it('throws rather than let postgres truncate a generated name', () => {
+    const table = 'a'.repeat(50);
+
+    expect(() => buildNotifyTriggerSql({ ...outbox, table })).toThrow(
+      `The generated function name "notify_${table}_changed" is over Postgres' 63 byte limit`,
+    );
+    expect(() =>
+      buildNotifyTriggerSql({ ...outbox, table, functionName: 'notify_long' }),
+    ).toThrow('The generated trigger name');
+    expect(
+      buildNotifyTriggerSql({
+        ...outbox,
+        table,
+        functionName: 'notify_long',
+        triggerName: 'trg_long',
+      }),
+    ).toContain('CREATE TRIGGER "trg_long"');
+  });
+
+  it('throws for any identifier over 63 bytes', () => {
+    expect(() => quotePgIdentifier('x'.repeat(64))).toThrow(
+      'is 64 bytes; Postgres allows at most 63',
+    );
+    expect(quotePgIdentifier('x'.repeat(63))).toBe(`"${'x'.repeat(63)}"`);
+    expect(() => sqlFor({ table: 'outbox', schema: 's'.repeat(64) })).toThrow(
+      '64 bytes',
     );
   });
 });
