@@ -1,9 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
-  isJSONRPCErrorResponse,
   isJSONRPCNotification,
   isJSONRPCRequest,
-  isJSONRPCResultResponse,
+  PROTOCOL_VERSION_META_KEY,
 } from '@modelcontextprotocol/server';
 import type {
   JSONRPCMessage,
@@ -33,8 +32,6 @@ interface Waiter {
   reject(error: unknown): void;
 }
 
-type RequestId = string | number;
-
 /**
  * The client connection `McpStdioModule` serves, for application code that sends the client
  * messages of its own: custom notifications, such as a Claude Code channel's
@@ -50,14 +47,14 @@ export class McpStdioService {
   private connection?: McpStdioConnection;
   private closed = false;
   private readonly waiters = new Set<Waiter>();
-  /** Methods of the requests not yet answered, by id, until the connection is ready. */
-  private readonly openRequests = new Map<RequestId, string>();
+  /** Whether the client has made a 2026-07-28 request other than `server/discover`. */
+  private modernChosen = false;
 
   /**
    * Whether a client is connected and ready for notifications: once the connection has
    * settled on an era, which a client can probe before choosing. On a 2025-era connection
    * that is when the client has sent `notifications/initialized`; on a 2026-07-28 one, when
-   * the server has answered a request other than the `server/discover` probe.
+   * the client has made a 2026-07-28 request other than the `server/discover` probe.
    */
   isConnected(): boolean {
     const connection = this.connection;
@@ -148,7 +145,7 @@ export class McpStdioService {
   observe(transport: Transport): Transport {
     return new ObservedTransport(transport, {
       inbound: (message) => this.onInbound(message),
-      outbound: (message) => this.onOutbound(message),
+      outbound: () => this.onOutbound(),
       closed: () => this.close(),
     });
   }
@@ -175,7 +172,6 @@ export class McpStdioService {
   close(): void {
     this.closed = true;
     this.connection = undefined;
-    this.openRequests.clear();
     for (const waiter of [...this.waiters]) {
       waiter.reject(new McpStdioClosedError());
     }
@@ -184,7 +180,17 @@ export class McpStdioService {
   private onInbound(message: JSONRPCMessage): void {
     const connection = this.connection;
     if (isJSONRPCRequest(message)) {
-      if (!connection?.ready) this.openRequests.set(message.id, message.method);
+      // A 2026-07-28 request (one carrying the per-request protocol version claim) other
+      // than the probe means the client has chosen that era, and `serveStdio` pins the
+      // connection on it. A client that probes and falls back sends `initialize` (or a
+      // `ping`) without the claim, which mustn't make the probe server ready.
+      if (
+        message.method !== 'server/discover' &&
+        claimsModernProtocol(message.params)
+      ) {
+        this.modernChosen = true;
+        this.markModernReady();
+      }
     } else if (
       isJSONRPCNotification(message) &&
       message.method === 'notifications/initialized' &&
@@ -196,18 +202,22 @@ export class McpStdioService {
     }
   }
 
-  private onOutbound(message: JSONRPCMessage): void {
-    if (!isJSONRPCResultResponse(message) && !isJSONRPCErrorResponse(message)) {
-      return;
-    }
-    if (message.id === undefined) return;
-    const method = this.openRequests.get(message.id);
-    if (method === undefined) return;
-    this.openRequests.delete(message.id);
-    // A 2026-07-28 server answering anything but the `server/discover` probe is the one the
-    // connection is pinned to. A client can probe and then fall back to `initialize`.
+  /**
+   * When a 2026-07-28 client opens with a request other than `server/discover`, the server
+   * for it is built and connected only after that request arrives, so readiness waits for the
+   * first message it sends (its answer, or the acknowledgement of `subscriptions/listen`).
+   */
+  private onOutbound(): void {
+    this.markModernReady();
+  }
+
+  private markModernReady(): void {
     const connection = this.connection;
-    if (connection?.era === 'modern' && method !== 'server/discover') {
+    if (
+      this.modernChosen &&
+      connection?.era === 'modern' &&
+      connection.server.isConnected()
+    ) {
       this.markReady(connection);
     }
   }
@@ -215,10 +225,18 @@ export class McpStdioService {
   private markReady(connection: McpStdioConnection): void {
     if (connection.ready) return;
     connection.ready = true;
-    this.openRequests.clear();
     if (this.connection !== connection || !this.isConnected()) return;
     for (const waiter of [...this.waiters]) waiter.resolve();
   }
+}
+
+function claimsModernProtocol(params: unknown): boolean {
+  const meta = (params as { _meta?: unknown } | undefined)?._meta;
+  return (
+    typeof meta === 'object' &&
+    meta !== null &&
+    PROTOCOL_VERSION_META_KEY in meta
+  );
 }
 
 function abortReason(signal: AbortSignal): unknown {

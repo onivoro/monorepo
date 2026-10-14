@@ -373,6 +373,39 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
       await moduleRef.close();
     });
 
+    it('is ready once a 2026-07-28 client that probed opens only a subscriptions/listen stream', async () => {
+      const { moduleRef, stdin, stdout } = await startChannel();
+      const stdio = moduleRef.get(McpStdioService);
+      const client = new Client(
+        { name: 'stdio-client', version: '1.0.0' },
+        { versionNegotiation: { mode: 'auto' } },
+      );
+      const received = new Promise<string>((resolve) =>
+        client.setNotificationHandler(
+          'notifications/claude/channel',
+          { params: z.object({ content: z.string() }) },
+          (params) => resolve(params.content),
+        ),
+      );
+      await client.connect(streamTransport(stdin, stdout));
+      expect(client.getProtocolEra()).toBe('modern');
+      expect(stdio.isConnected()).toBe(false);
+
+      const subscription = await client.listen({ toolsListChanged: true });
+      await stdio.whenConnected();
+
+      expect(stdio.getProtocolEra()).toBe('modern');
+      await expect(
+        stdio.sendNotification('notifications/claude/channel', {
+          content: 'after listen',
+        }),
+      ).resolves.toBe(true);
+      await expect(received).resolves.toBe('after listen');
+      await subscription.close();
+      await client.close();
+      await moduleRef.close();
+    });
+
     it('rejects pending and later whenConnected calls once the module shuts down', async () => {
       const { moduleRef } = await startChannel();
       const stdio = moduleRef.get(McpStdioService);
