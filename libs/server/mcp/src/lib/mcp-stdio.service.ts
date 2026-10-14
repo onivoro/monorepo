@@ -47,14 +47,19 @@ export class McpStdioService {
   private connection?: McpStdioConnection;
   private closed = false;
   private readonly waiters = new Set<Waiter>();
-  /** Whether the client has made a 2026-07-28 request other than `server/discover`. */
+  /**
+   * Whether the client has made a 2026-07-28 request other than `server/discover` that
+   * the server accepted, which pins the connection to that era.
+   */
   private modernChosen = false;
+  /** The id of a 2026-07-28 request still waiting for the answer that tells whether it pinned. */
+  private pendingModernRequest?: string | number;
 
   /**
    * Whether a client is connected and ready for notifications: once the connection has
    * settled on an era, which a client can probe before choosing. On a 2025-era connection
    * that is when the client has sent `notifications/initialized`; on a 2026-07-28 one, when
-   * the client has made a 2026-07-28 request other than the `server/discover` probe.
+   * the server has accepted a 2026-07-28 request other than the `server/discover` probe.
    */
   isConnected(): boolean {
     const connection = this.connection;
@@ -145,7 +150,7 @@ export class McpStdioService {
   observe(transport: Transport): Transport {
     return new ObservedTransport(transport, {
       inbound: (message) => this.onInbound(message),
-      outbound: () => this.onOutbound(),
+      outbound: (message) => this.onOutbound(message),
       closed: () => this.close(),
     });
   }
@@ -184,12 +189,14 @@ export class McpStdioService {
       // than the probe means the client has chosen that era, and `serveStdio` pins the
       // connection on it. A client that probes and falls back sends `initialize` (or a
       // `ping`) without the claim, which mustn't make the probe server ready.
+      // The claim alone doesn't pin: `serveStdio` answers an invalid envelope or an
+      // unsupported revision with an error and stays unpinned, so wait for the answer.
       if (
         message.method !== 'server/discover' &&
         claimsModernProtocol(message.params)
       ) {
-        this.modernChosen = true;
-        this.markModernReady();
+        if (this.modernChosen) this.markModernReady();
+        else this.pendingModernRequest ??= message.id;
       }
     } else if (
       isJSONRPCNotification(message) &&
@@ -203,11 +210,26 @@ export class McpStdioService {
   }
 
   /**
-   * When a 2026-07-28 client opens with a request other than `server/discover`, the server
-   * for it is built and connected only after that request arrives, so readiness waits for the
-   * first message it sends (its answer, or the acknowledgement of `subscriptions/listen`).
+   * Settles a pending 2026-07-28 request. An error answering it means `serveStdio` refused
+   * it and didn't pin (or the request failed before the connection settled); anything else
+   * sent while it is pending (its result, or the acknowledgement `subscriptions/listen`
+   * sends instead of one) means the connection is pinned to that era. When the client
+   * opened without probing, the server is built only after the request arrives, so this is
+   * also the first moment it can be ready.
    */
-  private onOutbound(): void {
+  private onOutbound(message: JSONRPCMessage): void {
+    const pending = this.pendingModernRequest;
+    if (pending !== undefined) {
+      const answersPending = 'id' in message && message.id === pending;
+      if (answersPending && 'error' in message) {
+        this.pendingModernRequest = undefined;
+        return;
+      }
+      if (answersPending || !('id' in message)) {
+        this.pendingModernRequest = undefined;
+        this.modernChosen = true;
+      }
+    }
     this.markModernReady();
   }
 

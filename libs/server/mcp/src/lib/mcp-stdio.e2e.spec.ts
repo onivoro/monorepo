@@ -406,10 +406,11 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
       await moduleRef.close();
     });
 
-    it('is ready once a 2026-07-28 client that opens without probing is answered', async () => {
-      // The SDK client always probes, so this client is hand-written JSON-RPC lines.
-      const { moduleRef, stdin, stdout } = await startChannel();
-      const stdio = moduleRef.get(McpStdioService);
+    /**
+     * A client of hand-written JSON-RPC lines, for openings the SDK client never makes
+     * (it always probes, and only claims revisions it supports).
+     */
+    const rawClient = (stdin: PassThrough, stdout: PassThrough) => {
       const buffer = new ReadBuffer();
       const fromServer: JSONRPCMessage[] = [];
       const waiting: Array<() => void> = [];
@@ -420,32 +421,39 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
           waiting.splice(0).forEach((wake) => wake());
         }
       });
-      const nextFromServer = async (index: number) => {
-        while (fromServer.length <= index) {
-          await new Promise<void>((resolve) => waiting.push(resolve));
-        }
-        return fromServer[index];
+      return {
+        send: (message: JSONRPCMessage) =>
+          stdin.write(serializeMessage(message)),
+        nextFromServer: async (index: number) => {
+          while (fromServer.length <= index) {
+            await new Promise<void>((resolve) => waiting.push(resolve));
+          }
+          return fromServer[index];
+        },
       };
+    };
+    const modernMeta = (protocolVersion: string) => ({
+      'io.modelcontextprotocol/protocolVersion': protocolVersion,
+      'io.modelcontextprotocol/clientInfo': {
+        name: 'raw-client',
+        version: '1.0.0',
+      },
+      'io.modelcontextprotocol/clientCapabilities': {},
+    });
+
+    it('is ready once a 2026-07-28 client that opens without probing is answered', async () => {
+      const { moduleRef, stdin, stdout } = await startChannel();
+      const stdio = moduleRef.get(McpStdioService);
+      const { send, nextFromServer } = rawClient(stdin, stdout);
 
       expect(stdio.isConnected()).toBe(false);
       const connected = stdio.whenConnected();
-      stdin.write(
-        serializeMessage({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'tools/list',
-          params: {
-            _meta: {
-              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
-              'io.modelcontextprotocol/clientInfo': {
-                name: 'raw-client',
-                version: '1.0.0',
-              },
-              'io.modelcontextprotocol/clientCapabilities': {},
-            },
-          },
-        }),
-      );
+      send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: { _meta: modernMeta('2026-07-28') },
+      });
 
       const answer: any = await nextFromServer(0);
       expect(answer.id).toBe(1);
@@ -466,6 +474,70 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
         jsonrpc: '2.0',
         method: 'notifications/claude/channel',
         params: { content: 'unprobed', meta: { run_id: '7' } },
+      });
+      await moduleRef.close();
+    });
+
+    it('is not ready after a refused 2026-07-28 claim, a probe and a fallback to initialize', async () => {
+      const { moduleRef, stdin, stdout } = await startChannel();
+      const stdio = moduleRef.get(McpStdioService);
+      const { send, nextFromServer } = rawClient(stdin, stdout);
+
+      // A revision the server doesn't support is refused, and doesn't pin the connection.
+      send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: { _meta: modernMeta('2099-01-01') },
+      });
+      const refused: any = await nextFromServer(0);
+      expect(refused.id).toBe(1);
+      expect(refused.error).toBeDefined();
+
+      // The probe is answered, but the client hasn't chosen the 2026-07-28 era.
+      send({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'server/discover',
+        params: { _meta: modernMeta('2026-07-28') },
+      });
+      const probe: any = await nextFromServer(1);
+      expect(probe.id).toBe(2);
+      expect(probe.result).toBeDefined();
+      expect(stdio.isConnected()).toBe(false);
+      await expect(
+        stdio.sendNotification('notifications/claude/channel', {
+          content: 'during the probe',
+        }),
+      ).resolves.toBe(false);
+
+      // The client falls back to the 2025-era handshake, and is ready once it completes.
+      const connected = stdio.whenConnected();
+      send({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'raw-client', version: '1.0.0' },
+        },
+      });
+      const initialized: any = await nextFromServer(2);
+      expect(initialized.id).toBe(3);
+      expect(stdio.isConnected()).toBe(false);
+      send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+      await connected;
+      expect(stdio.getProtocolEra()).toBe('legacy');
+      await expect(
+        stdio.sendNotification('notifications/claude/channel', {
+          content: 'after the fallback',
+        }),
+      ).resolves.toBe(true);
+      expect(await nextFromServer(3)).toEqual({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel',
+        params: { content: 'after the fallback' },
       });
       await moduleRef.close();
     });
