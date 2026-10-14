@@ -5,12 +5,14 @@ import {
   OAuthError,
   isLegacyRequest,
   McpServer,
+  mergeCapabilities,
   verifyBearerToken,
 } from '@modelcontextprotocol/server';
 import type {
   AuthInfo,
   McpHttpHandler,
   OAuthTokenVerifier,
+  ServerCapabilities,
 } from '@modelcontextprotocol/server';
 import {
   NodeStreamableHTTPServerTransport,
@@ -124,10 +126,13 @@ export class McpHttpService implements OnModuleDestroy {
       },
       {
         ...this.config.serverOptions,
-        capabilities: buildCapabilities(this.registry, {
-          logging: requestScopedMessages,
-          notifications,
-        }),
+        capabilities: mergeCapabilities(
+          buildCapabilities(this.registry, {
+            logging: requestScopedMessages,
+            notifications,
+          }) as ServerCapabilities,
+          this.config.capabilities ?? {},
+        ),
         ...(this.config.metadata.instructions && {
           instructions: this.config.metadata.instructions,
         }),

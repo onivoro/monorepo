@@ -316,4 +316,24 @@ describe('McpHttpModule end to end with the MCP SDK client', () => {
       await client.close();
     });
   });
+  it.each(['auto', 'legacy'] as const)(
+    'advertises extra capabilities to a client negotiating %s',
+    async (mode) => {
+      const { app, url } = await startApp({
+        capabilities: {
+          experimental: { 'example/feature': {} },
+          tools: { listChanged: false },
+        },
+      });
+      const { client } = await connect(url, mode);
+
+      expect(client.getServerCapabilities()).toMatchObject({
+        experimental: { 'example/feature': {} },
+        tools: { listChanged: false },
+        resources: expect.any(Object),
+      });
+      await client.close();
+      await app.close();
+    },
+  );
 });

@@ -8,6 +8,7 @@ export { McpHttpService } from './lib/mcp-http.service';
 export { McpToolRegistry } from './lib/mcp-tool-registry';
 export { McpScopeGuard } from './lib/mcp-scope-guard';
 export { McpStderrLogger } from './lib/mcp-stderr-logger';
+export { McpStdioService } from './lib/mcp-stdio.service';
 
 // Decorators
 export { McpTool } from './lib/mcp-tool.decorator';

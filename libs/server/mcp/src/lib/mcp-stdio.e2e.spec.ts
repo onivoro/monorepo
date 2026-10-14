@@ -4,7 +4,10 @@ import { Client } from '@modelcontextprotocol/client';
 import type { Transport } from '@modelcontextprotocol/client';
 import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/server';
 import { PassThrough } from 'node:stream';
+import { z } from 'zod';
 import { McpStdioModule } from './mcp-stdio.module';
+import { McpStdioService } from './mcp-stdio.service';
+import type { McpStdioConfig } from './mcp-stdio-config';
 import { McpTool } from './mcp-tool.decorator';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpToolContext } from './mcp-tool-context';
@@ -50,7 +53,7 @@ function streamTransport(
   return transport;
 }
 
-async function startServer() {
+async function startServer(config: Partial<McpStdioConfig> = {}) {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const moduleRef = await Test.createTestingModule({
@@ -59,6 +62,7 @@ async function startServer() {
         metadata: { name: 'stdio-e2e', version: '1.0.0' },
         stdin,
         stdout,
+        ...config,
       }),
     ],
     providers: [StdioToolService],
@@ -139,5 +143,147 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
     await subscription.close();
     await client.close();
     await moduleRef.close();
+  });
+  describe('a Claude Code channel', () => {
+    const channelParams = z.object({
+      content: z.string(),
+      meta: z.record(z.string(), z.string()).optional(),
+    });
+    const instructions =
+      'Events arrive as <channel source="stdio-e2e" ...>. Read them and act.';
+
+    function startChannel(config: Partial<McpStdioConfig> = {}) {
+      return startServer({
+        metadata: { name: 'stdio-e2e', version: '1.0.0', instructions },
+        capabilities: { experimental: { 'claude/channel': {} } },
+        ...config,
+      });
+    }
+
+    it.each([
+      ['auto', 'auto', 'modern'],
+      ['auto', 'legacy', 'legacy'],
+      ['legacy', 'auto', 'legacy'],
+      ['legacy', 'legacy', 'legacy'],
+    ] as const)(
+      'with protocolNegotiation %s, a client negotiating %s connects as %s and receives channel events',
+      async (protocolNegotiation, mode, era) => {
+        const { moduleRef, stdin, stdout } = await startChannel({
+          protocolNegotiation,
+        });
+        const stdio = moduleRef.get(McpStdioService);
+        expect(stdio.isConnected()).toBe(false);
+        await expect(
+          stdio.sendNotification('notifications/claude/channel', {
+            content: 'too early',
+          }),
+        ).resolves.toBe(false);
+
+        const client = new Client(
+          { name: 'stdio-client', version: '1.0.0' },
+          { versionNegotiation: { mode } },
+        );
+        const received = new Promise<z.infer<typeof channelParams>>((resolve) =>
+          client.setNotificationHandler(
+            'notifications/claude/channel',
+            { params: channelParams },
+            (params) => resolve(params),
+          ),
+        );
+        await client.connect(streamTransport(stdin, stdout));
+        await stdio.whenConnected();
+
+        expect(client.getProtocolEra()).toBe(era);
+        expect(stdio.getProtocolEra()).toBe(era);
+        expect(client.getServerCapabilities()).toMatchObject({
+          experimental: { 'claude/channel': {} },
+          tools: { listChanged: true },
+        });
+        expect(client.getInstructions()).toBe(instructions);
+
+        await expect(
+          stdio.sendNotification('notifications/claude/channel', {
+            content: 'build failed on main',
+            meta: { severity: 'high', run_id: '1234' },
+          }),
+        ).resolves.toBe(true);
+        await expect(received).resolves.toEqual({
+          content: 'build failed on main',
+          meta: { severity: 'high', run_id: '1234' },
+        });
+
+        await client.close();
+        await moduleRef.close();
+      },
+    );
+
+    it('hands each server to onServerCreated, to handle client notifications', async () => {
+      const verdicts: unknown[] = [];
+      const eras: string[] = [];
+      const { moduleRef, stdin, stdout } = await startChannel({
+        protocolNegotiation: 'legacy',
+        capabilities: {
+          experimental: {
+            'claude/channel': {},
+            'claude/channel/permission': {},
+          },
+        },
+        onServerCreated: (server, { era }) => {
+          eras.push(era);
+          server.server.setNotificationHandler(
+            'notifications/claude/channel/permission_request',
+            { params: z.object({ request_id: z.string() }) },
+            (params) => {
+              verdicts.push(params.request_id);
+            },
+          );
+        },
+      });
+
+      const client = new Client(
+        { name: 'stdio-client', version: '1.0.0' },
+        { versionNegotiation: { mode: 'auto' } },
+      );
+      await client.connect(streamTransport(stdin, stdout));
+      await moduleRef.get(McpStdioService).whenConnected();
+      expect(client.getServerCapabilities()?.experimental).toEqual({
+        'claude/channel': {},
+        'claude/channel/permission': {},
+      });
+
+      await client.notification({
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'abcde' },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(eras).toEqual(['legacy']);
+      expect(verdicts).toEqual(['abcde']);
+      await client.close();
+      await moduleRef.close();
+    });
+
+    it('reports no connection once the client has gone', async () => {
+      const { moduleRef, stdin, stdout } = await startChannel({
+        protocolNegotiation: 'legacy',
+      });
+      const stdio = moduleRef.get(McpStdioService);
+      const client = new Client(
+        { name: 'stdio-client', version: '1.0.0' },
+        { versionNegotiation: { mode: 'legacy' } },
+      );
+      await client.connect(streamTransport(stdin, stdout));
+      await stdio.whenConnected();
+
+      await moduleRef.close();
+
+      expect(stdio.isConnected()).toBe(false);
+      await expect(
+        stdio.sendNotification('notifications/claude/channel', {
+          content: 'too late',
+        }),
+      ).resolves.toBe(false);
+      await client.close();
+    });
   });
 });

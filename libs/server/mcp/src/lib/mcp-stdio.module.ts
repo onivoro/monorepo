@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import { DiscoveryModule, DiscoveryService, ModuleRef } from '@nestjs/core';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
-import { McpServer } from '@modelcontextprotocol/server';
+import { McpServer, mergeCapabilities } from '@modelcontextprotocol/server';
+import type { ServerCapabilities } from '@modelcontextprotocol/server';
 import type { McpRequestContext } from '@modelcontextprotocol/server';
 import {
   serveStdio,
@@ -27,6 +28,7 @@ import { applyExposeErrorMessages } from './apply-expose-error-messages';
 import { buildCapabilities } from './build-capabilities';
 import { wireRegistryToServer } from './wire-registry-to-server';
 import { McpStderrLogger } from './mcp-stderr-logger';
+import { McpStdioService } from './mcp-stdio.service';
 
 /**
  * Sends Nest's logs to stderr, since stdout carries the protocol. Done when the module is
@@ -40,7 +42,7 @@ function redirectLogsToStderr(): void {
 @Module({})
 export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(McpStdioModule.name);
-  private handle?: StdioServerHandle;
+  private handle?: Pick<StdioServerHandle, 'close'>;
   private readonly unsubscribers = new Set<() => void>();
 
   constructor(
@@ -49,6 +51,8 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     private readonly metadataScanner: MetadataScanner,
     private readonly registry: McpToolRegistry,
     private readonly moduleRef: ModuleRef,
+    // Always injected; the default keeps the five-argument constructor working.
+    private readonly stdio: McpStdioService = new McpStdioService(),
   ) {}
 
   static registerAndServeStdio(config: McpStdioConfig): DynamicModule {
@@ -64,9 +68,10 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       providers: [
         McpToolRegistry,
         McpScopeGuard,
+        McpStdioService,
         { provide: MCP_STDIO_CONFIG, useValue: config },
       ],
-      exports: [McpToolRegistry],
+      exports: [McpToolRegistry, McpStdioService],
     };
   }
 
@@ -83,13 +88,14 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       providers: [
         McpToolRegistry,
         McpScopeGuard,
+        McpStdioService,
         {
           provide: MCP_STDIO_CONFIG,
           useFactory: options.useFactory,
           inject: options.inject || [],
         },
       ],
-      exports: [McpToolRegistry],
+      exports: [McpToolRegistry, McpStdioService],
     };
   }
 
@@ -123,6 +129,30 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     // state, and the server starts with it.
     this.unsubscribers.add(this.registry.setToolEnabledDelegate(() => {}));
 
+    const transport = new StdioServerTransport(
+      this.config.stdin,
+      this.config.stdout,
+    );
+    if (this.config.protocolNegotiation === 'legacy') {
+      // 2025-era only: one server on the transport, as before `serveStdio`. It answers a
+      // `server/discover` probe with an error, so the client falls back to `initialize`.
+      const server = this.createServer({ era: 'legacy' });
+      const previousOnError = server.server.onerror;
+      server.server.onerror = (error) => {
+        this.logger.error('MCP stdio error:', error);
+        previousOnError?.(error);
+      };
+      // Same cross-copy type mismatch as below (`/stdio` vs the package root).
+      await server.connect(
+        transport as unknown as Parameters<McpServer['connect']>[0],
+      );
+      this.handle = { close: () => server.close() };
+      this.logger.log(
+        `MCP stdio server started (2025-era only): ${this.config.metadata.name}`,
+      );
+      return;
+    }
+
     // One connection; the client's first message decides which era it speaks. The SDK may
     // also build a throwaway server to answer a `server/discover` probe.
     this.handle = serveStdio(
@@ -131,10 +161,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       // runtime both are the same class.
       (ctx) => this.createServer(ctx) as unknown as ReturnType<StdioFactory>,
       {
-        transport: new StdioServerTransport(
-          this.config.stdin,
-          this.config.stdout,
-        ),
+        transport,
         onerror: (error) => this.logger.error('MCP stdio error:', error),
       },
     );
@@ -152,7 +179,10 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       },
       {
         ...this.config.serverOptions,
-        capabilities: buildCapabilities(this.registry),
+        capabilities: mergeCapabilities(
+          buildCapabilities(this.registry) as ServerCapabilities,
+          this.config.capabilities ?? {},
+        ),
         ...(this.config.metadata.instructions && {
           instructions: this.config.metadata.instructions,
         }),
@@ -162,9 +192,15 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     // The connection is long-lived on both eras, so the server follows the registry; on
     // 2026-07-28 the SDK routes its list-changed and resource-updated notifications to the
     // client's `subscriptions/listen` streams.
-    const unsubscribe = wireRegistryToServer(this.registry, server, {
+    const unwire = wireRegistryToServer(this.registry, server, {
       era: ctx.era,
     });
+    // `McpStdioService` sends application notifications through the latest server.
+    const detach = this.stdio.attach(server, ctx.era);
+    const unsubscribe = () => {
+      unwire();
+      detach();
+    };
     this.unsubscribers.add(unsubscribe);
     const previousOnClose = server.server.onclose;
     server.server.onclose = () => {
@@ -172,6 +208,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       this.unsubscribers.delete(unsubscribe);
       previousOnClose?.();
     };
+    this.config.onServerCreated?.(server, { era: ctx.era });
     return server;
   }
 
