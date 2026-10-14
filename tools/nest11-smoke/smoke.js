@@ -45,13 +45,27 @@ async function withApp(name, imports, globalPrefix, checks) {
   const baseUrl = `http://127.0.0.1:${app.getHttpServer().address().port}`;
 
   try {
-    for (const [method, path, expectedStatus, expectedResource] of checks) {
-      const label = `${name}: ${method} ${path}`;
+    for (const [
+      method,
+      path,
+      expectedStatus,
+      expectedResource,
+      init = {},
+      expectedErrorCode,
+    ] of checks) {
+      const label = `${name}: ${method} ${path}${init.label ? ` (${init.label})` : ''}`;
       try {
-        const response = await fetch(`${baseUrl}${path}`, { method });
+        const response = await fetch(`${baseUrl}${path}`, {
+          method,
+          headers: init.headers,
+          body: init.body,
+        });
         assert.equal(response.status, expectedStatus, 'status');
         if (expectedResource) {
           assert.equal((await response.json()).resource, expectedResource);
+        }
+        if (expectedErrorCode !== undefined) {
+          assert.equal((await response.json()).error.code, expectedErrorCode);
         }
         console.log(`  ok    ${label} -> ${response.status}`);
       } catch (error) {
@@ -130,6 +144,66 @@ async function main() {
     [
       ['GET', `${prm}/mcp`, 200, 'https://api.example.com/mcp'],
       ['OPTIONS', `${prm}/mcp`, 204],
+    ],
+  );
+
+  // Express 5's JSON parser leaves req.body unset for a POST that isn't JSON, which the
+  // module answers as a client error rather than a missing body parser.
+  const accept = 'application/json, text/event-stream';
+  await withApp(
+    'McpHttpModule POST bodies',
+    [
+      McpHttpModule.registerAndServeHttp({
+        metadata: { name: 'smoke', version: '1.0.0' },
+      }),
+    ],
+    undefined,
+    [
+      [
+        'POST',
+        '/mcp',
+        415,
+        undefined,
+        { label: 'no body', headers: { accept } },
+        -32000,
+      ],
+      [
+        'POST',
+        '/mcp',
+        415,
+        undefined,
+        {
+          label: 'text/plain',
+          headers: { accept, 'content-type': 'text/plain' },
+          body: '{"jsonrpc":"2.0","id":1,"method":"ping"}',
+        },
+        -32000,
+      ],
+      [
+        'POST',
+        '/mcp',
+        400,
+        undefined,
+        {
+          label: 'JSON, no body',
+          headers: { accept, 'content-type': 'application/json' },
+        },
+        -32700,
+      ],
+      [
+        'POST',
+        '/mcp',
+        200,
+        undefined,
+        {
+          label: 'JSON ping',
+          headers: {
+            accept,
+            'content-type': 'application/json',
+          },
+          body: '{"jsonrpc":"2.0","id":1,"method":"ping"}',
+        },
+      ],
     ],
   );
 

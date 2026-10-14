@@ -125,22 +125,15 @@ describe('McpHttpModule wiring', () => {
       },
     );
 
-    it('should reject POST requests whose body was not parsed', async () => {
+    it('should leave POST requests whose body was not parsed to McpHttpService', async () => {
+      // The service answers them (415, 400 or 500) after the Host, Origin and bearer checks.
       const req = mockReq('POST');
       const res = mockRes();
 
       await controller.handleMcpPost(req, res);
 
-      expect(service.handleRequest).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith({
-        jsonrpc: '2.0',
-        error: {
-          code: -32603,
-          message: expect.stringContaining('Request body not parsed'),
-        },
-        id: null,
-      });
+      expect(service.handleRequest).toHaveBeenCalledWith(req, res);
+      expect(res.status).not.toHaveBeenCalled();
     });
   });
 
