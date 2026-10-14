@@ -1,6 +1,7 @@
 import type { AuthInfo, EventStore } from '@modelcontextprotocol/server';
 import type { McpServerBaseConfig } from './mcp-server-base-config';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
+import type { McpToolVisibilityOptions } from './mcp-tool-visibility';
 
 export interface McpHttpSessionConfig {
   /**
@@ -30,7 +31,15 @@ export interface McpHttpSessionConfig {
   principal?: (authInfo: AuthInfo) => string | undefined;
 }
 
-export interface McpModuleConfig extends McpServerBaseConfig {
+/**
+ * `toolVisibility` and `toolFilter` (from `McpToolVisibilityOptions`) decide which tools each
+ * caller sees. Over HTTP the caller's auth is the request's verified bearer token
+ * (`requireBearerAuth`), resolved by `authStrategy`: per request for 2026-07-28 clients and
+ * stateless 2025-era POSTs, and once per stateful session, from the request that opens it.
+ */
+export interface McpModuleConfig
+  extends McpServerBaseConfig,
+    McpToolVisibilityOptions {
   /**
    * HTTP route served by McpHttpModule, relative to any Nest global prefix.
    * Defaults to `mcp`, which serves `/mcp` in a standalone app and `/api/mcp`

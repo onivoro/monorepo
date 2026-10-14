@@ -3,8 +3,16 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import type { McpServerBaseConfig } from './mcp-server-base-config';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
 import type { McpProtocolEra } from './mcp-protocol-era';
+import type { McpToolVisibilityOptions } from './mcp-tool-visibility';
 
-export interface McpStdioConfig extends McpServerBaseConfig {
+/**
+ * `toolVisibility` and `toolFilter` (from `McpToolVisibilityOptions`) decide which tools the
+ * client sees. Stdio carries no token, so the caller's auth is whatever `authStrategy`
+ * resolves from `undefined`, decided once per connection.
+ */
+export interface McpStdioConfig
+  extends McpServerBaseConfig,
+    McpToolVisibilityOptions {
   /**
    * Which protocol eras the server negotiates.
    *

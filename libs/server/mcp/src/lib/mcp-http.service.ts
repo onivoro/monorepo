@@ -21,7 +21,7 @@ import * as http from 'http';
 import type { McpModuleConfig } from './mcp-module-config';
 import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
-import { McpScopeGuard } from './mcp-scope-guard';
+import type { McpAuthInfo } from './mcp-auth-info';
 import {
   buildMcpServer,
   warnAboutIgnoredCapabilities,
@@ -85,12 +85,15 @@ export class McpHttpService implements OnModuleDestroy {
 
     const onerror = (error: unknown) =>
       this.logger.error('MCP request handling error:', error);
-    this.modern = createMcpHandler(() => this.createModernServer(), {
-      // Legacy clients are classified first and served by the session logic below.
-      legacy: 'reject',
-      responseMode: this.jsonResponse ? 'json' : 'auto',
-      onerror,
-    });
+    this.modern = createMcpHandler(
+      (ctx) => this.createModernServer(ctx.authInfo),
+      {
+        // Legacy clients are classified first and served by the session logic below.
+        legacy: 'reject',
+        responseMode: this.jsonResponse ? 'json' : 'auto',
+        onerror,
+      },
+    );
     this.modernNode = toNodeHandler(this.modern, { onerror });
     this.unsubscribeModern = this.notifyModernClientsOfChanges();
   }
@@ -125,10 +128,22 @@ export class McpHttpService implements OnModuleDestroy {
   }
 
   /**
+   * The tools the caller may see (`toolVisibility`, `toolFilter`), from the request's
+   * verified token. A copy, so auth info from a transport is never trusted as already
+   * resolved (see markMcpAuthInfoResolved).
+   */
+  private resolveVisibleTools(authInfo: AuthInfo | undefined) {
+    return this.registry.resolveVisibleTools(
+      authInfo && ({ ...authInfo } as McpAuthInfo),
+    );
+  }
+
+  /**
    * A server for one 2026-07-28 request. It needs no registry subscriptions: it sees the
    * registry as it is now, and change notifications go through the handler.
    */
-  private createModernServer(): McpServer {
+  private async createModernServer(authInfo?: AuthInfo): Promise<McpServer> {
+    const visibleTools = await this.resolveVisibleTools(authInfo);
     // With SSE responses (the default), progress and logs ride the request's stream.
     const requestScopedMessages = !this.jsonResponse;
     const server = this.createMcpServer(requestScopedMessages, true);
@@ -137,6 +152,7 @@ export class McpHttpService implements OnModuleDestroy {
       unsolicitedMessages: true,
       era: 'modern',
       followRegistry: false,
+      visibleTools,
     });
     return server;
   }
@@ -173,8 +189,16 @@ export class McpHttpService implements OnModuleDestroy {
     );
   }
 
-  /** A 2025-era connection: a stored session when stateful, else one request's worth. */
-  private createLegacySession(principal?: string): SessionEntry {
+  /**
+   * A 2025-era connection: a stored session when stateful, else one request's worth. The
+   * tools it lists are decided once, from the auth of the request that opens it.
+   */
+  private async createLegacySession(
+    principal: string | undefined,
+    authInfo: AuthInfo | undefined,
+  ): Promise<SessionEntry> {
+    const visibleTools = await this.resolveVisibleTools(authInfo);
+
     const entry: Partial<SessionEntry> = {
       lastActivity: Date.now(),
       principal,
@@ -208,6 +232,7 @@ export class McpHttpService implements OnModuleDestroy {
       requestScopedMessages,
       unsolicitedMessages,
       era: 'legacy',
+      visibleTools,
     });
 
     server.connect(transport);
@@ -391,18 +416,9 @@ export class McpHttpService implements OnModuleDestroy {
       return [];
     }
 
-    const required = this.registry
-      .getToolGuards(message.params.name)
-      .filter(
-        ({ guardClass }) =>
-          guardClass === McpScopeGuard ||
-          guardClass.prototype instanceof McpScopeGuard,
-      )
-      .flatMap(({ config }) => (config?.['scopes'] as string[]) ?? []);
+    const required = this.registry.getToolRequiredScopes(message.params.name);
 
-    return [...new Set(required)].filter(
-      (scope) => !authInfo.scopes.includes(scope),
-    );
+    return required.filter((scope) => !authInfo.scopes.includes(scope));
   }
 
   private sendInsufficientScope(
@@ -601,7 +617,10 @@ export class McpHttpService implements OnModuleDestroy {
       const principal = this.getPrincipal(req);
 
       if (req.method === 'POST' && !sessionId) {
-        const session = this.createLegacySession(principal);
+        const session = await this.createLegacySession(
+          principal,
+          (req as { auth?: AuthInfo }).auth,
+        );
         this.closeIfNotStoredWhenResponseCloses(session, res);
         await session.transport.handleRequest(req, res, parsedBody);
         return;
@@ -629,7 +648,10 @@ export class McpHttpService implements OnModuleDestroy {
 
       if (!session) {
         if (isInitializeRequest) {
-          const newSession = this.createLegacySession(principal);
+          const newSession = await this.createLegacySession(
+            principal,
+            (req as { auth?: AuthInfo }).auth,
+          );
           this.closeIfNotStoredWhenResponseCloses(newSession, res);
           await newSession.transport.handleRequest(req, res, parsedBody);
           return;

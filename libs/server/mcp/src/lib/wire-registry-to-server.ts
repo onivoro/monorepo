@@ -11,6 +11,7 @@ import type { McpLogLevel } from './mcp-log-level';
 import type { McpPromptMetadata } from './mcp-prompt-metadata';
 import type { McpProtocolEra } from './mcp-protocol-era';
 import type { McpHandlerContext } from './mcp-handler-context';
+import type { McpVisibleTools } from './mcp-tool-visibility';
 import { wrapResourceResult } from './wrap-resource-result';
 import { wrapPromptResult } from './wrap-prompt-result';
 
@@ -71,6 +72,14 @@ export interface WireRegistryToServerOptions {
    * request. Default: `true`.
    */
   followRegistry?: boolean;
+  /**
+   * The tools the caller this server serves may see, from
+   * `await registry.resolveVisibleTools(authInfo)` (see `McpToolRegistry.setToolVisibility`).
+   * Other tools aren't registered on the server, so they are neither listed nor callable
+   * (the SDK answers a call with "Tool ... not found"). Tools registered later are wired
+   * once they are found visible. Default: every tool.
+   */
+  visibleTools?: McpVisibleTools;
 }
 
 /** Per-server state shared by everything wired onto that server. */
@@ -416,7 +425,9 @@ export function wireRegistryToServer(
     { enable(): void; disable(): void }
   >();
 
+  const { visibleTools } = options;
   for (const { metadata } of registry.getTools()) {
+    if (visibleTools && !visibleTools.has(metadata.name)) continue;
     wireToolToServer(registry, server, metadata.name, registeredTools, wiring);
   }
 
@@ -432,7 +443,10 @@ export function wireRegistryToServer(
 
   if (!followRegistry) return () => {};
 
-  // Wire enable/disable delegate so registry.setToolEnabled() works.
+  let following = true;
+
+  // Wire enable/disable delegate so registry.setToolEnabled() works. Tools this server's
+  // caller can't see were never wired, so toggling them changes nothing here.
   const unsubToolEnabled = registry.setToolEnabledDelegate((name, enabled) => {
     const registered = registeredTools.get(name);
     if (!registered) return;
@@ -506,7 +520,29 @@ export function wireRegistryToServer(
     (type, name) => {
       switch (type) {
         case 'tool':
-          wireToolToServer(registry, server, name, registeredTools, wiring);
+          if (!visibleTools) {
+            wireToolToServer(registry, server, name, registeredTools, wiring);
+            break;
+          }
+          visibleTools
+            .evaluate(name)
+            .then((visible) => {
+              if (visible && following && !registeredTools.has(name)) {
+                wireToolToServer(
+                  registry,
+                  server,
+                  name,
+                  registeredTools,
+                  wiring,
+                );
+              }
+            })
+            .catch((err) =>
+              console.error(
+                `[wireRegistryToServer] Could not wire tool "${name}":`,
+                err,
+              ),
+            );
           break;
         case 'resource':
           wireResourceToServer(registry, server, name, wiring);
@@ -519,6 +555,7 @@ export function wireRegistryToServer(
   );
 
   return () => {
+    following = false;
     unsubRegistrationChanges();
     unsubResourceUpdates();
     unsubToolEnabled();

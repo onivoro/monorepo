@@ -17,6 +17,13 @@ import type { McpRegistrationChangeListener } from './mcp-registration-change-li
 import type { McpResourceUpdateListener } from './mcp-resource-update-listener';
 import { mcpSchemaToJsonSchema } from './mcp-schema-converters';
 import { McpAccessDeniedError, McpToolError } from './mcp-tool-error';
+import { McpScopeGuard } from './mcp-scope-guard';
+import type {
+  McpToolFilter,
+  McpToolVisibility,
+  McpToolVisibilityOptions,
+  McpVisibleTools,
+} from './mcp-tool-visibility';
 import { ZodError } from 'zod';
 
 interface ToolEntry {
@@ -57,6 +64,8 @@ export class McpToolRegistry {
   private providerResolver?: (cls: new (...args: any[]) => any) => any;
   private authStrategy?: McpAuthStrategy;
   private exposeErrorMessages = true;
+  private toolVisibility: McpToolVisibility = 'all';
+  private toolFilter?: McpToolFilter;
 
   // -- Registration --
 
@@ -156,6 +165,108 @@ export class McpToolRegistry {
    */
   setExposeErrorMessages(expose: boolean): void {
     this.exposeErrorMessages = expose;
+  }
+
+  /**
+   * Which tools each caller sees: `McpHttpModule` and `McpStdioModule` set this from their
+   * `toolVisibility` and `toolFilter` options. Call it yourself for a custom transport, and
+   * pass `resolveVisibleTools(authInfo)` to `wireRegistryToServer`.
+   */
+  setToolVisibility(options: McpToolVisibilityOptions): void {
+    const visibility = options.toolVisibility ?? 'all';
+    if (visibility !== 'all' && visibility !== 'authorized') {
+      throw new Error(
+        `toolVisibility must be 'all' or 'authorized', got "${String(visibility)}".`,
+      );
+    }
+    this.toolVisibility = visibility;
+    this.toolFilter = options.toolFilter;
+  }
+
+  /** Whether some callers may see fewer tools than others (`setToolVisibility`). */
+  hasToolVisibilityRules(): boolean {
+    return this.toolVisibility === 'authorized' || !!this.toolFilter;
+  }
+
+  /**
+   * Which tools a caller sees, or `undefined` when every caller sees every tool (no
+   * visibility rules are set). `authInfo` is resolved with the auth strategy first, as for a
+   * tool call, unless it was marked with `markMcpAuthInfoResolved`. If the strategy throws,
+   * the caller is treated as unauthenticated. Pass auth that arrived over a transport as a
+   * copy, as the transports do.
+   */
+  async resolveVisibleTools(
+    authInfo?: McpAuthInfo,
+  ): Promise<McpVisibleTools | undefined> {
+    if (!this.hasToolVisibilityRules()) return undefined;
+
+    let resolvedAuthInfo: McpAuthInfo | undefined;
+    try {
+      resolvedAuthInfo =
+        this.authStrategy && !isMcpAuthInfoResolved(authInfo)
+          ? await this.authStrategy.resolveAuth(authInfo)
+          : authInfo;
+    } catch (error) {
+      this.logger.warn(
+        `The auth strategy failed while deciding which tools to list, so only tools an unauthenticated caller may see are listed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      resolvedAuthInfo = undefined;
+    }
+
+    const decisions = new Map<string, Promise<boolean>>();
+    const settled = new Map<string, boolean>();
+    const evaluate = (name: string): Promise<boolean> => {
+      let decision = decisions.get(name);
+      if (!decision) {
+        decision = this.isToolVisibleTo(name, resolvedAuthInfo).then(
+          (visible) => {
+            settled.set(name, visible);
+            return visible;
+          },
+        );
+        decisions.set(name, decision);
+      }
+      return decision;
+    };
+    await Promise.all(
+      this.getTools().map(({ metadata }) => evaluate(metadata.name)),
+    );
+
+    return {
+      has: (name) => settled.get(name) === true,
+      evaluate,
+    };
+  }
+
+  private async isToolVisibleTo(
+    name: string,
+    authInfo: McpAuthInfo | undefined,
+  ): Promise<boolean> {
+    const entry = this.tools.get(name);
+    if (!entry) return false;
+
+    if (this.toolVisibility === 'authorized') {
+      const required = this.getToolRequiredScopes(name);
+      if (
+        required.length > 0 &&
+        !required.every((scope) => authInfo?.scopes?.includes(scope))
+      ) {
+        return false;
+      }
+    }
+
+    if (!this.toolFilter) return true;
+    try {
+      return (await this.toolFilter(entry.metadata, authInfo)) === true;
+    } catch (error) {
+      this.logger.error(
+        `toolFilter failed for tool ${name}, so it is hidden:`,
+        error,
+      );
+      return false;
+    }
   }
 
   setAuthStrategy(strategy: McpAuthStrategy): void {
@@ -282,6 +393,21 @@ export class McpToolRegistry {
 
   hasTool(name: string): boolean {
     return this.tools.has(name);
+  }
+
+  /**
+   * The scopes a tool's `@McpGuard(McpScopeGuard, { scopes })` guards (including subclasses
+   * of `McpScopeGuard`) require together, without duplicates. Empty for an unknown tool.
+   */
+  getToolRequiredScopes(name: string): string[] {
+    const required = this.getToolGuards(name)
+      .filter(
+        ({ guardClass }) =>
+          guardClass === McpScopeGuard ||
+          guardClass.prototype instanceof McpScopeGuard,
+      )
+      .flatMap(({ config }) => (config?.['scopes'] as string[]) ?? []);
+    return [...new Set(required)];
   }
 
   /** Returns the guard metadata for a registered tool, or an empty array if not found. */

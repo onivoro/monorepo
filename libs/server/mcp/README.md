@@ -398,6 +398,19 @@ registry.onResourceUpdate((uri) => handler.notify.resourceUpdated(uri));
 
 Without `legacy: 'reject'`, the handler also answers 2025-era clients, one server per request (as `McpHttpModule` does in stateless mode); wire with `era: ctx.era` and `unsolicitedMessages: ctx.era === 'modern'`, from the factory's `ctx` (a per-request 2025-era server has no stream for notifications). `McpHttpService` shows the full composition: `isLegacyRequest()` sends 2025-era requests to a session-aware transport and the rest to the handler.
 
+To hide tools per caller on a custom transport, set the rules with `registry.setToolVisibility({ toolVisibility, toolFilter })` (the modules do this from their options), and build each caller's server with them. `resolveVisibleTools` returns `undefined` when no rules are set, which means every tool. Pass auth that arrived over a transport as a copy, so a marked object is never trusted by accident:
+
+```typescript
+const handler = createMcpHandler(async (ctx) => {
+  const visibleTools = await registry.resolveVisibleTools(ctx.authInfo && { ...ctx.authInfo });
+  const server = new McpServer({ name: 'my-server', version: '1.0.0' }, { capabilities: buildCapabilities(registry) });
+  wireRegistryToServer(registry, server, { era: 'modern', followRegistry: false, visibleTools });
+  return server;
+});
+```
+
+Keep `buildCapabilities(registry)` (or advertise `tools` yourself): a caller who sees no tools still needs a `tools/list` that answers with an empty list.
+
 For stdio on custom streams, `serveStdio(factory, { transport })` from `@modelcontextprotocol/server/stdio` serves both eras; build the server in the factory with `wireRegistryToServer(registry, server, { era: ctx.era })`, and call the function it returns when the server closes (the SDK may build and discard an extra server to answer a `server/discover` probe).
 
 `buildCapabilities(registry, options?)` derives capabilities from the current registry state. Because it reads the registry at call time, call it after discovery has run. It returns:
@@ -411,12 +424,13 @@ For stdio on custom streams, `serveStdio(factory, { transport })` from `@modelco
 
 `wireRegistryToServer(registry, server, options?)` takes:
 
-| Option                  | Default    | Meaning                                                                                                                                                                                                                      |
-| ----------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `requestScopedMessages` | `true`     | The transport delivers messages tied to a request: progress, logs, and 2025-era server-to-client requests. True for stdio and SSE responses; false for JSON responses. Use the same value as `buildCapabilities`' `logging`. |
-| `unsolicitedMessages`   | `true`     | List-changed and resource-updated notifications can reach the client. Use the same value as `buildCapabilities`' `notifications`.                                                                                            |
-| `era`                   | `'legacy'` | The protocol era the server serves. `'modern'` servers get no `createMessage`, `elicitInput` or `listRoots` in the tool context (2026-07-28 has no server-to-client requests).                                               |
-| `followRegistry`        | `true`     | Keep the server in step with the registry: wire tools, resources and prompts registered later, apply `setToolEnabled`, and forward `notifyResourceUpdated`. Turn off for a server that lives for one request.                |
+| Option                  | Default    | Meaning                                                                                                                                                                                                                                    |
+| ----------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `requestScopedMessages` | `true`     | The transport delivers messages tied to a request: progress, logs, and 2025-era server-to-client requests. True for stdio and SSE responses; false for JSON responses. Use the same value as `buildCapabilities`' `logging`.               |
+| `unsolicitedMessages`   | `true`     | List-changed and resource-updated notifications can reach the client. Use the same value as `buildCapabilities`' `notifications`.                                                                                                          |
+| `era`                   | `'legacy'` | The protocol era the server serves. `'modern'` servers get no `createMessage`, `elicitInput` or `listRoots` in the tool context (2026-07-28 has no server-to-client requests).                                                             |
+| `followRegistry`        | `true`     | Keep the server in step with the registry: wire tools, resources and prompts registered later, apply `setToolEnabled`, and forward `notifyResourceUpdated`. Turn off for a server that lives for one request.                              |
+| `visibleTools`          | every tool | The tools the server's caller may see, from `await registry.resolveVisibleTools(authInfo)`. Others aren't registered on the server, so they're neither listed nor callable. See [Per-caller tool visibility](#per-caller-tool-visibility). |
 
 With `requestScopedMessages: false`, tool handlers get no `sendProgress`, `sendLog`, `createMessage`, `elicitInput` or `listRoots`. With `unsolicitedMessages: false`, `wireRegistryToServer` advertises `listChanged: false` and `subscribe: false` (the SDK would otherwise advertise `listChanged: true` for every kind it serves) and doesn't handle `resources/subscribe`. Capabilities can only change before the server connects, so call `wireRegistryToServer` first.
 
@@ -697,7 +711,7 @@ McpHttpModule.registerAndServeHttp({
 
 ### Tool enable/disable
 
-Tools can be enabled or disabled at runtime with `registry.setToolEnabled(name, enabled)`. Disabled tools are hidden from `tools/list` and reject calls. It throws if the tool isn't registered, or if nothing serves the registry yet: `McpHttpModule` and `McpStdioModule` count from startup, and a custom server once `wireRegistryToServer` has wired it while following the registry (the default). The toggle applies to every currently wired server, and the registry remembers it, so servers wired later (new HTTP sessions, or the per-request servers of stateless HTTP) start with the tool in that state (`registry.isToolEnabled(name)` reports it):
+Tools can be enabled or disabled at runtime with `registry.setToolEnabled(name, enabled)`. Disabled tools are hidden from `tools/list` and reject calls. It throws if the tool isn't registered, or if nothing serves the registry yet: `McpHttpModule` and `McpStdioModule` count from startup, and a custom server once `wireRegistryToServer` has wired it while following the registry (the default). The toggle applies to every currently wired server, and the registry remembers it, so servers wired later (new HTTP sessions, or the per-request servers of stateless HTTP) start with the tool in that state (`registry.isToolEnabled(name)` reports it). With [per-caller tool visibility](#per-caller-tool-visibility), a disabled tool stays hidden from everyone, and enabling it shows it only to callers who may see it:
 
 ```typescript
 @Injectable()
@@ -1105,6 +1119,54 @@ When the scope check fails, the registry throws an `McpAccessDeniedError` with t
 
 Over HTTP with `requireBearerAuth`, the transport checks `McpScopeGuard` scopes before the call reaches the registry. A `tools/call` whose token lacks them gets an HTTP `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="..."`, which tells the client which scopes to request so it can ask the user for them and retry (step-up authorization). The `scope` lists the token's current scopes plus the missing ones (and any `requiredScopes`), so one round of consent covers the call. The guard still runs for callers that reach the registry another way.
 
+### Per-caller tool visibility
+
+By default every caller sees every enabled tool in `tools/list`, and guards only refuse the calls they don't allow. To hide tools from callers who can't use them, set `toolVisibility: 'authorized'` on `McpHttpModule` or `McpStdioModule`:
+
+```typescript
+McpHttpModule.registerAndServeHttp({
+  metadata: { name: 'my-server', version: '1.0.0' },
+  authStrategy: JwtAuthStrategy,
+  requireBearerAuth: true,
+  toolVisibility: 'authorized', // a tool guarded by McpScopeGuard is listed only to tokens with its scopes
+  toolFilter: (tool, authInfo) => !tool.name.startsWith('beta-') || authInfo?.extra?.['beta'] === true, // optional, applied on top
+});
+```
+
+| Option           | Default | Meaning                                                                                                                                                                                                                                          |
+| ---------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `toolVisibility` | `'all'` | `'all'` lists every enabled tool to everyone. `'authorized'` lists a tool guarded by `McpScopeGuard` (or a subclass) only to a caller whose auth has every scope its `McpScopeGuard` guards require. Tools without one are listed to everyone.   |
+| `toolFilter`     | none    | `(tool: McpToolMetadata, authInfo: McpAuthInfo \| undefined) => boolean \| Promise<boolean>`. Return `true` to list the tool. Applied in addition to `toolVisibility`. A filter that throws or rejects hides the tool (and the error is logged). |
+
+A tool is listed to a caller only when all of these hold, in this order:
+
+1. It is enabled. `setToolEnabled(name, false)` hides it from everyone, whatever the rules below say.
+2. With `toolVisibility: 'authorized'`, the caller has its `McpScopeGuard` scopes.
+3. `toolFilter`, when set, returns `true`.
+
+So `toolFilter` narrows the scope rule when `toolVisibility` is `'authorized'`, and is the only rule when it is `'all'`. Other guards are not consulted: a guard can depend on the call's arguments, which a listing doesn't have. Put rules of your own in `toolFilter`.
+
+The `authInfo` both rules see is the caller's auth after the configured `authStrategy` resolved it: the same auth a guard sees. If the strategy throws, the caller is treated as unauthenticated (`authInfo` is `undefined`) and a warning is logged. The rules run when a server is built for a caller, which with visibility on means the strategy also runs once per 2026-07-28 request and per stateless 2025-era POST (not only for tool calls).
+
+When a server is built for a caller, the tools that caller can't see are not registered on it at all. A tool registered later is checked when it is registered, and wired (with its `listChanged` notification) only onto the servers whose caller may see it. When the rules are decided, per serving mode:
+
+| Serving mode                    | Whose auth decides                                                                                                                                                                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP, 2026-07-28 request        | That request's auth (`req.auth`: its verified bearer token with `requireBearerAuth`), on every request: each one gets its own server.                                                                                                                       |
+| HTTP, 2025-era stateless POST   | That request's auth, on every request.                                                                                                                                                                                                                      |
+| HTTP, 2025-era stateful session | The auth of the request that opened the session (`initialize`). The session keeps that visibility for its life, even if later requests (which must come from the same principal) carry a token with other scopes. Guards still check each call's own token. |
+| stdio                           | What `authStrategy.resolveAuth(undefined)` returns (stdio carries no token), once per connection. Without an `authStrategy`, the caller is unauthenticated, so `'authorized'` hides every tool that requires a scope.                                       |
+| custom transport                | The auth you pass to `registry.resolveVisibleTools(authInfo)`; see [Custom transport](#custom-transport).                                                                                                                                                   |
+
+A caller who calls a tool it can't see anyway:
+
+- Over HTTP with `requireBearerAuth`, a token without a tool's `McpScopeGuard` scopes still gets the `403 insufficient_scope` challenge above (it is checked before the request reaches a server), so step-up authorization keeps working.
+- Otherwise (stdio, HTTP without `requireBearerAuth`, or a tool `toolFilter` hid), the call fails exactly like a call to a tool that doesn't exist: a JSON-RPC `-32602` error, `Tool <name> not found`. Nothing tells the caller the tool exists.
+
+`setToolEnabled` keeps working: it toggles the tool on the servers it is registered on, so enabling a tool shows it (and sends `listChanged`) only to sessions whose caller may see it. 2026-07-28 clients are told about tool changes on their `subscriptions/listen` streams, which the SDK shares across callers, so every listening client hears that the tool list changed; each one's next `tools/list` still shows only its own tools.
+
+Visibility is a property of what the transports serve. `registry.executeToolRaw` / `executeToolWrapped` called in-process don't check it; guards still run there.
+
 ### Custom guards
 
 Implement `McpCanActivate` and register as a standard NestJS provider:
@@ -1259,18 +1321,19 @@ The registry is the core of the library. It is injectable in any NestJS service 
 
 Called automatically by the module's discovery phase. You don't call these directly unless you're building custom infrastructure.
 
-| Method                                     | Description                                                                                                                                                                             |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `registerTool(metadata, handler, guards?)` | Register a tool with optional guards. Throws on duplicate name.                                                                                                                         |
-| `registerResource(metadata, handler)`      | Register a resource. Throws on duplicate name.                                                                                                                                          |
-| `registerPrompt(metadata, handler)`        | Register a prompt. Throws on duplicate name.                                                                                                                                            |
-| `registerInterceptor(interceptor)`         | Register a `McpToolInterceptor` for all tool executions (and its `onRejected`, if any, for rejected calls).                                                                             |
-| `setGuardResolver(resolver)`               | Set the function used to resolve guard class instances. Called automatically by all modules.                                                                                            |
-| `setProviderResolver(resolver)`            | Set the function used to resolve `listStrategy` / `completeStrategy` classes. Called automatically by all modules.                                                                      |
-| `resolveProvider(cls)`                     | Resolve a class through the provider resolver. Throws if no resolver is set.                                                                                                            |
-| `setAuthStrategy(strategy)`                | Set the auth strategy instance. Called automatically by the HTTP and stdio modules when `authStrategy` is configured.                                                                   |
-| `setExposeErrorMessages(expose)`           | Whether `executeToolWrapped` returns any error's message (`true`, this release's default) or only `McpToolError`s and validation errors. Set by the modules from `exposeErrorMessages`. |
-| `onRegistrationChange(listener)`           | Subscribe to registration events (`'tool'`, `'resource'`, `'prompt'`). Returns an unsubscribe function. Used by `wireRegistryToServer` for dynamic wiring.                              |
+| Method                                                | Description                                                                                                                                                                                                |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerTool(metadata, handler, guards?)`            | Register a tool with optional guards. Throws on duplicate name.                                                                                                                                            |
+| `registerResource(metadata, handler)`                 | Register a resource. Throws on duplicate name.                                                                                                                                                             |
+| `registerPrompt(metadata, handler)`                   | Register a prompt. Throws on duplicate name.                                                                                                                                                               |
+| `registerInterceptor(interceptor)`                    | Register a `McpToolInterceptor` for all tool executions (and its `onRejected`, if any, for rejected calls).                                                                                                |
+| `setGuardResolver(resolver)`                          | Set the function used to resolve guard class instances. Called automatically by all modules.                                                                                                               |
+| `setProviderResolver(resolver)`                       | Set the function used to resolve `listStrategy` / `completeStrategy` classes. Called automatically by all modules.                                                                                         |
+| `resolveProvider(cls)`                                | Resolve a class through the provider resolver. Throws if no resolver is set.                                                                                                                               |
+| `setAuthStrategy(strategy)`                           | Set the auth strategy instance. Called automatically by the HTTP and stdio modules when `authStrategy` is configured.                                                                                      |
+| `setExposeErrorMessages(expose)`                      | Whether `executeToolWrapped` returns any error's message (`true`, this release's default) or only `McpToolError`s and validation errors. Set by the modules from `exposeErrorMessages`.                    |
+| `setToolVisibility({ toolVisibility?, toolFilter? })` | Which tools each caller sees. Set by the modules from their options; call it for a custom transport. Throws on an unknown `toolVisibility`. See [Per-caller tool visibility](#per-caller-tool-visibility). |
+| `onRegistrationChange(listener)`                      | Subscribe to registration events (`'tool'`, `'resource'`, `'prompt'`). Returns an unsubscribe function. Used by `wireRegistryToServer` for dynamic wiring.                                                 |
 
 Registering after startup works: if a server is already wired, `wireRegistryToServer` picks up the new entry through `onRegistrationChange`:
 
@@ -1293,14 +1356,17 @@ this.registry.registerTool({ name: 'ping', description: 'Health check' }, async 
 
 ### Introspection
 
-| Method                | Returns                                                                                              |
-| --------------------- | ---------------------------------------------------------------------------------------------------- |
-| `getTools()`          | All registered tools (metadata + handler)                                                            |
-| `getResources()`      | All registered resources                                                                             |
-| `getPrompts()`        | All registered prompts                                                                               |
-| `getTool(name)`       | Single tool by MCP name, or `undefined`                                                              |
-| `hasTool(name)`       | `true` if a tool with the given MCP name exists                                                      |
-| `getToolGuards(name)` | Guard metadata (`{ guardClass, config? }[]`) for a tool, in execution order; `[]` if none or unknown |
+| Method                           | Returns                                                                                                                                                                       |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getTools()`                     | All registered tools (metadata + handler)                                                                                                                                     |
+| `getResources()`                 | All registered resources                                                                                                                                                      |
+| `getPrompts()`                   | All registered prompts                                                                                                                                                        |
+| `getTool(name)`                  | Single tool by MCP name, or `undefined`                                                                                                                                       |
+| `hasTool(name)`                  | `true` if a tool with the given MCP name exists                                                                                                                               |
+| `getToolGuards(name)`            | Guard metadata (`{ guardClass, config? }[]`) for a tool, in execution order; `[]` if none or unknown                                                                          |
+| `getToolRequiredScopes(name)`    | The scopes a tool's `McpScopeGuard` guards (and subclasses) require together, deduplicated; `[]` if none or unknown                                                           |
+| `hasToolVisibilityRules()`       | Whether `toolVisibility: 'authorized'` or a `toolFilter` is set                                                                                                               |
+| `resolveVisibleTools(authInfo?)` | `Promise<McpVisibleTools \| undefined>`: the tools that caller sees (after the auth strategy), for `wireRegistryToServer`'s `visibleTools`; `undefined` when no rules are set |
 
 ### Execution
 
@@ -1390,6 +1456,8 @@ McpHttpModule.registerAndServeHttp({
   allowedHosts: ['mcp.example.com'], // Optional. Default: loopback host names on a loopback socket. See below.
   exposeErrorMessages: false, // Optional. Default: true for now (with a warning); becomes false. See "Error messages".
   authStrategy: JwtAuthStrategy, // Optional. Existing Nest provider class implementing McpAuthStrategy.
+  toolVisibility: 'authorized', // Optional. Default: 'all'. 'authorized' lists McpScopeGuard-guarded tools only to tokens with their scopes. See "Per-caller tool visibility".
+  toolFilter: (tool, authInfo) => true, // Optional. Your own per-caller rule, applied on top of toolVisibility. See "Per-caller tool visibility".
   requireBearerAuth: {
     // Optional. `true` or an object. HTTP 401 bearer challenge using authStrategy as OAuthTokenVerifier.
     // Ignored unless authStrategy is also set.
@@ -1419,6 +1487,8 @@ McpStdioModule.registerAndServeStdio({
   redirectLogsToStderr: true, // Optional. Default: true on process.stdout. See "Logging goes to stderr".
   exposeErrorMessages: false, // Optional. Default: true for now (with a warning); becomes false. See "Error messages".
   authStrategy: JwtAuthStrategy, // Optional. Existing Nest provider class implementing McpAuthStrategy.
+  toolVisibility: 'authorized', // Optional. Default: 'all'. Decided from authStrategy.resolveAuth(undefined), once per connection. See "Per-caller tool visibility".
+  toolFilter: (tool, authInfo) => true, // Optional. Your own rule, applied on top of toolVisibility. See "Per-caller tool visibility".
 });
 ```
 
@@ -1624,6 +1694,8 @@ async deleteData(params: z.infer<typeof schema>) { ... }
 
 For custom authorization logic beyond scope checking, implement a `McpCanActivate` guard — see [Guards](#guards).
 
+Guards refuse calls, but by default `tools/list` still shows every tool to every caller. To hide `delete-data` from tokens without the `admin` scope, set `toolVisibility: 'authorized'` (and, for rules of your own, `toolFilter`) on the module — see [Per-caller tool visibility](#per-caller-tool-visibility).
+
 ## Package combinations
 
 | Goal                                           | Packages                                                                         | Notes                                                                                                                                                                                                                                                     |
@@ -1648,6 +1720,7 @@ The package test suite covers:
 - end to end over stdio in both eras, including list-changed notifications, and a Claude Code channel: extra capabilities, `instructions`, notifications sent through `McpStdioService` (readiness through a `server/discover` probe that falls back to `initialize` or is followed only by `subscriptions/listen`, a 2026-07-28 client that doesn't probe, and a refused 2026-07-28 claim followed by a probe and a fallback, closing, aborting, refused notifications), `protocolNegotiation: 'legacy'`, and `onServerCreated` (including one that replaces the SDK callbacks or throws)
 - in memory against the SDK client (2025 protocol): prompt completions, progress, log levels, sampling, structured output, error messages, and the context resource and prompt handlers receive
 - HTTP bearer challenge behavior, `insufficient_scope` challenges, the translation of v1-style verifier errors, and PRM URL derivation
+- per-caller tool visibility, end to end over HTTP with the SDK client in both eras against stateless and stateful servers, and over stdio in both eras: with `toolVisibility: 'authorized'` an `McpScopeGuard({ scopes: ['admin'] })` tool is missing from `tools/list` for a non-admin token and listed for an admin one; a non-admin call is refused (`403 insufficient_scope` over HTTP with `requireBearerAuth`, `Tool <name> not found` over stdio) and never reaches the tool; the default `'all'` lists it and the guard refuses the call; `toolFilter` applies on top of the scope rule; in stateful sessions, `setToolEnabled` hides a tool from everyone and re-enabling it notifies and shows it only to admin sessions, and a scoped tool registered later reaches only the sessions that may see it. Unit tests cover the auth strategy's role (enrichment, failure, marked auth), filters that throw, and `wireRegistryToServer`'s `visibleTools`
 - auth strategy resolution through Nest DI
 - the PRM route helpers: wildcard syntax per Nest major, reading the installed Nest version and its fallback, and trailing-slash handling
 
@@ -1874,6 +1947,10 @@ McpLogLevel; // 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' |
 McpGuard; // Method decorator — @McpGuard(GuardClass, config?)
 McpCanActivate; // Interface for custom guard classes
 McpGuardMetadata; // { guardClass, config? }
+McpToolVisibility; // 'all' | 'authorized'
+McpToolFilter; // (tool, authInfo) => boolean | Promise<boolean>
+McpToolVisibilityOptions; // { toolVisibility?, toolFilter? } — on McpModuleConfig and McpStdioConfig
+McpVisibleTools; // From registry.resolveVisibleTools(authInfo): { has(name), evaluate(name) } — wireRegistryToServer's visibleTools
 McpScopeGuard; // Built-in guard — checks authInfo.scopes against required scopes
 
 // Interceptors
@@ -1898,7 +1975,7 @@ mcpSchemaToJsonSchema; // z.ZodObject → JSON Schema object (via zod v4 native 
 
 // Wiring helpers
 wireRegistryToServer; // (registry, server, options?) — register all entries onto McpServer + subscribe to future changes; returns unsubscribe fn
-WireRegistryToServerOptions; // { requestScopedMessages?, unsolicitedMessages?, era?, followRegistry? } — the server's era and what its transport can deliver
+WireRegistryToServerOptions; // { requestScopedMessages?, unsolicitedMessages?, era?, followRegistry?, visibleTools? } — the server's era, what its transport can deliver, and which tools its caller sees
 buildCapabilities; // (registry, { logging?, notifications?, extra? }?) => ServerCapabilities — from current registry state, plus `extra` (minus the keys it builds)
 wrapResourceResult; // Auto-wrap raw handler return → McpResourceResult
 wrapPromptResult; // Auto-wrap raw handler return → McpPromptResult

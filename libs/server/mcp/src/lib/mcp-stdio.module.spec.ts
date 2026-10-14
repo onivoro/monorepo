@@ -48,14 +48,15 @@ jest.mock('@modelcontextprotocol/server/stdio', () => ({
   })),
   // Builds the server at once, as the client's first message would, and closes the
   // transport and the server on close, like the SDK's handle.
+  // The factory may return a promise, which the SDK awaits.
   serveStdio: jest.fn().mockImplementation((factory: any, options: any) => {
-    const server = factory({ era: 'legacy' });
+    const server = Promise.resolve(factory({ era: 'legacy' }));
     return {
       close: async () => {
         try {
           await options.transport.close();
         } finally {
-          await server.close();
+          await (await server).close();
         }
       },
     };
