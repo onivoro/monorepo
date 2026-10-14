@@ -8,6 +8,7 @@ export { McpHttpService } from './lib/mcp-http.service';
 export { McpToolRegistry } from './lib/mcp-tool-registry';
 export { McpScopeGuard } from './lib/mcp-scope-guard';
 export { McpStderrLogger } from './lib/mcp-stderr-logger';
+export { McpStdioService, McpStdioClosedError } from './lib/mcp-stdio.service';
 
 // Decorators
 export { McpTool } from './lib/mcp-tool.decorator';
@@ -36,6 +37,11 @@ export {
   McpAsyncModuleConfig,
 } from './lib/mcp-module-async-options';
 export { McpServerMetadata } from './lib/mcp-server-metadata';
+export {
+  McpServerBaseConfig,
+  McpExtraCapabilities,
+  McpModuleCapabilityKey,
+} from './lib/mcp-server-base-config';
 export { McpStdioConfig } from './lib/mcp-stdio-config';
 export { McpStdioAsyncOptions } from './lib/mcp-stdio-async-options';
 

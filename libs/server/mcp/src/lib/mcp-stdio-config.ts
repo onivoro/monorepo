@@ -1,11 +1,37 @@
 import type { Readable, Writable } from 'node:stream';
-import type { ServerOptions } from '@modelcontextprotocol/server';
-import type { McpServerMetadata } from './mcp-server-metadata';
+import type { McpServer } from '@modelcontextprotocol/server';
+import type { McpServerBaseConfig } from './mcp-server-base-config';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
+import type { McpProtocolEra } from './mcp-protocol-era';
 
-export interface McpStdioConfig {
-  metadata: McpServerMetadata;
-  serverOptions?: ServerOptions;
+export interface McpStdioConfig extends McpServerBaseConfig {
+  /**
+   * Which protocol eras the server negotiates.
+   *
+   * - `'auto'` (default): the client's first message decides: `server/discover` (or any
+   *   2026-07-28 request) for the modern protocol, `initialize` for 2025-era clients.
+   * - `'legacy'`: 2025-era only. The server is connected to the transport directly, without
+   *   the SDK's `serveStdio` era negotiation, so a client probing with `server/discover`
+   *   falls back to `initialize`. Use it for clients that need the 2025-era handshake for a
+   *   feature: Claude Code doesn't register a channel that negotiates 2026-07-28.
+   */
+  protocolNegotiation?: 'auto' | 'legacy';
+  /**
+   * Called with each `McpServer` the module builds, after the registry is wired to it and
+   * before it connects: for example to `server.server.setNotificationHandler(...)` for a
+   * client notification. With `protocolNegotiation: 'auto'` the SDK may build a server only
+   * to answer a `server/discover` probe and then discard it, so this can run more than once.
+   *
+   * The module sets `server.server.onclose` after this returns. If you set the SDK's
+   * single-slot callbacks (`onclose`, `onerror`, `oninitialized`), chain them (call the one
+   * that was there) rather than replacing them. If the hook throws, the server is dropped
+   * and the error propagates: with `'legacy'` the module fails to start; with `'auto'` the
+   * client's request gets an internal error and the module logs the error.
+   */
+  onServerCreated?: (
+    server: McpServer,
+    context: { era: McpProtocolEra },
+  ) => void;
   stdin?: Readable;
   stdout?: Writable;
   /**

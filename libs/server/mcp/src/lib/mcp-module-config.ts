@@ -1,9 +1,5 @@
-import type {
-  AuthInfo,
-  EventStore,
-  ServerOptions,
-} from '@modelcontextprotocol/server';
-import type { McpServerMetadata } from './mcp-server-metadata';
+import type { AuthInfo, EventStore } from '@modelcontextprotocol/server';
+import type { McpServerBaseConfig } from './mcp-server-base-config';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
 
 export interface McpHttpSessionConfig {
@@ -34,9 +30,7 @@ export interface McpHttpSessionConfig {
   principal?: (authInfo: AuthInfo) => string | undefined;
 }
 
-export interface McpModuleConfig {
-  metadata: McpServerMetadata;
-  serverOptions?: ServerOptions;
+export interface McpModuleConfig extends McpServerBaseConfig {
   /**
    * HTTP route served by McpHttpModule, relative to any Nest global prefix.
    * Defaults to `mcp`, which serves `/mcp` in a standalone app and `/api/mcp`

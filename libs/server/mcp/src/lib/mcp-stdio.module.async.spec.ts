@@ -8,6 +8,7 @@ import {
 import { PassThrough } from 'node:stream';
 import { McpStdioModule } from './mcp-stdio.module';
 import { McpToolRegistry } from './mcp-tool-registry';
+import { McpStdioService } from './mcp-stdio.service';
 import { MCP_STDIO_CONFIG } from './mcp-stdio-config-token';
 import { McpTool } from './mcp-tool.decorator';
 import { McpGuard } from './mcp-guard.decorator';
@@ -305,6 +306,7 @@ describe('McpStdioModule (async registration and lifecycle)', () => {
         {} as any,
         new McpToolRegistry(),
         {} as any,
+        new McpStdioService(),
       );
 
       await expect(instance.onModuleDestroy()).resolves.toBeUndefined();

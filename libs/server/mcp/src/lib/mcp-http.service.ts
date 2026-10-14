@@ -22,7 +22,10 @@ import type { McpModuleConfig } from './mcp-module-config';
 import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpScopeGuard } from './mcp-scope-guard';
-import { buildCapabilities } from './build-capabilities';
+import {
+  buildMcpServer,
+  warnAboutIgnoredCapabilities,
+} from './build-mcp-server';
 import { wireRegistryToServer } from './wire-registry-to-server';
 import { normalizeMcpHttpRoute, normalizePath } from './mcp-http-route';
 
@@ -78,6 +81,7 @@ export class McpHttpService implements OnModuleDestroy {
     this.sweepInterval = setInterval(() => this.sweepStaleSessions(), 60_000);
     // The sweep only matters while the app runs; it must not keep the process alive.
     this.sweepInterval.unref?.();
+    warnAboutIgnoredCapabilities(config, this.logger);
 
     const onerror = (error: unknown) =>
       this.logger.error('MCP request handling error:', error);
@@ -114,25 +118,10 @@ export class McpHttpService implements OnModuleDestroy {
     requestScopedMessages: boolean,
     notifications: boolean,
   ) {
-    return new McpServer(
-      {
-        name: this.config.metadata.name,
-        version: this.config.metadata.version,
-        ...(this.config.metadata.description && {
-          description: this.config.metadata.description,
-        }),
-      },
-      {
-        ...this.config.serverOptions,
-        capabilities: buildCapabilities(this.registry, {
-          logging: requestScopedMessages,
-          notifications,
-        }),
-        ...(this.config.metadata.instructions && {
-          instructions: this.config.metadata.instructions,
-        }),
-      },
-    );
+    return buildMcpServer(this.config, this.registry, {
+      logging: requestScopedMessages,
+      notifications,
+    });
   }
 
   /**

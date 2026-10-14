@@ -212,7 +212,7 @@ bootstrap();
 
 The server starts listening on stdin/stdout as soon as the NestJS application context initializes. Tools, resources, and prompts are discovered and registered automatically.
 
-It serves either protocol era. The client's first message decides which: `server/discover` (or any 2026-07-28 request) for the modern protocol, `initialize` for 2025-era clients. Either way the connection is long-lived, so tools registered later, `setToolEnabled` and `notifyResourceUpdated` reach the client: as unsolicited notifications on a 2025-era connection, and on the client's `subscriptions/listen` streams on a 2026-07-28 one.
+It serves either protocol era (or only the 2025-era one with `protocolNegotiation: 'legacy'`; see [Custom capabilities and notifications](#custom-capabilities-and-notifications)). The client's first message decides which: `server/discover` (or any 2026-07-28 request) for the modern protocol, `initialize` for 2025-era clients. Either way the connection is long-lived, so tools registered later, `setToolEnabled` and `notifyResourceUpdated` reach the client: as unsolicited notifications on a 2025-era connection, and on the client's `subscriptions/listen` streams on a 2026-07-28 one.
 
 ### Logging goes to stderr
 
@@ -248,6 +248,68 @@ McpStdioModule.registerAndServeStdio({
 // Feed it newline-delimited JSON-RPC; a real client starts with `initialize` or `server/discover`
 stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'initialize', id: 1, params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } } }) + '\n');
 ```
+
+### Custom capabilities and notifications
+
+A stdio server can advertise capabilities of its own and send the client notifications from application code. A [Claude Code channel](https://code.claude.com/docs/en/channels-reference) needs both: the `experimental['claude/channel']` capability, and a `notifications/claude/channel` notification for each event it pushes into the session.
+
+```typescript
+// app-stdio.module.ts
+@Module({
+  imports: [
+    McpStdioModule.registerAndServeStdio({
+      metadata: {
+        name: 'builds',
+        version: '1.0.0',
+        // Claude Code gives Claude these as context when the server connects.
+        instructions: 'Build events arrive as <channel source="builds" ...>. Read them and act; no reply is expected.',
+      },
+      capabilities: { experimental: { 'claude/channel': {} } },
+      // Claude Code doesn't register a channel that negotiates 2026-07-28.
+      protocolNegotiation: 'legacy',
+    }),
+  ],
+  providers: [BuildEventsService],
+})
+export class AppStdioModule {}
+```
+
+```typescript
+// build-events.service.ts
+import { Injectable } from '@nestjs/common';
+import { McpStdioService } from '@onivoro/server-mcp';
+
+@Injectable()
+export class BuildEventsService {
+  constructor(private readonly stdio: McpStdioService) {}
+
+  async onBuildFailed(branch: string, runId: string) {
+    await this.stdio.sendNotification('notifications/claude/channel', {
+      content: `build failed on ${branch}`,
+      meta: { severity: 'high', run_id: runId }, // each key becomes an attribute of the <channel> tag
+    });
+  }
+}
+```
+
+- `capabilities` adds capabilities next to the ones the module builds from the registry. The keys the module builds (`logging`, `tools`, `resources`, `prompts`) are not part of its type (`McpExtraCapabilities`) and are ignored, with a warning at startup, if passed anyway: the module sends the notifications those keys promise whatever they say, so a caller's `tools: { listChanged: false }` would be a false claim. Advertise only what your server handles.
+- `McpStdioService` is provided and exported by `McpStdioModule`. `sendNotification(method, params?)` sends any notification outside a request and resolves `true` once it is written to the transport (not when the client has processed it). It never rejects: it resolves `false`, sending nothing, until the connection is ready and after it has closed, and also when the SDK or the transport refuses the message (logged as a warning). Nothing is queued.
+- The connection is ready once it has settled on an era. A client can probe with `server/discover` and then fall back to `initialize`, so the probe alone doesn't count: a 2025-era connection is ready when the client has sent `notifications/initialized`, and a 2026-07-28 one when the server has accepted a request of that era other than `server/discover`, such as `tools/list` or `subscriptions/listen` (a request claiming a revision the server doesn't support is refused and doesn't count). `await stdio.whenConnected()` before an event that must not be dropped. It rejects with `McpStdioClosedError` once the connection has closed (the client went away, or the module shut down), and with the signal's reason if you pass an `AbortSignal` that aborts first. `isConnected()` and `getProtocolEra()` report the connection.
+- `protocolNegotiation: 'legacy'` serves only the 2025-era protocol: the module connects one server to the transport directly, so a client that probes with `server/discover` falls back to `initialize`. The default, `'auto'`, serves both eras. A channel needs `'legacy'`. Claude Code's [MCP page, "Push messages with channels"](https://code.claude.com/docs/en/mcp#push-messages-with-channels) says: "On the v2 runtime, a channel server that negotiates MCP protocol revision 2026-07-28 can't deliver channel messages, so Claude Code doesn't register it as a channel. A channel server that doesn't support that revision connects on the earlier handshake and registers as before. Claude Code asks stdio servers for that revision by default. To keep a stdio channel server on the earlier handshake, set `MCP_PROTOCOL_NEGOTIATION` to `legacy`, which keeps every server on it." `'legacy'` makes the server one that doesn't support that revision, without asking each user to set that variable.
+- `onServerCreated(server, { era })` receives each `McpServer` the module builds, wired to the registry and not yet connected, for anything else the SDK offers, such as handling a notification from the client. It runs before the module sets the server's `onclose`; if you set the SDK's single-slot callbacks (`onclose`, `onerror`, `oninitialized`), chain them (call the one that was there) rather than replacing them. If the hook throws, the server is dropped and the error propagates: with `'legacy'` the module fails to start; with `'auto'` the client's request gets an internal error. A channel that relays permission prompts declares `experimental['claude/channel/permission']` and handles Claude Code's requests:
+
+  ```typescript
+  onServerCreated: (server) =>
+    server.server.setNotificationHandler(
+      'notifications/claude/channel/permission_request',
+      { params: z.object({ request_id: z.string(), tool_name: z.string(), description: z.string(), input_preview: z.string() }) },
+      (params) => relay.forward(params),
+    ),
+  ```
+
+  With `protocolNegotiation: 'auto'` the SDK may build a server only to answer a `server/discover` probe and then discard it, so the hook can run more than once.
+
+`McpHttpModule` takes the same `capabilities` option, with the same reserved keys. It has no `McpStdioService` counterpart: a stateless HTTP server has no connection to send on outside a request.
 
 ## Quick start: Registry only
 
@@ -358,10 +420,10 @@ For stdio on custom streams, `serveStdio(factory, { transport })` from `@modelco
 
 With `requestScopedMessages: false`, tool handlers get no `sendProgress`, `sendLog`, `createMessage`, `elicitInput` or `listRoots`. With `unsolicitedMessages: false`, `wireRegistryToServer` advertises `listChanged: false` and `subscribe: false` (the SDK would otherwise advertise `listChanged: true` for every kind it serves) and doesn't handle `resources/subscribe`. Capabilities can only change before the server connects, so call `wireRegistryToServer` first.
 
-While following the registry, tools/resources/prompts added after startup are wired to the server (and the SDK sends `listChanged` notifications). On a 2025-era server with `unsolicitedMessages` on, it also handles `resources/subscribe` / `resources/unsubscribe` and forwards `notifyResourceUpdated(uri)` to a client that subscribed to that URI; on a 2026-07-28 server it forwards every update, and the SDK delivers it to listen streams whose filter names the URI. Log levels are the SDK's: `logging/setLevel` on 2025-era connections, the request's own level on 2026-07-28 ones. It returns a function that stops following the registry; call it when the server closes. To add capabilities beyond what the registry provides (e.g. `experimental`), merge them:
+While following the registry, tools/resources/prompts added after startup are wired to the server (and the SDK sends `listChanged` notifications). On a 2025-era server with `unsolicitedMessages` on, it also handles `resources/subscribe` / `resources/unsubscribe` and forwards `notifyResourceUpdated(uri)` to a client that subscribed to that URI; on a 2026-07-28 server it forwards every update, and the SDK delivers it to listen streams whose filter names the URI. Log levels are the SDK's: `logging/setLevel` on 2025-era connections, the request's own level on 2026-07-28 ones. It returns a function that stops following the registry; call it when the server closes. To add capabilities beyond what the registry provides (e.g. `experimental`), pass them as `extra` (the keys `buildCapabilities` builds are ignored there):
 
 ```typescript
-const capabilities = { ...buildCapabilities(this.registry), experimental: {} };
+const capabilities = buildCapabilities(this.registry, { extra: { experimental: { 'example/feature': {} } } });
 const server = new McpServer({ name: 'my-server', version: '1.0.0' }, { capabilities });
 ```
 
@@ -1319,6 +1381,7 @@ McpHttpModule.registerAndServeHttp({
   },
   enableJsonResponse: false, // Optional. Default: false (SSE responses). true = one JSON body per request.
   serverOptions: {}, // Optional. Passed to McpServer. The module sets capabilities, and instructions when metadata.instructions is set.
+  capabilities: { experimental: { 'example/feature': {} } }, // Optional. Added to the capabilities built from the registry; logging/tools/resources/prompts are ignored.
   allowedOrigins: [
     // Optional. Default: same origin only. '*' allows any. See DNS rebinding protection.
     'http://localhost:3000',
@@ -1348,6 +1411,9 @@ McpStdioModule.registerAndServeStdio({
     instructions: 'Optional', // Optional. Sent in the initialize response and the server/discover result.
   },
   serverOptions: {}, // Optional. Passed to McpServer. The module sets capabilities, and instructions when metadata.instructions is set.
+  capabilities: { experimental: { 'claude/channel': {} } }, // Optional. Added to the capabilities built from the registry; logging/tools/resources/prompts are ignored.
+  protocolNegotiation: 'auto', // Optional. 'auto' (default) serves both eras; 'legacy' serves only 2025-era clients.
+  onServerCreated: (server, { era }) => {}, // Optional. Receives each McpServer the module builds, before it connects.
   stdin: process.stdin, // Optional. Defaults to process.stdin.
   stdout: process.stdout, // Optional. Defaults to process.stdout.
   redirectLogsToStderr: true, // Optional. Default: true on process.stdout. See "Logging goes to stderr".
@@ -1579,7 +1645,7 @@ The package test suite covers:
 - stdio transport wiring and its stderr logging
 - registry discovery and execution, including which error messages reach the client
 - end to end over HTTP, with the MCP SDK's own v2 client in both protocol eras against stateful and stateless servers: `inputRequired` (bridged to elicitation for 2025-era clients), progress, log levels, list-changed notifications over `subscriptions/listen`, and resource updates
-- end to end over stdio in both eras, including list-changed notifications
+- end to end over stdio in both eras, including list-changed notifications, and a Claude Code channel: extra capabilities, `instructions`, notifications sent through `McpStdioService` (readiness through a `server/discover` probe that falls back to `initialize` or is followed only by `subscriptions/listen`, a 2026-07-28 client that doesn't probe, and a refused 2026-07-28 claim followed by a probe and a fallback, closing, aborting, refused notifications), `protocolNegotiation: 'legacy'`, and `onServerCreated` (including one that replaces the SDK callbacks or throws)
 - in memory against the SDK client (2025 protocol): prompt completions, progress, log levels, sampling, structured output, error messages, and the context resource and prompt handlers receive
 - HTTP bearer challenge behavior, `insufficient_scope` challenges, the translation of v1-style verifier errors, and PRM URL derivation
 - auth strategy resolution through Nest DI
@@ -1760,7 +1826,7 @@ Additional transport options:
 
 ### Stdio (`McpStdioModule`)
 
-`onModuleInit` starts `serveStdio` on a `StdioServerTransport`. The `McpServer` is built when the client's first message arrives, for the era that message speaks (the SDK may also build and discard one to answer a `server/discover` probe). There are no sessions — the connection lasts for the lifetime of the process.
+`onModuleInit` starts `serveStdio` on a `StdioServerTransport`. The `McpServer` is built when the client's first message arrives, for the era that message speaks (the SDK may also build and discard one to answer a `server/discover` probe). With `protocolNegotiation: 'legacy'` it instead builds one 2025-era server at once and connects it to the transport. There are no sessions — the connection lasts for the lifetime of the process.
 
 - The server starts automatically when the NestJS application context initializes.
 - Nest's logs go to stderr, since stdout carries the protocol. See [Logging goes to stderr](#logging-goes-to-stderr).
@@ -1833,7 +1899,7 @@ mcpSchemaToJsonSchema; // z.ZodObject → JSON Schema object (via zod v4 native 
 // Wiring helpers
 wireRegistryToServer; // (registry, server, options?) — register all entries onto McpServer + subscribe to future changes; returns unsubscribe fn
 WireRegistryToServerOptions; // { requestScopedMessages?, unsolicitedMessages?, era?, followRegistry? } — the server's era and what its transport can deliver
-buildCapabilities; // (registry, { logging?, notifications? }?) — build MCP capabilities object from current registry state
+buildCapabilities; // (registry, { logging?, notifications?, extra? }?) => ServerCapabilities — from current registry state, plus `extra` (minus the keys it builds)
 wrapResourceResult; // Auto-wrap raw handler return → McpResourceResult
 wrapPromptResult; // Auto-wrap raw handler return → McpPromptResult
 
@@ -1865,6 +1931,9 @@ McpAsyncModuleConfig; // Omit<McpModuleConfig, 'route'> — what the async useFa
 McpStdioConfig; // Configuration for McpStdioModule.registerAndServeStdio()
 McpStdioAsyncOptions; // { imports?, inject?, useFactory, redirectLogsToStderr? } for McpStdioModule.registerAndServeStdioAsync()
 McpServerMetadata; // { name, version, description?, instructions? }
+McpServerBaseConfig; // { metadata, serverOptions?, capabilities? } — what McpModuleConfig and McpStdioConfig share
+McpExtraCapabilities; // ServerCapabilities without McpModuleCapabilityKey — the `capabilities` option's type
+McpModuleCapabilityKey; // 'logging' | 'tools' | 'resources' | 'prompts' — capability keys the modules build
 McpToolMetadata; // { name, description, title?, schema?, outputSchema?, aliases?, annotations?, icons? }
 McpToolAnnotations; // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
 McpIcon; // { src: string, mimeType?, sizes?: string[], theme?: 'light' | 'dark' } — icon for tools/resources/prompts
@@ -1879,6 +1948,8 @@ McpCompletionStrategy; // Interface — complete(argName, value, context?) for c
 // Services
 McpHttpService; // HTTP session manager — handleRequest(req, res); exported only by McpHttpModule
 McpStderrLogger; // Nest ConsoleLogger that writes every level to stderr, for stdio servers
+McpStdioService; // sendNotification(method, params?), whenConnected(signal?), isConnected(), getProtocolEra(); exported only by McpStdioModule
+McpStdioClosedError; // What whenConnected() rejects with once the stdio connection has closed
 
 // Constants
 MCP_MODULE_CONFIG; // DI token for McpHttpModule config
