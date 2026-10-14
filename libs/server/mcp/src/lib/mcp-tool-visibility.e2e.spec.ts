@@ -517,7 +517,12 @@ describe('Per-caller tool visibility over HTTP', () => {
       }));
     });
 
+    let afterTest: (() => void) | undefined;
+
     afterEach(async () => {
+      hold?.release();
+      afterTest?.();
+      afterTest = undefined;
       await app?.close();
     });
 
@@ -709,6 +714,74 @@ describe('Per-caller tool visibility over HTTP', () => {
       expect(toolFilter.mock.calls.length).toBe(calls);
       expect(toolsChanged()).toBe(changes);
       expect(await toolNames(client)).toEqual(['admin-only', 'public']);
+      await client.close();
+    });
+
+    it('remembers at most 16 tokens, never forgets the applied one, and re-resolves a forgotten one', async () => {
+      // Seventeen admin tokens of the same client, each a key the session hasn't seen.
+      const extraTokens = Array.from({ length: 17 }, (_, i) => `admin-${i}`);
+      for (const token of extraTokens) TOKENS[token] = ['admin'];
+      afterTest = () => extraTokens.forEach((token) => delete TOKENS[token]);
+      const key = (token: string) => JSON.stringify([token, TOKENS[token]]);
+
+      const { client, transport } = await connectWithToken('agent-token');
+      const session = (app.get(McpHttpService) as any).sessions.get(
+        transport.sessionId,
+      );
+      const visibility = session.visibility;
+      expect(visibility.applied).toBe(0);
+
+      // Hold their re-resolutions, so the opening (agent) token stays the applied one, and
+      // the oldest key, while the session sees more than 16.
+      // They are sent one at a time, each once the previous one's key is numbered, so the
+      // session numbers them in this order.
+      const held = holdAdminResolution();
+      const lists: Array<Promise<string[]>> = [];
+      try {
+        for (const [index, token] of extraTokens.entries()) {
+          lists.push(listWithToken(transport, token));
+          await until(() => visibility.next === index + 2);
+          expect(visibility.seen.size).toBeLessThanOrEqual(16);
+        }
+
+        expect(visibility.seen.size).toBe(16);
+        expect(visibility.applied).toBe(0);
+        expect(visibility.seen.get(key('agent-token'))).toBe(0);
+        // The oldest key that wasn't applied (the first extra token) was forgotten.
+        expect(visibility.seen.has(key('admin-0'))).toBe(false);
+        expect(visibility.seen.get(key('admin-16'))).toBe(17);
+      } finally {
+        held.release();
+      }
+      for (const names of await Promise.all(lists)) {
+        expect(names).toEqual(['admin-only', 'public']);
+      }
+      expect(visibility.applied).toBe(17);
+      expect(visibility.seen.size).toBe(16);
+
+      // The forgotten token comes back: it counts as new, so the visibility is resolved again.
+      const calls = toolFilter.mock.calls.length;
+      expect(await listWithToken(transport, 'admin-0')).toEqual([
+        'admin-only',
+        'public',
+      ]);
+      expect(toolFilter.mock.calls.length).toBeGreaterThan(calls);
+      expect(visibility.seen.get(key('admin-0'))).toBe(18);
+      expect(visibility.applied).toBe(18);
+      expect(visibility.seen.size).toBe(16);
+
+      // A remembered token the session moved past still doesn't.
+      const before = toolFilter.mock.calls.length;
+      await listWithToken(transport, 'admin-16');
+      expect(toolFilter.mock.calls.length).toBe(before);
+
+      // Once no longer applied, the opening token was the oldest, so `admin-0` coming back
+      // pushed it out. The client's next request with it counts as new too, and the session,
+      // which keeps working, follows it back to the agent's tools.
+      expect(visibility.seen.has(key('agent-token'))).toBe(false);
+      expect(await toolNames(client)).toEqual(['public']);
+      expect(visibility.applied).toBe(19);
+      expect(visibility.seen.size).toBe(16);
       await client.close();
     });
   });
