@@ -3,10 +3,11 @@ import { Test } from '@nestjs/testing';
 import { Client } from '@modelcontextprotocol/client';
 import type { Transport } from '@modelcontextprotocol/client';
 import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/server';
+import type { JSONRPCMessage } from '@modelcontextprotocol/server';
 import { PassThrough } from 'node:stream';
 import { z } from 'zod';
 import { McpStdioModule } from './mcp-stdio.module';
-import { McpStdioService } from './mcp-stdio.service';
+import { McpStdioClosedError, McpStdioService } from './mcp-stdio.service';
 import type { McpStdioConfig } from './mcp-stdio-config';
 import { McpTool } from './mcp-tool.decorator';
 import { McpToolRegistry } from './mcp-tool-registry';
@@ -23,10 +24,14 @@ class StdioToolService {
   }
 }
 
-/** A client transport over the server's stdin/stdout, as a spawning client would have. */
+/**
+ * A client transport over the server's stdin/stdout, as a spawning client would have.
+ * `receive` can rewrite each message from the server before the client sees it.
+ */
 function streamTransport(
   toServer: PassThrough,
   fromServer: PassThrough,
+  receive: (message: JSONRPCMessage) => JSONRPCMessage = (message) => message,
 ): Transport {
   const buffer = new ReadBuffer();
   const transport: Transport = {
@@ -38,7 +43,7 @@ function streamTransport(
           message;
           message = buffer.readMessage()
         ) {
-          transport.onmessage?.(message);
+          transport.onmessage?.(receive(message));
         }
       });
     },
@@ -191,6 +196,9 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
           ),
         );
         await client.connect(streamTransport(stdin, stdout));
+        // A 2026-07-28 client may only have probed with `server/discover` so far; the
+        // connection is settled once it makes a request of the era it chose.
+        await client.listTools();
         await stdio.whenConnected();
 
         expect(client.getProtocolEra()).toBe(era);
@@ -218,8 +226,9 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
     );
 
     it('hands each server to onServerCreated, to handle client notifications', async () => {
-      const verdicts: unknown[] = [];
       const eras: string[] = [];
+      let onRequest!: (requestId: string) => void;
+      const requested = new Promise<string>((resolve) => (onRequest = resolve));
       const { moduleRef, stdin, stdout } = await startChannel({
         protocolNegotiation: 'legacy',
         capabilities: {
@@ -233,9 +242,7 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
           server.server.setNotificationHandler(
             'notifications/claude/channel/permission_request',
             { params: z.object({ request_id: z.string() }) },
-            (params) => {
-              verdicts.push(params.request_id);
-            },
+            (params) => onRequest(params.request_id),
           );
         },
       });
@@ -255,15 +262,186 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
         method: 'notifications/claude/channel/permission_request',
         params: { request_id: 'abcde' },
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
 
+      await expect(requested).resolves.toBe('abcde');
       expect(eras).toEqual(['legacy']);
-      expect(verdicts).toEqual(['abcde']);
       await client.close();
       await moduleRef.close();
     });
 
-    it('reports no connection once the client has gone', async () => {
+    it('stays ready when onServerCreated replaces the SDK callbacks', async () => {
+      const { moduleRef, stdin, stdout } = await startChannel({
+        protocolNegotiation: 'legacy',
+        onServerCreated: (server) => {
+          server.server.oninitialized = () => undefined;
+          server.server.onclose = () => undefined;
+        },
+      });
+      const stdio = moduleRef.get(McpStdioService);
+      const client = new Client(
+        { name: 'stdio-client', version: '1.0.0' },
+        { versionNegotiation: { mode: 'legacy' } },
+      );
+      await client.connect(streamTransport(stdin, stdout));
+
+      await stdio.whenConnected();
+      expect(stdio.isConnected()).toBe(true);
+      await client.close();
+      await moduleRef.close();
+    });
+
+    it('leaves nothing behind when onServerCreated throws', async () => {
+      const failure = new Error('hook failed');
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const moduleRef = await Test.createTestingModule({
+        imports: [
+          McpStdioModule.registerAndServeStdio({
+            metadata: { name: 'stdio-e2e', version: '1.0.0' },
+            stdin,
+            stdout,
+            protocolNegotiation: 'legacy',
+            onServerCreated: () => {
+              throw failure;
+            },
+          }),
+        ],
+      }).compile();
+
+      await expect(moduleRef.init()).rejects.toBe(failure);
+      const stdio = moduleRef.get(McpStdioService);
+      expect(stdio.getProtocolEra()).toBeUndefined();
+      expect(stdio.isConnected()).toBe(false);
+      // Nest's close() reports the failed init again.
+      await moduleRef.close().catch(() => undefined);
+    });
+
+    it('is not ready during a server/discover probe that the client then abandons for initialize', async () => {
+      const { moduleRef, stdin, stdout } = await startChannel();
+      const stdio = moduleRef.get(McpStdioService);
+      const duringProbe: Array<Promise<unknown> | unknown> = [];
+      const client = new Client(
+        { name: 'stdio-client', version: '1.0.0' },
+        { versionNegotiation: { mode: 'auto' } },
+      );
+      const received = new Promise<string>((resolve) =>
+        client.setNotificationHandler(
+          'notifications/claude/channel',
+          { params: z.object({ content: z.string() }) },
+          (params) => resolve(params.content),
+        ),
+      );
+
+      // The server answers the probe; the client is told it didn't, and falls back.
+      await client.connect(
+        streamTransport(stdin, stdout, (message) => {
+          // Only the `server/discover` result carries `supportedVersions`.
+          if (
+            !('result' in message) ||
+            !('supportedVersions' in message.result)
+          ) {
+            return message;
+          }
+          duringProbe.push(
+            stdio.getProtocolEra(),
+            stdio.isConnected(),
+            stdio.sendNotification('notifications/claude/channel', {
+              content: 'during the probe',
+            }),
+          );
+          return {
+            jsonrpc: '2.0',
+            id: message.id,
+            error: { code: -32601, message: 'Method not found' },
+          } as JSONRPCMessage;
+        }),
+      );
+      await stdio.whenConnected();
+
+      expect(await Promise.all(duringProbe)).toEqual(['modern', false, false]);
+      expect(client.getProtocolEra()).toBe('legacy');
+      expect(stdio.getProtocolEra()).toBe('legacy');
+      expect(stdio.isConnected()).toBe(true);
+      await expect(
+        stdio.sendNotification('notifications/claude/channel', {
+          content: 'after the fallback',
+        }),
+      ).resolves.toBe(true);
+      await expect(received).resolves.toBe('after the fallback');
+      await client.close();
+      await moduleRef.close();
+    });
+
+    it('rejects pending and later whenConnected calls once the module shuts down', async () => {
+      const { moduleRef } = await startChannel();
+      const stdio = moduleRef.get(McpStdioService);
+      const pending = stdio.whenConnected();
+
+      await moduleRef.close();
+
+      await expect(pending).rejects.toBeInstanceOf(McpStdioClosedError);
+      await expect(stdio.whenConnected()).rejects.toBeInstanceOf(
+        McpStdioClosedError,
+      );
+      await expect(
+        stdio.sendNotification('notifications/claude/channel', {
+          content: 'too late',
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('rejects whenConnected and stops sending once the client goes away', async () => {
+      let onServerClosed!: () => void;
+      const serverClosed = new Promise<void>(
+        (resolve) => (onServerClosed = resolve),
+      );
+      const { moduleRef, stdin, stdout } = await startChannel({
+        protocolNegotiation: 'legacy',
+        onServerCreated: (server) => {
+          server.server.onclose = onServerClosed;
+        },
+      });
+      const stdio = moduleRef.get(McpStdioService);
+      const client = new Client(
+        { name: 'stdio-client', version: '1.0.0' },
+        { versionNegotiation: { mode: 'legacy' } },
+      );
+      await client.connect(streamTransport(stdin, stdout));
+      await stdio.whenConnected();
+      stdin.end();
+      await serverClosed;
+
+      await expect(stdio.whenConnected()).rejects.toBeInstanceOf(
+        McpStdioClosedError,
+      );
+
+      expect(stdio.isConnected()).toBe(false);
+      await expect(
+        stdio.sendNotification('notifications/claude/channel', {
+          content: 'too late',
+        }),
+      ).resolves.toBe(false);
+      await client.close();
+      await moduleRef.close();
+    });
+
+    it('rejects whenConnected with the reason when its signal aborts', async () => {
+      const { moduleRef } = await startChannel();
+      const stdio = moduleRef.get(McpStdioService);
+      const controller = new AbortController();
+      const reason = new Error('gave up');
+
+      const pending = stdio.whenConnected(controller.signal);
+      controller.abort(reason);
+
+      await expect(pending).rejects.toBe(reason);
+      await expect(stdio.whenConnected(controller.signal)).rejects.toBe(reason);
+      await moduleRef.close();
+    });
+
+    it('resolves false, without rejecting, when the SDK refuses a notification', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       const { moduleRef, stdin, stdout } = await startChannel({
         protocolNegotiation: 'legacy',
       });
@@ -275,15 +453,12 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
       await client.connect(streamTransport(stdin, stdout));
       await stdio.whenConnected();
 
-      await moduleRef.close();
-
-      expect(stdio.isConnected()).toBe(false);
+      // The server has no resources, so the SDK refuses a resources notification.
       await expect(
-        stdio.sendNotification('notifications/claude/channel', {
-          content: 'too late',
-        }),
+        stdio.sendNotification('notifications/resources/list_changed'),
       ).resolves.toBe(false);
       await client.close();
+      await moduleRef.close();
     });
   });
 });

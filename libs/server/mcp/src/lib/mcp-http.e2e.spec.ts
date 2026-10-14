@@ -317,21 +317,26 @@ describe('McpHttpModule end to end with the MCP SDK client', () => {
     });
   });
   it.each(['auto', 'legacy'] as const)(
-    'advertises extra capabilities to a client negotiating %s',
+    'advertises extra capabilities to a client negotiating %s, but not over the ones it builds',
     async (mode) => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       const { app, url } = await startApp({
+        session: {},
         capabilities: {
           experimental: { 'example/feature': {} },
-          tools: { listChanged: false },
+          // Not in the type, and ignored: the module sends tools/list_changed regardless.
+          ...({ tools: { listChanged: false } } as object),
         },
       });
       const { client } = await connect(url, mode);
 
       expect(client.getServerCapabilities()).toMatchObject({
         experimental: { 'example/feature': {} },
-        tools: { listChanged: false },
-        resources: expect.any(Object),
+        tools: { listChanged: true },
       });
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Ignoring capabilities.tools'),
+      );
       await client.close();
       await app.close();
     },

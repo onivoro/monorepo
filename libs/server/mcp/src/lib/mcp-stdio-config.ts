@@ -1,23 +1,10 @@
 import type { Readable, Writable } from 'node:stream';
-import type {
-  McpServer,
-  ServerCapabilities,
-  ServerOptions,
-} from '@modelcontextprotocol/server';
-import type { McpServerMetadata } from './mcp-server-metadata';
+import type { McpServer } from '@modelcontextprotocol/server';
+import type { McpServerBaseConfig } from './mcp-server-base-config';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
 import type { McpProtocolEra } from './mcp-protocol-era';
 
-export interface McpStdioConfig {
-  metadata: McpServerMetadata;
-  serverOptions?: ServerOptions;
-  /**
-   * Capabilities to advertise on top of the ones the module builds from the registry
-   * (`buildCapabilities`): for example `experimental: { 'claude/channel': {} }` for a Claude
-   * Code channel. Merged one level deep, so `experimental` entries are added and a key both
-   * set keeps the module's fields plus yours. Advertise only what the server handles.
-   */
-  capabilities?: ServerCapabilities;
+export interface McpStdioConfig extends McpServerBaseConfig {
   /**
    * Which protocol eras the server negotiates.
    *
@@ -34,6 +21,12 @@ export interface McpStdioConfig {
    * before it connects: for example to `server.server.setNotificationHandler(...)` for a
    * client notification. With `protocolNegotiation: 'auto'` the SDK may build a server only
    * to answer a `server/discover` probe and then discard it, so this can run more than once.
+   *
+   * The module sets `server.server.onclose` after this returns. If you set the SDK's
+   * single-slot callbacks (`onclose`, `onerror`, `oninitialized`), chain them (call the one
+   * that was there) rather than replacing them. If the hook throws, the server is dropped
+   * and the error propagates: with `'legacy'` the module fails to start; with `'auto'` the
+   * client's request gets an internal error and the module logs the error.
    */
   onServerCreated?: (
     server: McpServer,

@@ -1,10 +1,5 @@
-import type {
-  AuthInfo,
-  EventStore,
-  ServerCapabilities,
-  ServerOptions,
-} from '@modelcontextprotocol/server';
-import type { McpServerMetadata } from './mcp-server-metadata';
+import type { AuthInfo, EventStore } from '@modelcontextprotocol/server';
+import type { McpServerBaseConfig } from './mcp-server-base-config';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
 
 export interface McpHttpSessionConfig {
@@ -35,16 +30,7 @@ export interface McpHttpSessionConfig {
   principal?: (authInfo: AuthInfo) => string | undefined;
 }
 
-export interface McpModuleConfig {
-  metadata: McpServerMetadata;
-  serverOptions?: ServerOptions;
-  /**
-   * Capabilities to advertise on top of the ones the module builds from the registry
-   * (`buildCapabilities`), such as `experimental` entries. Merged one level deep, so a key
-   * both set keeps the module's fields plus yours. Advertise only what the server handles:
-   * stateless HTTP can't deliver notifications outside a request.
-   */
-  capabilities?: ServerCapabilities;
+export interface McpModuleConfig extends McpServerBaseConfig {
   /**
    * HTTP route served by McpHttpModule, relative to any Nest global prefix.
    * Defaults to `mcp`, which serves `/mcp` in a standalone app and `/api/mcp`
