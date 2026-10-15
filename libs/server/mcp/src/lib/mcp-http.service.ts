@@ -404,7 +404,8 @@ export class McpHttpService implements OnModuleDestroy {
     // caller who may not see it).
     if (required.length === 0 || !this.registry.isToolEnabled(name)) return [];
 
-    let scopes = authInfo.scopes;
+    const tokenScopes = authInfo.scopes;
+    let scopes = tokenScopes;
     let resolved: McpAuthInfo | undefined;
     try {
       // A copy, so auth from a transport is never trusted as already resolved.
@@ -415,7 +416,13 @@ export class McpHttpService implements OnModuleDestroy {
     } catch {
       // Keep the token's own scopes; tool visibility treats the caller as unauthenticated.
     }
-    const missing = required.filter((scope) => !scopes.includes(scope));
+    // Challenge only for scopes a new token could bring: ones neither the resolved auth nor the
+    // token has. A scope the token carries but the strategy withholds (a deactivated user, say,
+    // or a strategy that resolves to no auth) can't be fixed by stepping up, so that call goes
+    // on and is refused by visibility or the guard, instead of a challenge that can never pass.
+    const missing = required.filter(
+      (scope) => !scopes.includes(scope) && !tokenScopes.includes(scope),
+    );
     if (missing.length === 0) return [];
     // Nor when `toolFilter` hides the tool from this caller: more scopes wouldn't help, and the
     // call fails as for a tool that doesn't exist.

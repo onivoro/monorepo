@@ -33,6 +33,8 @@ const TOKENS: Record<string, string[]> = {
   'agent-token': ['agent'],
   'beta-token': ['agent'],
   'promoted-token': ['agent'],
+  'deactivated-token': ['admin'],
+  'demoted-token': ['admin'],
 };
 
 @Injectable()
@@ -52,10 +54,19 @@ class TokenAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
     };
   }
 
-  // Grants `admin` to the promoted token, which doesn't carry it (say, from a DB role).
+  // Grants `admin` to the promoted token, which doesn't carry it (say, from a DB role). Resolves
+  // the deactivated token, which still verifies, to no auth, and withholds `admin` from the
+  // demoted one, though both tokens carry it.
   async resolveAuth(authInfo?: McpAuthInfo) {
     if (authInfo?.token === 'promoted-token') {
       return { ...authInfo, scopes: [...authInfo.scopes, 'admin'] };
+    }
+    if (authInfo?.token === 'deactivated-token') return undefined;
+    if (authInfo?.token === 'demoted-token') {
+      return {
+        ...authInfo,
+        scopes: authInfo.scopes.filter((s) => s !== 'admin'),
+      };
     }
     return authInfo;
   }
@@ -598,6 +609,56 @@ describe('Per-caller tool visibility over HTTP', () => {
           expect(adminCalls).toEqual(['admin-only']);
           await promoted.close();
           await agent.close();
+        },
+      );
+    },
+  );
+
+  describe.each([
+    ['stateless, with visibility rules', { toolVisibility: 'authorized' }],
+    [
+      'stateful, with visibility rules',
+      { session: {}, toolVisibility: 'authorized' },
+    ],
+    ['stateless, without rules', {}],
+    ['stateful, without rules', { session: {} }],
+  ] as Array<[string, Partial<McpModuleConfig>]>)(
+    'a scope the token carries but the auth strategy withholds, %s',
+    (_name, config) => {
+      let app: any;
+      let url: URL;
+      const withRules = config.toolVisibility === 'authorized';
+
+      beforeAll(async () => {
+        ({ app, url } = await startApp(config));
+      });
+
+      afterAll(async () => {
+        await app?.close();
+      });
+
+      // Stepping up can't help: the token already carries `admin`. So the call isn't challenged
+      // (a challenge would send the client round a loop it can't leave); it's refused as it
+      // would be without the pre-check: by visibility with rules, by the guard without.
+      it.each([
+        ['resolved to no auth', 'deactivated-token'],
+        ['without the scope', 'demoted-token'],
+      ] as const)(
+        'is refused, not challenged, when %s',
+        async (_how, token) => {
+          for (const mode of ['auto', 'legacy'] as const) {
+            const client = await connect(url, mode, token);
+            const call = client.callTool({ name: 'admin-only', arguments: {} });
+            if (withRules) {
+              await expect(call).rejects.toThrow(/Tool admin-only not found/);
+            } else {
+              const result: any = await call;
+              expect(result.isError).toBe(true);
+              expect(result.content[0].text).toMatch(/Access denied/);
+            }
+            await client.close();
+          }
+          expect(adminCalls).toEqual([]);
         },
       );
     },
