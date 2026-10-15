@@ -12,6 +12,10 @@ import type { McpStdioConfig } from './mcp-stdio-config';
 import { McpTool } from './mcp-tool.decorator';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpToolContext } from './mcp-tool-context';
+import { McpGuard } from './mcp-guard.decorator';
+import { McpScopeGuard } from './mcp-scope-guard';
+import type { McpAuthInfo } from './mcp-auth-info';
+import type { McpAuthStrategy } from './mcp-auth-strategy';
 
 // McpStdioModule over in-process streams, called by the MCP SDK's own v2 client in both
 // protocol eras.
@@ -629,5 +633,242 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
       await client.close();
       await moduleRef.close();
     });
+  });
+
+  describe('per-caller tool visibility', () => {
+    // Stdio carries no token: the auth strategy says who the client is.
+    let stdioScopes: string[] = [];
+    const adminCalls: string[] = [];
+
+    @Injectable()
+    class ScopesAuthStrategy implements McpAuthStrategy {
+      async resolveAuth(): Promise<McpAuthInfo> {
+        return { token: 'local', clientId: 'local', scopes: stdioScopes };
+      }
+    }
+
+    @Injectable()
+    class ScopedToolService {
+      @McpTool({ name: 'public', description: 'Anyone' })
+      async public() {
+        return 'public';
+      }
+
+      @McpTool({ name: 'admin-only', description: 'Admins only' })
+      @McpGuard(McpScopeGuard, { scopes: ['admin'] })
+      async adminOnly() {
+        adminCalls.push('admin-only');
+        return 'admin';
+      }
+    }
+
+    async function startScoped(config: Partial<McpStdioConfig>) {
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const moduleRef = await Test.createTestingModule({
+        imports: [
+          McpStdioModule.registerAndServeStdio({
+            metadata: { name: 'stdio-visibility', version: '1.0.0' },
+            stdin,
+            stdout,
+            exposeErrorMessages: true,
+            authStrategy: ScopesAuthStrategy,
+            ...config,
+          }),
+        ],
+        providers: [ScopedToolService, ScopesAuthStrategy],
+      }).compile();
+      await moduleRef.init();
+      return { moduleRef, stdin, stdout };
+    }
+
+    async function connectScoped(
+      config: Partial<McpStdioConfig>,
+      mode: 'auto' | 'legacy',
+    ) {
+      const { moduleRef, stdin, stdout } = await startScoped(config);
+      const client = new Client(
+        { name: 'stdio-client', version: '1.0.0' },
+        { versionNegotiation: { mode } },
+      );
+      await client.connect(streamTransport(stdin, stdout));
+      const names = (await client.listTools()).tools
+        .map((tool) => tool.name)
+        .sort();
+      return { moduleRef, client, names };
+    }
+
+    beforeEach(() => {
+      adminCalls.length = 0;
+    });
+
+    describe.each(['auto', 'legacy'] as const)(
+      'a client negotiating %s',
+      (mode) => {
+        it("hides the admin tool from a non-admin client with toolVisibility: 'authorized', and refuses the call", async () => {
+          stdioScopes = ['agent'];
+          const { moduleRef, client, names } = await connectScoped(
+            { toolVisibility: 'authorized' },
+            mode,
+          );
+
+          expect(names).toEqual(['public']);
+          await expect(
+            client.callTool({ name: 'admin-only', arguments: {} }),
+          ).rejects.toThrow(/Tool admin-only not found/);
+          expect(adminCalls).toEqual([]);
+          await client.close();
+          await moduleRef.close();
+        });
+
+        it("lists the admin tool to an admin client with toolVisibility: 'authorized'", async () => {
+          stdioScopes = ['admin'];
+          const { moduleRef, client, names } = await connectScoped(
+            { toolVisibility: 'authorized' },
+            mode,
+          );
+
+          expect(names).toEqual(['admin-only', 'public']);
+          const result: any = await client.callTool({
+            name: 'admin-only',
+            arguments: {},
+          });
+          expect(result.content[0].text).toBe('admin');
+          await client.close();
+          await moduleRef.close();
+        });
+
+        it('lists every tool by default, and the guard still refuses the call', async () => {
+          stdioScopes = ['agent'];
+          const { moduleRef, client, names } = await connectScoped({}, mode);
+
+          expect(names).toEqual(['admin-only', 'public']);
+          const result: any = await client.callTool({
+            name: 'admin-only',
+            arguments: {},
+          });
+          expect(result.isError).toBe(true);
+          expect(result.content[0].text).toMatch(/Access denied/);
+          expect(adminCalls).toEqual([]);
+          await client.close();
+          await moduleRef.close();
+        });
+
+        it('lists a tool registered while a request was being decided', async () => {
+          stdioScopes = ['admin'];
+          let blocking = false;
+          let entered!: () => void;
+          let release!: () => void;
+          const enteredPromise = new Promise<void>((r) => (entered = r));
+          const released = new Promise<void>((r) => (release = r));
+          const { moduleRef, stdin, stdout } = await startScoped({
+            toolVisibility: 'authorized',
+            toolFilter: async () => {
+              if (blocking) {
+                entered();
+                await released;
+              }
+              return true;
+            },
+          });
+          const client = new Client(
+            { name: 'stdio-client', version: '1.0.0' },
+            { versionNegotiation: { mode } },
+          );
+          await client.connect(streamTransport(stdin, stdout));
+
+          blocking = true;
+          const listing = client.listTools();
+          await enteredPromise;
+          moduleRef
+            .get(McpToolRegistry)
+            .registerTool(
+              { name: 'meanwhile', description: 'Registered while deciding' },
+              async () => 'meanwhile',
+              [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
+            );
+          blocking = false;
+          release();
+          await listing;
+
+          const names = (await client.listTools()).tools.map(
+            (tool) => tool.name,
+          );
+          expect(names.sort()).toEqual(['admin-only', 'meanwhile', 'public']);
+          await client.close();
+          await moduleRef.close();
+        });
+
+        it('decides each request by the auth the strategy gives it then', async () => {
+          stdioScopes = ['agent'];
+          const { moduleRef, client, names } = await connectScoped(
+            { toolVisibility: 'authorized' },
+            mode,
+          );
+          expect(names).toEqual(['public']);
+
+          stdioScopes = ['admin'];
+          const listed = (await client.listTools()).tools.map(
+            (tool) => tool.name,
+          );
+          expect(listed.sort()).toEqual(['admin-only', 'public']);
+
+          stdioScopes = ['agent'];
+          await expect(
+            client.callTool({ name: 'admin-only', arguments: {} }),
+          ).rejects.toThrow(/Tool admin-only not found/);
+          await client.close();
+          await moduleRef.close();
+        });
+
+        it('lists and serves a tool onServerCreated registers, as without rules', async () => {
+          stdioScopes = ['agent'];
+          const { moduleRef, client, names } = await connectScoped(
+            {
+              toolVisibility: 'authorized',
+              onServerCreated: (server) => {
+                server.registerTool(
+                  'outside',
+                  { description: "Not the registry's" },
+                  async () => ({
+                    content: [{ type: 'text', text: 'outside' }],
+                  }),
+                );
+              },
+            },
+            mode,
+          );
+
+          expect(names).toEqual(['outside', 'public']);
+          const result: any = await client.callTool({
+            name: 'outside',
+            arguments: {},
+          });
+          expect(result.content[0].text).toBe('outside');
+          await client.close();
+          await moduleRef.close();
+        });
+
+        it('applies toolFilter', async () => {
+          stdioScopes = ['admin'];
+          const { moduleRef, client, names } = await connectScoped(
+            {
+              toolVisibility: 'authorized',
+              toolFilter: (tool, authInfo) =>
+                tool.name !== 'public' || !authInfo?.scopes.includes('admin'),
+            },
+            mode,
+          );
+
+          expect(names).toEqual(['admin-only']);
+          // Enforced on each call too.
+          await expect(
+            client.callTool({ name: 'public', arguments: {} }),
+          ).rejects.toThrow(/Tool public not found/);
+          await client.close();
+          await moduleRef.close();
+        });
+      },
+    );
   });
 });

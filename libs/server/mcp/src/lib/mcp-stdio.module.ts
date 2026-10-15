@@ -122,6 +122,10 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
       this.config.exposeErrorMessages,
       this.logger,
     );
+    this.registry.setToolVisibility({
+      toolVisibility: this.config.toolVisibility,
+      toolFilter: this.config.toolFilter,
+    });
     if (this.config.authStrategy) {
       const provider = this.moduleRef.get(this.config.authStrategy, {
         strict: false,

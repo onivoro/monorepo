@@ -22,7 +22,7 @@ import * as http from 'http';
 import type { McpModuleConfig } from './mcp-module-config';
 import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
-import { McpScopeGuard } from './mcp-scope-guard';
+import type { McpAuthInfo } from './mcp-auth-info';
 import {
   buildMcpServer,
   warnAboutIgnoredCapabilities,
@@ -83,6 +83,13 @@ export class McpHttpService implements OnModuleDestroy {
     // The sweep only matters while the app runs; it must not keep the process alive.
     this.sweepInterval.unref?.();
     warnAboutIgnoredCapabilities(config, this.logger);
+    // The visibility rules belong to whatever serves this config, so they apply however the
+    // service is provided: by McpHttpModule, or by hand around a Fastify controller. Left to
+    // the module, a hand-provided service would serve every tool to everyone (fail open).
+    registry.setToolVisibility({
+      toolVisibility: config.toolVisibility,
+      toolFilter: config.toolFilter,
+    });
 
     const onerror = (error: unknown) =>
       this.logger.error('MCP request handling error:', error);
@@ -371,15 +378,21 @@ export class McpHttpService implements OnModuleDestroy {
   }
 
   /**
-   * The scopes a `tools/call` needs that the caller's token lacks, from the tool's
+   * The scopes a `tools/call` needs that the caller lacks, from the tool's
    * `@McpGuard(McpScopeGuard, { scopes })` guards. Checked at the HTTP layer so the client
    * gets a 403 `insufficient_scope` challenge it can act on (step-up authorization), rather
    * than a tool error it can't.
+   *
+   * The caller's scopes are those of its auth as the auth strategy resolves it: the same
+   * auth `McpScopeGuard` and tool visibility see, so a scope the strategy grants is honoured
+   * here too. If the strategy throws, the token's own scopes are used (the call then fails in
+   * the registry, as it would have). No challenge is sent for a disabled tool, or one
+   * `toolFilter` hides from the caller: scopes aren't what stops those calls.
    */
-  private getMissingToolScopes(
+  private async getMissingToolScopes(
     req: http.IncomingMessage,
     body: unknown,
-  ): string[] {
+  ): Promise<string[]> {
     const authInfo = (req as { auth?: AuthInfo }).auth;
     if (!this.bearerTokenVerifier || !authInfo) return [];
     if (!body || typeof body !== 'object' || Array.isArray(body)) return [];
@@ -392,18 +405,42 @@ export class McpHttpService implements OnModuleDestroy {
       return [];
     }
 
-    const required = this.registry
-      .getToolGuards(message.params.name)
-      .filter(
-        ({ guardClass }) =>
-          guardClass === McpScopeGuard ||
-          guardClass.prototype instanceof McpScopeGuard,
-      )
-      .flatMap(({ config }) => (config?.['scopes'] as string[]) ?? []);
+    const name = message.params.name;
+    const required = this.registry.getToolRequiredScopes(name);
+    // Challenge only when scopes are what stands in the way: a disabled tool can't be called
+    // whatever the token carries, so the call fails as such (without revealing the tool to a
+    // caller who may not see it).
+    if (required.length === 0 || !this.registry.isToolEnabled(name)) return [];
 
-    return [...new Set(required)].filter(
-      (scope) => !authInfo.scopes.includes(scope),
+    const tokenScopes = authInfo.scopes;
+    let scopes = tokenScopes;
+    let resolved: McpAuthInfo | undefined;
+    try {
+      // A copy, so auth from a transport is never trusted as already resolved.
+      resolved = await this.registry.resolveAuthInfo({
+        ...(authInfo as McpAuthInfo),
+      });
+      scopes = resolved?.scopes ?? [];
+    } catch {
+      // Keep the token's own scopes; tool visibility treats the caller as unauthenticated.
+    }
+    // Challenge only for scopes a new token could bring: ones neither the resolved auth nor the
+    // token has. A scope the token carries but the strategy withholds (a deactivated user, say,
+    // or a strategy that resolves to no auth) can't be fixed by stepping up, so that call goes
+    // on and is refused by visibility or the guard, instead of a challenge that can never pass.
+    const missing = required.filter(
+      (scope) => !scopes.includes(scope) && !tokenScopes.includes(scope),
     );
+    if (missing.length === 0) return [];
+    // Nor when `toolFilter` hides the tool from this caller: more scopes wouldn't help, and the
+    // call fails as for a tool that doesn't exist.
+    if (
+      this.registry.hasToolVisibilityRules() &&
+      !(await this.registry.toolFilterAllows(name, resolved))
+    ) {
+      return [];
+    }
+    return missing;
   }
 
   private sendInsufficientScope(
@@ -658,7 +695,7 @@ export class McpHttpService implements OnModuleDestroy {
       }
 
       if (req.method === 'POST') {
-        const missingScopes = this.getMissingToolScopes(req, parsedBody);
+        const missingScopes = await this.getMissingToolScopes(req, parsedBody);
         if (missingScopes.length > 0) {
           this.sendInsufficientScope(req, res, missingScopes);
           return;

@@ -17,6 +17,12 @@ import type { McpRegistrationChangeListener } from './mcp-registration-change-li
 import type { McpResourceUpdateListener } from './mcp-resource-update-listener';
 import { mcpSchemaToJsonSchema } from './mcp-schema-converters';
 import { McpAccessDeniedError, McpToolError } from './mcp-tool-error';
+import { McpScopeGuard } from './mcp-scope-guard';
+import type {
+  McpToolFilter,
+  McpToolVisibility,
+  McpToolVisibilityOptions,
+} from './mcp-tool-visibility';
 import { ZodError } from 'zod';
 
 interface ToolEntry {
@@ -57,6 +63,8 @@ export class McpToolRegistry {
   private providerResolver?: (cls: new (...args: any[]) => any) => any;
   private authStrategy?: McpAuthStrategy;
   private exposeErrorMessages = true;
+  private toolVisibility: McpToolVisibility = 'all';
+  private toolFilter?: McpToolFilter;
 
   // -- Registration --
 
@@ -156,6 +164,120 @@ export class McpToolRegistry {
    */
   setExposeErrorMessages(expose: boolean): void {
     this.exposeErrorMessages = expose;
+  }
+
+  /**
+   * Which tools each caller sees: `McpHttpModule` and `McpStdioModule` set this from their
+   * `toolVisibility` and `toolFilter` options. For a custom transport, call it before
+   * `wireRegistryToServer`, which enforces the rules on each request.
+   */
+  setToolVisibility(options: McpToolVisibilityOptions): void {
+    const visibility = options.toolVisibility ?? 'all';
+    if (visibility !== 'all' && visibility !== 'authorized') {
+      throw new Error(
+        `toolVisibility must be 'all' or 'authorized', got "${String(visibility)}".`,
+      );
+    }
+    this.toolVisibility = visibility;
+    this.toolFilter = options.toolFilter;
+  }
+
+  /** Whether some callers may see fewer tools than others (`setToolVisibility`). */
+  hasToolVisibilityRules(): boolean {
+    return this.toolVisibility === 'authorized' || !!this.toolFilter;
+  }
+
+  /**
+   * The auth guards see for `authInfo`: what the auth strategy resolves it to, unless there is
+   * no strategy or the object was marked with `markMcpAuthInfoResolved`. Rejects if the
+   * strategy throws. Pass auth that arrived over a transport as a copy.
+   */
+  async resolveAuthInfo(
+    authInfo?: McpAuthInfo,
+  ): Promise<McpAuthInfo | undefined> {
+    return this.authStrategy && !isMcpAuthInfoResolved(authInfo)
+      ? this.authStrategy.resolveAuth(authInfo)
+      : authInfo;
+  }
+
+  /**
+   * Decides which tools one request may see, or returns `undefined` when every caller sees
+   * every tool (no visibility rules are set). `authInfo` is resolved with the auth strategy
+   * once, as for a tool call, unless it was marked with `markMcpAuthInfoResolved`; if the
+   * strategy throws, the request is treated as unauthenticated. The returned function decides
+   * a tool for that auth, remembering each answer. Decide per request: don't keep the result
+   * across requests. `wireRegistryToServer` uses this for each `tools/list` and `tools/call`;
+   * pass auth that arrived over a transport as a copy, as it does.
+   */
+  async resolveToolVisibility(
+    authInfo?: McpAuthInfo,
+  ): Promise<((name: string) => Promise<boolean>) | undefined> {
+    if (!this.hasToolVisibilityRules()) return undefined;
+
+    let resolvedAuthInfo: McpAuthInfo | undefined;
+    try {
+      resolvedAuthInfo = await this.resolveAuthInfo(authInfo);
+    } catch (error) {
+      this.logger.warn(
+        `The auth strategy failed while deciding which tools a request may see, so it sees only the tools an unauthenticated caller may: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      resolvedAuthInfo = undefined;
+    }
+
+    const decisions = new Map<string, Promise<boolean>>();
+    return (name) => {
+      let decision = decisions.get(name);
+      if (!decision) {
+        decision = this.isToolVisibleTo(name, resolvedAuthInfo);
+        decisions.set(name, decision);
+      }
+      return decision;
+    };
+  }
+
+  private async isToolVisibleTo(
+    name: string,
+    authInfo: McpAuthInfo | undefined,
+  ): Promise<boolean> {
+    if (!this.tools.has(name)) return false;
+
+    if (this.toolVisibility === 'authorized') {
+      const required = this.getToolRequiredScopes(name);
+      if (
+        required.length > 0 &&
+        !required.every((scope) => authInfo?.scopes?.includes(scope))
+      ) {
+        return false;
+      }
+    }
+
+    return this.toolFilterAllows(name, authInfo);
+  }
+
+  /**
+   * Whether `toolFilter` alone lets a request whose auth is `authInfo` (already resolved, as
+   * `resolveAuthInfo` gives it) see the tool: `true` without a filter, `false` for an unknown
+   * tool or a filter that throws. The HTTP `insufficient_scope` pre-check uses it, so it
+   * doesn't challenge for scopes when the filter hides the tool anyway.
+   */
+  async toolFilterAllows(
+    name: string,
+    authInfo: McpAuthInfo | undefined,
+  ): Promise<boolean> {
+    const entry = this.tools.get(name);
+    if (!entry) return false;
+    if (!this.toolFilter) return true;
+    try {
+      return (await this.toolFilter(entry.metadata, authInfo)) === true;
+    } catch (error) {
+      this.logger.error(
+        `toolFilter failed for tool ${name}, so it is hidden:`,
+        error,
+      );
+      return false;
+    }
   }
 
   setAuthStrategy(strategy: McpAuthStrategy): void {
@@ -282,6 +404,21 @@ export class McpToolRegistry {
 
   hasTool(name: string): boolean {
     return this.tools.has(name);
+  }
+
+  /**
+   * The scopes a tool's `@McpGuard(McpScopeGuard, { scopes })` guards (including subclasses
+   * of `McpScopeGuard`) require together, without duplicates. Empty for an unknown tool.
+   */
+  getToolRequiredScopes(name: string): string[] {
+    const required = this.getToolGuards(name)
+      .filter(
+        ({ guardClass }) =>
+          guardClass === McpScopeGuard ||
+          guardClass.prototype instanceof McpScopeGuard,
+      )
+      .flatMap(({ config }) => (config?.['scopes'] as string[]) ?? []);
+    return [...new Set(required)];
   }
 
   /** Returns the guard metadata for a registered tool, or an empty array if not found. */

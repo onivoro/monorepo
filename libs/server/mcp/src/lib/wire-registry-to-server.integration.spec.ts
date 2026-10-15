@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { buildCapabilities } from './build-capabilities';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { McpToolError } from './mcp-tool-error';
+import type { McpToolVisibilityOptions } from './mcp-tool-visibility';
 import {
   wireRegistryToServer,
   WireRegistryToServerOptions,
@@ -47,289 +48,309 @@ async function connect(
   return { server, client };
 }
 
-describe('wireRegistryToServer against the MCP SDK', () => {
-  let registry: McpToolRegistry;
+// With visibility rules set, the module's own tools/list and tools/call handlers serve the
+// tools instead of the SDK's; everything here must behave the same through them.
+describe.each([
+  ['', undefined],
+  [', with tool visibility rules', { toolFilter: () => true }],
+] as Array<[string, McpToolVisibilityOptions | undefined]>)(
+  'wireRegistryToServer against the MCP SDK%s',
+  (_label, visibility) => {
+    let registry: McpToolRegistry;
 
-  beforeEach(() => {
-    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    registry = new McpToolRegistry();
-  });
+    beforeEach(() => {
+      jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      registry = new McpToolRegistry();
+      if (visibility) registry.setToolVisibility(visibility);
+    });
 
-  afterEach(() => jest.restoreAllMocks());
+    afterEach(() => jest.restoreAllMocks());
 
-  it('completes prompt arguments through the completeStrategy', async () => {
-    class LanguageCompleter {
-      complete(argName: string, value: string) {
-        return argName === 'language'
-          ? ['typescript', 'python', 'rust'].filter((l) => l.startsWith(value))
-          : [];
+    it('completes prompt arguments through the completeStrategy', async () => {
+      class LanguageCompleter {
+        complete(argName: string, value: string) {
+          return argName === 'language'
+            ? ['typescript', 'python', 'rust'].filter((l) =>
+                l.startsWith(value),
+              )
+            : [];
+        }
       }
-    }
-    registry.setProviderResolver(() => new LanguageCompleter());
-    registry.registerPrompt(
-      {
-        name: 'generate-code',
-        description: 'Generate code',
-        argsSchema: { language: z.string(), task: z.string() },
-        completeStrategy: LanguageCompleter,
-      },
-      async () => 'prompt',
-    );
+      registry.setProviderResolver(() => new LanguageCompleter());
+      registry.registerPrompt(
+        {
+          name: 'generate-code',
+          description: 'Generate code',
+          argsSchema: { language: z.string(), task: z.string() },
+          completeStrategy: LanguageCompleter,
+        },
+        async () => 'prompt',
+      );
 
-    const { client } = await connect(registry);
+      const { client } = await connect(registry);
 
-    expect(client.getServerCapabilities()?.completions).toEqual({});
-    const result = await client.complete({
-      ref: { type: 'ref/prompt', name: 'generate-code' },
-      argument: { name: 'language', value: 'py' },
-    });
-    expect(result.completion.values).toEqual(['python']);
-  });
-
-  it('delivers progress and honors the log level the client sets', async () => {
-    registry.registerTool(
-      { name: 'work', description: 'd' },
-      async (_params: unknown, ctx?: any) => {
-        await ctx.sendProgress(1, 2, 'half');
-        await ctx.sendLog('debug', 'noise');
-        await ctx.sendLog('warning', 'heads up');
-        return 'done';
-      },
-    );
-
-    const { client } = await connect(registry);
-    const logs: unknown[] = [];
-    client.setNotificationHandler('notifications/message', (n) => {
-      logs.push(n.params.data);
-    });
-    await client.setLoggingLevel('info');
-
-    const progress: unknown[] = [];
-    const result = await client.callTool(
-      { name: 'work', arguments: {} },
-      { onprogress: (p) => progress.push(p) },
-    );
-
-    expect(result).toEqual({ content: [{ type: 'text', text: 'done' }] });
-    expect(progress).toEqual([{ progress: 1, total: 2, message: 'half' }]);
-    expect(logs).toEqual(['heads up']);
-  });
-
-  it('sends sampling requests to a client that declared sampling', async () => {
-    registry.registerTool(
-      { name: 'ask', description: 'd' },
-      async (_params: unknown, ctx?: any) => {
-        const reply = await ctx.createMessage({
-          messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }],
-          maxTokens: 5,
-        });
-        return reply.content.text;
-      },
-    );
-
-    const { client } = await connect(registry, {
-      clientCapabilities: { sampling: {} },
-    });
-    client.setRequestHandler('sampling/createMessage', async () => ({
-      role: 'assistant',
-      model: 'm',
-      content: { type: 'text', text: 'hello back' },
-    }));
-
-    const result = await client.callTool({ name: 'ask', arguments: {} });
-    expect(result.content).toEqual([{ type: 'text', text: 'hello back' }]);
-  });
-
-  it('returns a plain object from a tool with an output schema as structured content', async () => {
-    registry.registerTool(
-      {
-        name: 'count',
-        description: 'd',
-        outputSchema: z.object({ count: z.number() }),
-      },
-      async () => ({ count: 3 }),
-    );
-
-    const { client } = await connect(registry);
-    const result = await client.callTool({ name: 'count', arguments: {} });
-
-    expect(result.isError).toBeFalsy();
-    expect(result.structuredContent).toEqual({ count: 3 });
-  });
-
-  it('shows the client messages written for it, and hides others when exposeErrorMessages is off', async () => {
-    registry.setExposeErrorMessages(false);
-    registry.registerTool({ name: 'safe', description: 'd' }, async () => {
-      throw new McpToolError('No invoice 42');
-    });
-    registry.registerTool({ name: 'leaky', description: 'd' }, async () => {
-      throw new Error('connect ECONNREFUSED 10.0.0.5:5432');
-    });
-    registry.registerTool(
-      { name: 'typed', description: 'd', schema: z.object({ n: z.number() }) },
-      async () => 'ok',
-    );
-
-    const { client } = await connect(registry);
-
-    const safe = await client.callTool({ name: 'safe', arguments: {} });
-    const leaky = await client.callTool({ name: 'leaky', arguments: {} });
-    const typed = await client.callTool({
-      name: 'typed',
-      arguments: { n: 'x' },
+      expect(client.getServerCapabilities()?.completions).toEqual({});
+      const result = await client.complete({
+        ref: { type: 'ref/prompt', name: 'generate-code' },
+        argument: { name: 'language', value: 'py' },
+      });
+      expect(result.completion.values).toEqual(['python']);
     });
 
-    expect(safe.content).toEqual([
-      { type: 'text', text: 'Error executing safe: No invoice 42' },
-    ]);
-    expect(leaky.content).toEqual([
-      { type: 'text', text: 'Error executing leaky: Internal error' },
-    ]);
-    expect(typed.isError).toBe(true);
-  });
+    it('delivers progress and honors the log level the client sets', async () => {
+      registry.registerTool(
+        { name: 'work', description: 'd' },
+        async (_params: unknown, ctx?: any) => {
+          await ctx.sendProgress(1, 2, 'half');
+          await ctx.sendLog('debug', 'noise');
+          await ctx.sendLog('warning', 'heads up');
+          return 'done';
+        },
+      );
 
-  it('advertises the input schema, and runs guards before validating arguments', async () => {
-    class DenyGuard {
-      canActivate() {
-        return false;
+      const { client } = await connect(registry);
+      const logs: unknown[] = [];
+      client.setNotificationHandler('notifications/message', (n) => {
+        logs.push(n.params.data);
+      });
+      await client.setLoggingLevel('info');
+
+      const progress: unknown[] = [];
+      const result = await client.callTool(
+        { name: 'work', arguments: {} },
+        { onprogress: (p) => progress.push(p) },
+      );
+
+      expect(result).toEqual({ content: [{ type: 'text', text: 'done' }] });
+      expect(progress).toEqual([{ progress: 1, total: 2, message: 'half' }]);
+      expect(logs).toEqual(['heads up']);
+    });
+
+    it('sends sampling requests to a client that declared sampling', async () => {
+      registry.registerTool(
+        { name: 'ask', description: 'd' },
+        async (_params: unknown, ctx?: any) => {
+          const reply = await ctx.createMessage({
+            messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }],
+            maxTokens: 5,
+          });
+          return reply.content.text;
+        },
+      );
+
+      const { client } = await connect(registry, {
+        clientCapabilities: { sampling: {} },
+      });
+      client.setRequestHandler('sampling/createMessage', async () => ({
+        role: 'assistant',
+        model: 'm',
+        content: { type: 'text', text: 'hello back' },
+      }));
+
+      const result = await client.callTool({ name: 'ask', arguments: {} });
+      expect(result.content).toEqual([{ type: 'text', text: 'hello back' }]);
+    });
+
+    it('returns a plain object from a tool with an output schema as structured content', async () => {
+      registry.registerTool(
+        {
+          name: 'count',
+          description: 'd',
+          outputSchema: z.object({ count: z.number() }),
+        },
+        async () => ({ count: 3 }),
+      );
+
+      const { client } = await connect(registry);
+      const result = await client.callTool({ name: 'count', arguments: {} });
+
+      expect(result.isError).toBeFalsy();
+      expect(result.structuredContent).toEqual({ count: 3 });
+    });
+
+    it('shows the client messages written for it, and hides others when exposeErrorMessages is off', async () => {
+      registry.setExposeErrorMessages(false);
+      registry.registerTool({ name: 'safe', description: 'd' }, async () => {
+        throw new McpToolError('No invoice 42');
+      });
+      registry.registerTool({ name: 'leaky', description: 'd' }, async () => {
+        throw new Error('connect ECONNREFUSED 10.0.0.5:5432');
+      });
+      registry.registerTool(
+        {
+          name: 'typed',
+          description: 'd',
+          schema: z.object({ n: z.number() }),
+        },
+        async () => 'ok',
+      );
+
+      const { client } = await connect(registry);
+
+      const safe = await client.callTool({ name: 'safe', arguments: {} });
+      const leaky = await client.callTool({ name: 'leaky', arguments: {} });
+      const typed = await client.callTool({
+        name: 'typed',
+        arguments: { n: 'x' },
+      });
+
+      expect(safe.content).toEqual([
+        { type: 'text', text: 'Error executing safe: No invoice 42' },
+      ]);
+      expect(leaky.content).toEqual([
+        { type: 'text', text: 'Error executing leaky: Internal error' },
+      ]);
+      expect(typed.isError).toBe(true);
+    });
+
+    it('advertises the input schema, and runs guards before validating arguments', async () => {
+      class DenyGuard {
+        canActivate() {
+          return false;
+        }
       }
-    }
-    registry.setGuardResolver(() => new DenyGuard());
-    const schema = z.object({ n: z.number() });
-    registry.registerTool(
-      { name: 'guarded', description: 'd', schema },
-      async () => 'ok',
-      [{ guardClass: DenyGuard }],
-    );
+      registry.setGuardResolver(() => new DenyGuard());
+      const schema = z.object({ n: z.number() });
+      registry.registerTool(
+        { name: 'guarded', description: 'd', schema },
+        async () => 'ok',
+        [{ guardClass: DenyGuard }],
+      );
 
-    const { client } = await connect(registry);
-    const tools = await client.listTools();
-    const result = await client.callTool({
-      name: 'guarded',
-      arguments: { n: 'not a number' },
+      const { client } = await connect(registry);
+      const tools = await client.listTools();
+      const result = await client.callTool({
+        name: 'guarded',
+        arguments: { n: 'not a number' },
+      });
+
+      expect(tools.tools[0].inputSchema).toEqual(
+        expect.objectContaining({
+          type: 'object',
+          properties: { n: { type: 'number' } },
+          required: ['n'],
+        }),
+      );
+      // Denied before validation: the caller doesn't learn about the schema.
+      expect(result.content).toEqual([
+        {
+          type: 'text',
+          text: 'Error executing guarded: Access denied by DenyGuard for tool "guarded".',
+        },
+      ]);
     });
 
-    expect(tools.tools[0].inputSchema).toEqual(
-      expect.objectContaining({
-        type: 'object',
-        properties: { n: { type: 'number' } },
-        required: ['n'],
-      }),
-    );
-    // Denied before validation: the caller doesn't learn about the schema.
-    expect(result.content).toEqual([
-      {
-        type: 'text',
-        text: 'Error executing guarded: Access denied by DenyGuard for tool "guarded".',
-      },
-    ]);
-  });
+    it('applies transforms once', async () => {
+      const seen: unknown[] = [];
+      registry.registerTool(
+        {
+          name: 'double',
+          description: 'd',
+          schema: z.object({ n: z.number().transform((n) => n * 2) }),
+        },
+        async (params: any) => {
+          seen.push(params.n);
+          return 'ok';
+        },
+      );
 
-  it('applies transforms once', async () => {
-    const seen: unknown[] = [];
-    registry.registerTool(
-      {
-        name: 'double',
-        description: 'd',
-        schema: z.object({ n: z.number().transform((n) => n * 2) }),
-      },
-      async (params: any) => {
-        seen.push(params.n);
-        return 'ok';
-      },
-    );
+      const { client } = await connect(registry);
+      await client.callTool({ name: 'double', arguments: { n: 2 } });
 
-    const { client } = await connect(registry);
-    await client.callTool({ name: 'double', arguments: { n: 2 } });
+      expect(seen).toEqual([4]);
+    });
 
-    expect(seen).toEqual([4]);
-  });
+    it('passes auth and request context to a tool without an input schema', async () => {
+      let seen: any;
+      registry.registerTool(
+        { name: 'bare', description: 'd' },
+        async (params: unknown, ctx?: any) => {
+          seen = { params, signal: ctx.signal };
+          return 'ok';
+        },
+      );
 
-  it('passes auth and request context to a tool without an input schema', async () => {
-    let seen: any;
-    registry.registerTool(
-      { name: 'bare', description: 'd' },
-      async (params: unknown, ctx?: any) => {
-        seen = { params, signal: ctx.signal };
-        return 'ok';
-      },
-    );
+      const { client } = await connect(registry);
+      await client.callTool({ name: 'bare', arguments: { anything: 1 } });
 
-    const { client } = await connect(registry);
-    await client.callTool({ name: 'bare', arguments: { anything: 1 } });
+      expect(seen.params).toEqual({ anything: 1 });
+      expect(seen.signal).toBeInstanceOf(AbortSignal);
+    });
 
-    expect(seen.params).toEqual({ anything: 1 });
-    expect(seen.signal).toBeInstanceOf(AbortSignal);
-  });
-
-  it("passes resource and prompt handlers the library context, not the SDK's", async () => {
-    const seen: Record<string, any> = {};
-    registry.registerResource(
-      { name: 'static', uri: 'app://static' },
-      async (_uri: URL, ctx: any) => {
-        seen['static'] = ctx;
-        return 'data';
-      },
-    );
-    registry.registerResource(
-      { name: 'item', uri: 'app://items/{id}', isTemplate: true },
-      async (_uri: URL, variables: any, ctx: any) => {
-        seen['template'] = { variables, ctx };
-        return 'item';
-      },
-    );
-    registry.registerPrompt(
-      { name: 'with-args', argsSchema: { topic: z.string() } },
-      async (args: any, ctx: any) => {
-        seen['withArgs'] = { args, ctx };
+    it("passes resource and prompt handlers the library context, not the SDK's", async () => {
+      const seen: Record<string, any> = {};
+      registry.registerResource(
+        { name: 'static', uri: 'app://static' },
+        async (_uri: URL, ctx: any) => {
+          seen['static'] = ctx;
+          return 'data';
+        },
+      );
+      registry.registerResource(
+        { name: 'item', uri: 'app://items/{id}', isTemplate: true },
+        async (_uri: URL, variables: any, ctx: any) => {
+          seen['template'] = { variables, ctx };
+          return 'item';
+        },
+      );
+      registry.registerPrompt(
+        { name: 'with-args', argsSchema: { topic: z.string() } },
+        async (args: any, ctx: any) => {
+          seen['withArgs'] = { args, ctx };
+          return 'prompt';
+        },
+      );
+      registry.registerPrompt({ name: 'no-args' }, async (ctx: any) => {
+        seen['noArgs'] = ctx;
         return 'prompt';
-      },
-    );
-    registry.registerPrompt({ name: 'no-args' }, async (ctx: any) => {
-      seen['noArgs'] = ctx;
-      return 'prompt';
+      });
+
+      const { client } = await connect(registry);
+      await client.readResource({ uri: 'app://static' });
+      await client.readResource({ uri: 'app://items/7' });
+      await client.getPrompt({
+        name: 'with-args',
+        arguments: { topic: 'mcp' },
+      });
+      await client.getPrompt({ name: 'no-args' });
+
+      const libraryContext = {
+        era: 'legacy',
+        signal: expect.any(AbortSignal),
+        requestState: expect.any(Function),
+      };
+      expect(seen['static']).toEqual(libraryContext);
+      expect(seen['template']).toEqual({
+        variables: { id: '7' },
+        ctx: libraryContext,
+      });
+      expect(seen['withArgs']).toEqual({
+        args: { topic: 'mcp' },
+        ctx: libraryContext,
+      });
+      expect(seen['noArgs']).toEqual(libraryContext);
+      // None of the SDK's own context leaks through.
+      expect(seen['static']).not.toHaveProperty('mcpReq');
     });
 
-    const { client } = await connect(registry);
-    await client.readResource({ uri: 'app://static' });
-    await client.readResource({ uri: 'app://items/7' });
-    await client.getPrompt({ name: 'with-args', arguments: { topic: 'mcp' } });
-    await client.getPrompt({ name: 'no-args' });
+    it('advertises no list changes or subscriptions without a stream for them', async () => {
+      registry.registerTool({ name: 't', description: 'd' }, async () => 'ok');
+      registry.registerResource(
+        { name: 'r', uri: 'app://r' },
+        async () => 'data',
+      );
 
-    const libraryContext = {
-      era: 'legacy',
-      signal: expect.any(AbortSignal),
-      requestState: expect.any(Function),
-    };
-    expect(seen['static']).toEqual(libraryContext);
-    expect(seen['template']).toEqual({
-      variables: { id: '7' },
-      ctx: libraryContext,
+      const { client } = await connect(registry, {
+        unsolicitedMessages: false,
+      });
+
+      expect(client.getServerCapabilities()).toEqual(
+        expect.objectContaining({
+          tools: { listChanged: false },
+          resources: { subscribe: false, listChanged: false },
+        }),
+      );
     });
-    expect(seen['withArgs']).toEqual({
-      args: { topic: 'mcp' },
-      ctx: libraryContext,
-    });
-    expect(seen['noArgs']).toEqual(libraryContext);
-    // None of the SDK's own context leaks through.
-    expect(seen['static']).not.toHaveProperty('mcpReq');
-  });
-
-  it('advertises no list changes or subscriptions without a stream for them', async () => {
-    registry.registerTool({ name: 't', description: 'd' }, async () => 'ok');
-    registry.registerResource(
-      { name: 'r', uri: 'app://r' },
-      async () => 'data',
-    );
-
-    const { client } = await connect(registry, { unsolicitedMessages: false });
-
-    expect(client.getServerCapabilities()).toEqual(
-      expect.objectContaining({
-        tools: { listChanged: false },
-        resources: { subscribe: false, listChanged: false },
-      }),
-    );
-  });
-});
+  },
+);

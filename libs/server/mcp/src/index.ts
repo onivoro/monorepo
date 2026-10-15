@@ -64,6 +64,11 @@ export {
 } from './lib/mcp-resolved-auth-info';
 export { McpCanActivate } from './lib/mcp-can-activate';
 export { McpGuardMetadata } from './lib/mcp-guard-metadata';
+export {
+  McpToolVisibility,
+  McpToolFilter,
+  McpToolVisibilityOptions,
+} from './lib/mcp-tool-visibility';
 
 // Tool context & interceptors
 export { McpToolContext } from './lib/mcp-tool-context';
