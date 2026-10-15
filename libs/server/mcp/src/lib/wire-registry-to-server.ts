@@ -2,16 +2,22 @@ import {
   completable,
   isCompletable,
   McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
-import type { ServerContext } from '@modelcontextprotocol/server';
+import type {
+  CallToolResult,
+  RegisteredTool,
+  ServerContext,
+} from '@modelcontextprotocol/server';
+import { isInputRequiredResult } from './is-input-required-result';
 import { z } from 'zod';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpLogLevel } from './mcp-log-level';
 import type { McpPromptMetadata } from './mcp-prompt-metadata';
 import type { McpProtocolEra } from './mcp-protocol-era';
 import type { McpHandlerContext } from './mcp-handler-context';
-import type { McpVisibleTools } from './mcp-tool-visibility';
 import { wrapResourceResult } from './wrap-resource-result';
 import { wrapPromptResult } from './wrap-prompt-result';
 
@@ -72,32 +78,6 @@ export interface WireRegistryToServerOptions {
    * request. Default: `true`.
    */
   followRegistry?: boolean;
-  /**
-   * The tools the caller this server serves may see, from
-   * `await registry.resolveVisibleTools(authInfo)` (see `McpToolRegistry.setToolVisibility`).
-   * Other tools aren't registered on the server, so they are neither listed nor callable
-   * (the SDK answers a call with "Tool ... not found"). Tools registered later are wired
-   * once they are found visible. Default: every tool.
-   */
-  visibleTools?: McpVisibleTools;
-}
-
-/**
- * What `wireRegistryToServer` returns: call it to stop following the registry (when the
- * server closes). `setVisibleTools` changes which tools the server's caller sees, for a
- * long-lived server whose caller's auth changed (a stateful HTTP session whose client stepped
- * up to a token with more scopes): tools that became visible are registered, tools that no
- * longer are removed, and the SDK sends `tools/list_changed` for each. Later registrations
- * and `setToolEnabled` follow the latest set. Pass `undefined` for every tool.
- */
-export type McpServerWiring = (() => void) & {
-  setVisibleTools(visibleTools: McpVisibleTools | undefined): void;
-};
-
-interface WiredTool {
-  enable(): void;
-  disable(): void;
-  remove(): void;
 }
 
 /** Per-server state shared by everything wired onto that server. */
@@ -206,7 +186,7 @@ function wireToolToServer(
   registry: McpToolRegistry,
   server: McpServer,
   toolName: string,
-  registeredTools: Map<string, WiredTool>,
+  registeredTools: Map<string, RegisteredTool>,
   wiring: ServerWiring,
 ): void {
   const entry = registry.getTool(toolName);
@@ -252,7 +232,7 @@ function wireToolToServer(
     },
   );
 
-  registeredTools.set(metadata.name, registered as any);
+  registeredTools.set(metadata.name, registered);
   if (!registry.isToolEnabled(metadata.name)) registered.disable();
 }
 
@@ -395,6 +375,136 @@ function wirePromptToServer(
   );
 }
 
+/** The input schema of a tool listed without one, as the SDK lists it. */
+const EMPTY_OBJECT_JSON_SCHEMA = { type: 'object', properties: {} };
+
+/** A tool as `tools/list` describes it: the fields the SDK's own handler lists. */
+function listedTool(server: McpServer, name: string, tool: RegisteredTool) {
+  return {
+    name,
+    title: tool.title,
+    description: tool.description,
+    inputSchema: server.toolInputSchemaJson(name) ?? EMPTY_OBJECT_JSON_SCHEMA,
+    annotations: tool.annotations,
+    icons: tool.icons,
+    execution: tool.execution,
+    _meta: tool._meta,
+    ...(tool.outputSchemaJson && { outputSchema: tool.outputSchemaJson }),
+  };
+}
+
+/** The SDK's check of a tool's structured content against its output schema. */
+async function validateToolOutput(
+  name: string,
+  tool: RegisteredTool,
+  result: CallToolResult,
+): Promise<void> {
+  if (!tool.outputSchema || result.isError) return;
+  if (result.structuredContent === undefined) {
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
+      `Output validation error: Tool ${name} has an output schema but no structured content was provided`,
+    );
+  }
+  const outcome = await tool.outputSchema['~standard'].validate(
+    result.structuredContent,
+  );
+  if (outcome.issues?.length) {
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
+      `Output validation error: Invalid structured content for tool ${name}: ${outcome.issues
+        .map((issue) => issue.message)
+        .join(', ')}`,
+    );
+  }
+}
+
+/**
+ * Replaces the SDK's `tools/list` and `tools/call` handlers on `server` with ones that decide,
+ * for each request, which tools it may see (`McpToolRegistry.setToolVisibility`), from the
+ * request's own auth: `tools/list` lists only those, and `tools/call` answers a call to any
+ * other tool as for a tool that doesn't exist. Every tool stays registered on the server, so
+ * nothing about the server depends on who is calling. Otherwise the handlers do what the
+ * SDK's do: hide and refuse disabled tools, call the tool's callback, check its structured
+ * content against the output schema, and project the result for the client's era.
+ *
+ * The SDK installs its own handlers once, when the server gets the `tools` capability or its
+ * first tool, and doesn't replace them later, so these are installed after the first tool is
+ * registered on the server.
+ */
+function enforceToolVisibility(
+  registry: McpToolRegistry,
+  server: McpServer,
+  tools: ReadonlyMap<string, RegisteredTool>,
+): void {
+  // Resolved once per request; the auth is a copy, so auth from a transport is never
+  // trusted as already resolved (see markMcpAuthInfoResolved).
+  const visibilityFor = (ctx: ServerContext | undefined) => {
+    const authInfo = ctx?.http?.authInfo;
+    return registry.resolveToolVisibility(authInfo && { ...(authInfo as any) });
+  };
+
+  server.server.setRequestHandler('tools/list', async (_request, ctx) => {
+    const isVisible = await visibilityFor(ctx);
+    // The tools registered once the request's auth is resolved, so none registered
+    // meanwhile is missed.
+    const listed = await Promise.all(
+      [...tools].map(async ([name, tool]) =>
+        tool.enabled && (!isVisible || (await isVisible(name)))
+          ? listedTool(server, name, tool)
+          : undefined,
+      ),
+    );
+    return { tools: listed.filter((tool) => tool !== undefined) } as any;
+  });
+
+  server.server.setRequestHandler('tools/call', async (request, ctx) => {
+    const name = request.params.name;
+    const isVisible = await visibilityFor(ctx);
+    const tool = tools.get(name);
+    if (!tool || (isVisible && !(await isVisible(name)))) {
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
+        `Tool ${name} not found`,
+      );
+    }
+    if (!tool.enabled) {
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
+        `Tool ${name} disabled`,
+      );
+    }
+    try {
+      const result = (await (tool.handler as any)(
+        request.params.arguments ?? {},
+        ctx,
+      )) as CallToolResult;
+      if (isInputRequiredResult(result)) return result as any;
+      await validateToolOutput(name, tool, result);
+      return server.server.projectCallToolResult(
+        result,
+        tool.outputSchemaJson,
+      ) as any;
+    } catch (error) {
+      if (
+        error instanceof ProtocolError &&
+        error.code === ProtocolErrorCode.UrlElicitationRequired
+      ) {
+        throw error;
+      }
+      return {
+        content: [
+          {
+            type: 'text',
+            text: error instanceof Error ? error.message : String(error),
+          },
+        ],
+        isError: true,
+      } as any;
+    }
+  });
+}
+
 /**
  * The SDK advertises `listChanged: true` for every kind it serves. Without a way to deliver
  * list changes, say no list changes or subscriptions instead. Capabilities are fixed once
@@ -424,14 +534,13 @@ function withdrawUnsolicitedCapabilities(
  * Use it when bringing your own transport via McpRegistryModule.registerOnly(), and call it
  * before connecting the server. Describe the server in `options`.
  *
- * @returns A function that stops following the registry (call it when the server closes),
- *   with a `setVisibleTools` method; see `McpServerWiring`.
+ * @returns A function that stops following the registry. Call it when the server closes.
  */
 export function wireRegistryToServer(
   registry: McpToolRegistry,
   server: McpServer,
   options: WireRegistryToServerOptions = {},
-): McpServerWiring {
+): () => void {
   const unsolicitedMessages = options.unsolicitedMessages !== false;
   const followRegistry = options.followRegistry !== false;
   const wiring: ServerWiring = {
@@ -439,63 +548,22 @@ export function wireRegistryToServer(
     era: options.era ?? 'legacy',
   };
 
-  const registeredTools = new Map<string, WiredTool>();
+  const registeredTools = new Map<string, RegisteredTool>();
 
-  let visibleTools = options.visibleTools;
-  let following = true;
-
-  const wireIfMissing = (name: string) => {
-    if (!registeredTools.has(name)) {
-      wireToolToServer(registry, server, name, registeredTools, wiring);
+  // With visibility rules, each request sees only its own tools (enforced once the server
+  // has a tool, and so the SDK's tool handlers to replace).
+  const enforcesVisibility = registry.hasToolVisibilityRules();
+  let enforcing = false;
+  const wireTool = (name: string) => {
+    wireToolToServer(registry, server, name, registeredTools, wiring);
+    if (enforcesVisibility && !enforcing && registeredTools.size > 0) {
+      enforcing = true;
+      enforceToolVisibility(registry, server, registeredTools);
     }
   };
 
-  const removeIfWired = (name: string) => {
-    const registered = registeredTools.get(name);
-    if (!registered) return;
-    registeredTools.delete(name);
-    registered.remove();
-  };
-
-  /**
-   * Registers or removes a tool on this server according to the current `visibleTools`. A
-   * tool it hasn't decided yet (registered after it was resolved) is decided first, and the
-   * answer applied only if `visibleTools` hasn't been replaced meanwhile. `evaluate`
-   * remembers its decisions.
-   */
-  const applyVisibility = (name: string) => {
-    const current = visibleTools;
-    if (!current) return wireIfMissing(name);
-    if (current.decided(name)) {
-      return current.has(name) ? wireIfMissing(name) : removeIfWired(name);
-    }
-    current
-      .evaluate(name)
-      .then((visible) => {
-        if (!following || visibleTools !== current) return;
-        if (visible) wireIfMissing(name);
-        else removeIfWired(name);
-      })
-      .catch((err) =>
-        console.error(
-          `[wireRegistryToServer] Could not wire tool "${name}":`,
-          err,
-        ),
-      );
-  };
-
-  const setVisibleTools = (next: McpVisibleTools | undefined) => {
-    if (!following) return;
-    visibleTools = next;
-    for (const { metadata } of registry.getTools()) {
-      applyVisibility(metadata.name);
-    }
-  };
-
-  // Tools registered while `visibleTools` was being resolved (after its snapshot, and before
-  // this server listened for registrations) are decided here too.
   for (const { metadata } of registry.getTools()) {
-    applyVisibility(metadata.name);
+    wireTool(metadata.name);
   }
 
   for (const { metadata } of registry.getResources()) {
@@ -508,17 +576,9 @@ export function wireRegistryToServer(
 
   if (!unsolicitedMessages) withdrawUnsolicitedCapabilities(registry, server);
 
-  if (!followRegistry) {
-    return Object.assign(
-      () => {
-        following = false;
-      },
-      { setVisibleTools },
-    );
-  }
+  if (!followRegistry) return () => {};
 
-  // Wire enable/disable delegate so registry.setToolEnabled() works. Tools this server's
-  // caller can't see were never wired, so toggling them changes nothing here.
+  // Wire enable/disable delegate so registry.setToolEnabled() works.
   const unsubToolEnabled = registry.setToolEnabledDelegate((name, enabled) => {
     const registered = registeredTools.get(name);
     if (!registered) return;
@@ -592,7 +652,7 @@ export function wireRegistryToServer(
     (type, name) => {
       switch (type) {
         case 'tool':
-          applyVisibility(name);
+          wireTool(name);
           break;
         case 'resource':
           wireResourceToServer(registry, server, name, wiring);
@@ -604,13 +664,9 @@ export function wireRegistryToServer(
     },
   );
 
-  return Object.assign(
-    () => {
-      following = false;
-      unsubRegistrationChanges();
-      unsubResourceUpdates();
-      unsubToolEnabled();
-    },
-    { setVisibleTools },
-  );
+  return () => {
+    unsubRegistrationChanges();
+    unsubResourceUpdates();
+    unsubToolEnabled();
+  };
 }

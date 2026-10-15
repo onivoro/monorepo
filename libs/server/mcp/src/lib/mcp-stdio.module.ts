@@ -152,7 +152,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     if (this.config.protocolNegotiation === 'legacy') {
       // 2025-era only: one server on the transport, as before `serveStdio`. It answers a
       // `server/discover` probe with an error, so the client falls back to `initialize`.
-      const server = await this.createServer({ era: 'legacy' });
+      const server = this.createServer({ era: 'legacy' });
       chainHandler(server.server, 'onerror', (error) =>
         this.logger.error('MCP stdio error:', error),
       );
@@ -177,11 +177,7 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`MCP stdio server started: ${this.config.metadata.name}`);
   }
 
-  private async createServer(
-    ctx: Pick<McpRequestContext, 'era'>,
-  ): Promise<McpServer> {
-    // Stdio carries no token: the auth strategy decides who the client is, once per server.
-    const visibleTools = await this.registry.resolveVisibleTools(undefined);
+  private createServer(ctx: Pick<McpRequestContext, 'era'>): McpServer {
     const server = buildMcpServer(this.config, this.registry);
 
     // The connection is long-lived on both eras, so the server follows the registry; on
@@ -189,7 +185,6 @@ export class McpStdioModule implements OnModuleInit, OnModuleDestroy {
     // client's `subscriptions/listen` streams.
     const unwire = wireRegistryToServer(this.registry, server, {
       era: ctx.era,
-      visibleTools,
     });
     // The hook runs before the module sets its own callbacks, so a hook that replaces one
     // can't drop them. If it throws, nothing refers to the server any more.

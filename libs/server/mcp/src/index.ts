@@ -68,7 +68,6 @@ export {
   McpToolVisibility,
   McpToolFilter,
   McpToolVisibilityOptions,
-  McpVisibleTools,
 } from './lib/mcp-tool-visibility';
 
 // Tool context & interceptors
@@ -113,7 +112,6 @@ export {
 export {
   wireRegistryToServer,
   WireRegistryToServerOptions,
-  McpServerWiring,
 } from './lib/wire-registry-to-server';
 export { buildCapabilities } from './lib/build-capabilities';
 export { wrapResourceResult } from './lib/wrap-resource-result';

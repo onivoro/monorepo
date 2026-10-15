@@ -7,8 +7,8 @@ import type { McpToolVisibilityOptions } from './mcp-tool-visibility';
 
 /**
  * `toolVisibility` and `toolFilter` (from `McpToolVisibilityOptions`) decide which tools the
- * client sees. Stdio carries no token, so the caller's auth is whatever `authStrategy`
- * resolves from `undefined`, decided once per connection.
+ * client sees, checked on every `tools/list` and `tools/call`. Stdio carries no token, so the
+ * caller's auth is whatever `authStrategy` resolves from `undefined`.
  */
 export interface McpStdioConfig
   extends McpServerBaseConfig,

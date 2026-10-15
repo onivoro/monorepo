@@ -27,32 +27,21 @@ export type McpToolFilter = (
  * Per-caller tool visibility, accepted by `McpHttpModule` and `McpStdioModule`, and by
  * `McpToolRegistry.setToolVisibility` for a custom transport.
  *
- * A tool is listed to a caller only if all of these hold:
+ * Decided per request, from that request's auth after the auth strategy resolved it. A tool
+ * is listed in a request's `tools/list`, and callable by its `tools/call`, only if all of
+ * these hold:
  * 1. it is enabled (`setToolEnabled`), which applies to every caller;
- * 2. with `toolVisibility: 'authorized'`, the caller has the scopes its `McpScopeGuard`
+ * 2. with `toolVisibility: 'authorized'`, the request has the scopes its `McpScopeGuard`
  *    guards require;
  * 3. `toolFilter`, when set, returns `true`.
  *
  * So `toolFilter` narrows the scope rule when `toolVisibility` is `'authorized'`, and stands
- * alone when it is `'all'`. A tool a caller doesn't see isn't registered on the server that
- * serves that caller, so calling it fails as for a tool that doesn't exist.
+ * alone when it is `'all'`. A call to a tool the request may not see fails as for a tool that
+ * doesn't exist (JSON-RPC `-32602`, `Tool <name> not found`).
  */
 export interface McpToolVisibilityOptions {
   /** Default: `'all'`, which lists every enabled tool to every caller. */
   toolVisibility?: McpToolVisibility;
   /** Applied in addition to `toolVisibility`. Default: none. */
   toolFilter?: McpToolFilter;
-}
-
-/**
- * The tools one caller sees, from `McpToolRegistry.resolveVisibleTools(authInfo)`. Pass it
- * to `wireRegistryToServer` as `visibleTools` for the server that serves that caller.
- */
-export interface McpVisibleTools {
-  /** Whether the tool is visible, for tools registered when this was resolved. */
-  has(name: string): boolean;
-  /** Whether the tool has been decided (`has` then answers for it). */
-  decided(name: string): boolean;
-  /** Decides (once, then remembers) for a tool registered later. */
-  evaluate(name: string): Promise<boolean>;
 }

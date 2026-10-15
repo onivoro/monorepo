@@ -113,9 +113,13 @@ describe('McpHttpModule end to end with the MCP SDK client', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
+  // With a toolFilter, the module's own tools/list and tools/call handlers serve the tools
+  // instead of the SDK's; everything here must behave the same through them.
   describe.each([
     ['stateful', { session: {} }],
     ['stateless', {}],
+    ['stateful-filtered', { session: {}, toolFilter: () => true }],
+    ['stateless-filtered', { toolFilter: () => true }],
   ] as Array<[string, Partial<McpModuleConfig>]>)(
     '%s server',
     (_name, config) => {

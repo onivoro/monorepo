@@ -754,9 +754,9 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
           await moduleRef.close();
         });
 
-        it('wires a tool registered while the visibility was being decided', async () => {
+        it('lists a tool registered while a request was being decided', async () => {
           stdioScopes = ['admin'];
-          let blocking = true;
+          let blocking = false;
           let entered!: () => void;
           let release!: () => void;
           const enteredPromise = new Promise<void>((r) => (entered = r));
@@ -775,28 +775,48 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
             { name: 'stdio-client', version: '1.0.0' },
             { versionNegotiation: { mode } },
           );
+          await client.connect(streamTransport(stdin, stdout));
 
-          const connecting = client.connect(streamTransport(stdin, stdout));
+          blocking = true;
+          const listing = client.listTools();
           await enteredPromise;
           moduleRef
             .get(McpToolRegistry)
             .registerTool(
-              { name: 'meanwhile', description: 'Registered while resolving' },
+              { name: 'meanwhile', description: 'Registered while deciding' },
               async () => 'meanwhile',
               [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
             );
           blocking = false;
           release();
-          await connecting;
+          await listing;
 
-          let names: string[] = [];
-          for (let i = 0; i < 50 && !names.includes('meanwhile'); i++) {
-            names = (await client.listTools()).tools.map((tool) => tool.name);
-            if (!names.includes('meanwhile')) {
-              await new Promise((resolve) => setTimeout(resolve, 10));
-            }
-          }
+          const names = (await client.listTools()).tools.map(
+            (tool) => tool.name,
+          );
           expect(names.sort()).toEqual(['admin-only', 'meanwhile', 'public']);
+          await client.close();
+          await moduleRef.close();
+        });
+
+        it('decides each request by the auth the strategy gives it then', async () => {
+          stdioScopes = ['agent'];
+          const { moduleRef, client, names } = await connectScoped(
+            { toolVisibility: 'authorized' },
+            mode,
+          );
+          expect(names).toEqual(['public']);
+
+          stdioScopes = ['admin'];
+          const listed = (await client.listTools()).tools.map(
+            (tool) => tool.name,
+          );
+          expect(listed.sort()).toEqual(['admin-only', 'public']);
+
+          stdioScopes = ['agent'];
+          await expect(
+            client.callTool({ name: 'admin-only', arguments: {} }),
+          ).rejects.toThrow(/Tool admin-only not found/);
           await client.close();
           await moduleRef.close();
         });
@@ -813,6 +833,10 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
           );
 
           expect(names).toEqual(['admin-only']);
+          // Enforced on each call too.
+          await expect(
+            client.callTool({ name: 'public', arguments: {} }),
+          ).rejects.toThrow(/Tool public not found/);
           await client.close();
           await moduleRef.close();
         });

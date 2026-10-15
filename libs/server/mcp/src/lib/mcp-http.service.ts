@@ -21,75 +21,21 @@ import * as http from 'http';
 import type { McpModuleConfig } from './mcp-module-config';
 import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
-import type { McpAuthInfo } from './mcp-auth-info';
-import type { McpVisibleTools } from './mcp-tool-visibility';
 import {
   buildMcpServer,
   warnAboutIgnoredCapabilities,
 } from './build-mcp-server';
 import { wireRegistryToServer } from './wire-registry-to-server';
-import type { McpServerWiring } from './wire-registry-to-server';
 import { normalizeMcpHttpRoute, normalizePath } from './mcp-http-route';
 
 interface SessionEntry {
   server: McpServer;
   transport: NodeStreamableHTTPServerTransport;
   lastActivity: number;
-  /** Stops following the registry; also changes which tools the session's caller sees. */
-  unsubscribeRegistry: McpServerWiring;
-  /** Which tokens the session has seen, in order, and which one its tools come from. */
-  visibility?: SessionVisibility;
-  /** The latest visibility re-resolution, so they run one at a time per session. */
-  visibilityUpdate?: Promise<void>;
+  unsubscribeRegistry: () => void;
   sessionId?: string;
   /** Who opened the session, when the request was authenticated (see `session.principal`). */
   principal?: string;
-}
-
-/**
- * The tokens (`visibilityKey`s) a stateful session has seen, numbered in the order it first
- * saw them, and the number of the one its current tool visibility was resolved from. A
- * session only moves forward: a request whose token is newer than the applied one
- * re-resolves, an older one is served with the current tools.
- */
-interface SessionVisibility {
-  seen: Map<string, number>;
-  next: number;
-  applied: number;
-}
-
-/**
- * How many tokens a session remembers. When it has seen more, it forgets the oldest; a
- * forgotten token that comes back counts as new.
- */
-const SESSION_VISIBILITY_HISTORY = 16;
-
-/** The order number of `key` in the session, numbering it if the session hasn't seen it. */
-function sequenceOf(visibility: SessionVisibility, key: string): number {
-  const known = visibility.seen.get(key);
-  if (known !== undefined) return known;
-  const sequence = visibility.next++;
-  visibility.seen.set(key, sequence);
-  if (visibility.seen.size > SESSION_VISIBILITY_HISTORY) {
-    // Map order is insertion order, which is sequence order: drop the oldest that isn't the
-    // applied one.
-    for (const [seenKey, seenSequence] of visibility.seen) {
-      if (seenSequence !== visibility.applied) {
-        visibility.seen.delete(seenKey);
-        break;
-      }
-    }
-  }
-  return sequence;
-}
-
-/**
- * What tool visibility is decided from: the token and its scopes. A session re-resolves its
- * visibility when a request carries a different one (a client that stepped up its scopes).
- */
-function visibilityKey(authInfo: AuthInfo | undefined): string {
-  if (!authInfo) return JSON.stringify(null);
-  return JSON.stringify([authInfo.token, [...(authInfo.scopes ?? [])].sort()]);
 }
 
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
@@ -138,15 +84,12 @@ export class McpHttpService implements OnModuleDestroy {
 
     const onerror = (error: unknown) =>
       this.logger.error('MCP request handling error:', error);
-    this.modern = createMcpHandler(
-      (ctx) => this.createModernServer(ctx.authInfo),
-      {
-        // Legacy clients are classified first and served by the session logic below.
-        legacy: 'reject',
-        responseMode: this.jsonResponse ? 'json' : 'auto',
-        onerror,
-      },
-    );
+    this.modern = createMcpHandler(() => this.createModernServer(), {
+      // Legacy clients are classified first and served by the session logic below.
+      legacy: 'reject',
+      responseMode: this.jsonResponse ? 'json' : 'auto',
+      onerror,
+    });
     this.modernNode = toNodeHandler(this.modern, { onerror });
     this.unsubscribeModern = this.notifyModernClientsOfChanges();
   }
@@ -181,22 +124,10 @@ export class McpHttpService implements OnModuleDestroy {
   }
 
   /**
-   * The tools the caller may see (`toolVisibility`, `toolFilter`), from the request's
-   * verified token. A copy, so auth info from a transport is never trusted as already
-   * resolved (see markMcpAuthInfoResolved).
-   */
-  private resolveVisibleTools(authInfo: AuthInfo | undefined) {
-    return this.registry.resolveVisibleTools(
-      authInfo && ({ ...authInfo } as McpAuthInfo),
-    );
-  }
-
-  /**
    * A server for one 2026-07-28 request. It needs no registry subscriptions: it sees the
    * registry as it is now, and change notifications go through the handler.
    */
-  private async createModernServer(authInfo?: AuthInfo): Promise<McpServer> {
-    const visibleTools = await this.resolveVisibleTools(authInfo);
+  private createModernServer(): McpServer {
     // With SSE responses (the default), progress and logs ride the request's stream.
     const requestScopedMessages = !this.jsonResponse;
     const server = this.createMcpServer(requestScopedMessages, true);
@@ -205,7 +136,6 @@ export class McpHttpService implements OnModuleDestroy {
       unsolicitedMessages: true,
       era: 'modern',
       followRegistry: false,
-      visibleTools,
     });
     return server;
   }
@@ -242,87 +172,8 @@ export class McpHttpService implements OnModuleDestroy {
     );
   }
 
-  /**
-   * Opens a 2025-era connection for a request. The tools it lists are decided from the auth
-   * of the request that opens it (a stateful session decides again when its token changes;
-   * see `refreshSessionVisibility`), which can take a while (the auth strategy and
-   * `toolFilter` may do I/O). If the client went away meanwhile, its response has already
-   * closed, so nothing is built: a server built now would never be closed and would stay
-   * wired to the registry. Otherwise the server is built and its response's `close` listener
-   * attached in the same tick.
-   */
-  private async openLegacySession(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    principal: string | undefined,
-  ): Promise<SessionEntry | undefined> {
-    const visibleTools = await this.resolveVisibleTools(
-      (req as { auth?: AuthInfo }).auth,
-    );
-    if (res.destroyed || res.writableEnded) return undefined;
-    const session = this.createLegacySession(principal, visibleTools);
-    session.visibility = {
-      seen: new Map([[visibilityKey((req as { auth?: AuthInfo }).auth), 0]]),
-      next: 1,
-      applied: 0,
-    };
-    this.closeIfNotStoredWhenResponseCloses(session, res);
-    return session;
-  }
-
-  /**
-   * A stateful session decides its tool visibility from the request that opens it. When a
-   * later request carries a token (or scope set) the session hasn't seen before, such as a
-   * client that stepped up after a `403 insufficient_scope` or one that now uses a narrower
-   * token, the visibility is resolved again from that request's auth before the request is
-   * handled, and the session's server gains or loses tools to match (sending
-   * `tools/list_changed`). A request with a token the session has already moved past (an
-   * SSE reconnect or an in-flight request still carrying the old token) is served with the
-   * current tools, and doesn't change them: its calls are still checked by the scope
-   * pre-check and the guards. Re-resolutions run one at a time per session, and one whose
-   * token has been overtaken by the time it runs is dropped. Returns `false` when the client
-   * went away meanwhile, so the request isn't handled.
-   */
-  private async refreshSessionVisibility(
-    session: SessionEntry,
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): Promise<boolean> {
-    if (!this.registry.hasToolVisibilityRules()) return true;
-    const visibility = session.visibility;
-    if (!visibility) return true;
-    const authInfo = (req as { auth?: AuthInfo }).auth;
-    const sequence = sequenceOf(visibility, visibilityKey(authInfo));
-    if (sequence <= visibility.applied) return true;
-
-    const update = (session.visibilityUpdate ?? Promise.resolve()).then(
-      async () => {
-        if (sequence <= visibility.applied) return;
-        const visibleTools = await this.resolveVisibleTools(authInfo);
-        if (sequence <= visibility.applied) return;
-        // A no-op once the session has closed and stopped following the registry.
-        session.unsubscribeRegistry.setVisibleTools(visibleTools);
-        visibility.applied = sequence;
-      },
-    );
-    const settled = update.catch((error) =>
-      this.logger.error('Could not update the session tool visibility:', error),
-    );
-    session.visibilityUpdate = settled;
-    settled.then(() => {
-      if (session.visibilityUpdate === settled) {
-        session.visibilityUpdate = undefined;
-      }
-    });
-    await update;
-    return !(res.destroyed || res.writableEnded);
-  }
-
   /** A 2025-era connection: a stored session when stateful, else one request's worth. */
-  private createLegacySession(
-    principal: string | undefined,
-    visibleTools: McpVisibleTools | undefined,
-  ): SessionEntry {
+  private createLegacySession(principal?: string): SessionEntry {
     const entry: Partial<SessionEntry> = {
       lastActivity: Date.now(),
       principal,
@@ -356,7 +207,6 @@ export class McpHttpService implements OnModuleDestroy {
       requestScopedMessages,
       unsolicitedMessages,
       era: 'legacy',
-      visibleTools,
     });
 
     server.connect(transport);
@@ -741,8 +591,8 @@ export class McpHttpService implements OnModuleDestroy {
       const principal = this.getPrincipal(req);
 
       if (req.method === 'POST' && !sessionId) {
-        const session = await this.openLegacySession(req, res, principal);
-        if (!session) return;
+        const session = this.createLegacySession(principal);
+        this.closeIfNotStoredWhenResponseCloses(session, res);
         await session.transport.handleRequest(req, res, parsedBody);
         return;
       }
@@ -769,8 +619,8 @@ export class McpHttpService implements OnModuleDestroy {
 
       if (!session) {
         if (isInitializeRequest) {
-          const newSession = await this.openLegacySession(req, res, principal);
-          if (!newSession) return;
+          const newSession = this.createLegacySession(principal);
+          this.closeIfNotStoredWhenResponseCloses(newSession, res);
           await newSession.transport.handleRequest(req, res, parsedBody);
           return;
         }
@@ -780,15 +630,6 @@ export class McpHttpService implements OnModuleDestroy {
       }
 
       session.lastActivity = Date.now();
-
-      if (req.method !== 'DELETE') {
-        const stillThere = await this.refreshSessionVisibility(
-          session,
-          req,
-          res,
-        );
-        if (!stillThere) return;
-      }
 
       if (req.method === 'DELETE') {
         try {

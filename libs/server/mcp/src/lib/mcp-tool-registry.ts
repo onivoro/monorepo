@@ -22,7 +22,6 @@ import type {
   McpToolFilter,
   McpToolVisibility,
   McpToolVisibilityOptions,
-  McpVisibleTools,
 } from './mcp-tool-visibility';
 import { ZodError } from 'zod';
 
@@ -169,8 +168,8 @@ export class McpToolRegistry {
 
   /**
    * Which tools each caller sees: `McpHttpModule` and `McpStdioModule` set this from their
-   * `toolVisibility` and `toolFilter` options. Call it yourself for a custom transport, and
-   * pass `resolveVisibleTools(authInfo)` to `wireRegistryToServer`.
+   * `toolVisibility` and `toolFilter` options. For a custom transport, call it before
+   * `wireRegistryToServer`, which enforces the rules on each request.
    */
   setToolVisibility(options: McpToolVisibilityOptions): void {
     const visibility = options.toolVisibility ?? 'all';
@@ -189,15 +188,17 @@ export class McpToolRegistry {
   }
 
   /**
-   * Which tools a caller sees, or `undefined` when every caller sees every tool (no
-   * visibility rules are set). `authInfo` is resolved with the auth strategy first, as for a
-   * tool call, unless it was marked with `markMcpAuthInfoResolved`. If the strategy throws,
-   * the caller is treated as unauthenticated. Pass auth that arrived over a transport as a
-   * copy, as the transports do.
+   * Decides which tools one request may see, or returns `undefined` when every caller sees
+   * every tool (no visibility rules are set). `authInfo` is resolved with the auth strategy
+   * once, as for a tool call, unless it was marked with `markMcpAuthInfoResolved`; if the
+   * strategy throws, the request is treated as unauthenticated. The returned function decides
+   * a tool for that auth, remembering each answer. Decide per request: don't keep the result
+   * across requests. `wireRegistryToServer` uses this for each `tools/list` and `tools/call`;
+   * pass auth that arrived over a transport as a copy, as it does.
    */
-  async resolveVisibleTools(
+  async resolveToolVisibility(
     authInfo?: McpAuthInfo,
-  ): Promise<McpVisibleTools | undefined> {
+  ): Promise<((name: string) => Promise<boolean>) | undefined> {
     if (!this.hasToolVisibilityRules()) return undefined;
 
     let resolvedAuthInfo: McpAuthInfo | undefined;
@@ -208,7 +209,7 @@ export class McpToolRegistry {
           : authInfo;
     } catch (error) {
       this.logger.warn(
-        `The auth strategy failed while deciding which tools to list, so only tools an unauthenticated caller may see are listed: ${
+        `The auth strategy failed while deciding which tools a request may see, so it sees only the tools an unauthenticated caller may: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -216,28 +217,13 @@ export class McpToolRegistry {
     }
 
     const decisions = new Map<string, Promise<boolean>>();
-    const settled = new Map<string, boolean>();
-    const evaluate = (name: string): Promise<boolean> => {
+    return (name) => {
       let decision = decisions.get(name);
       if (!decision) {
-        decision = this.isToolVisibleTo(name, resolvedAuthInfo).then(
-          (visible) => {
-            settled.set(name, visible);
-            return visible;
-          },
-        );
+        decision = this.isToolVisibleTo(name, resolvedAuthInfo);
         decisions.set(name, decision);
       }
       return decision;
-    };
-    await Promise.all(
-      this.getTools().map(({ metadata }) => evaluate(metadata.name)),
-    );
-
-    return {
-      has: (name) => settled.get(name) === true,
-      decided: (name) => settled.has(name),
-      evaluate,
     };
   }
 

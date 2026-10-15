@@ -33,10 +33,9 @@ export interface McpHttpSessionConfig {
 
 /**
  * `toolVisibility` and `toolFilter` (from `McpToolVisibilityOptions`) decide which tools each
- * caller sees. Over HTTP the caller's auth is the request's verified bearer token
- * (`requireBearerAuth`), resolved by `authStrategy`: per request for 2026-07-28 clients and
- * stateless 2025-era POSTs; for a stateful session, from the request that opens it, and
- * again whenever a later request on it carries a different token or scope set.
+ * caller sees, checked on every `tools/list` and `tools/call` from that request's auth (its
+ * verified bearer token with `requireBearerAuth`) as `authStrategy` resolves it, in every
+ * serving mode, stateful sessions included.
  */
 export interface McpModuleConfig
   extends McpServerBaseConfig,
