@@ -241,8 +241,7 @@ export class McpToolRegistry {
     name: string,
     authInfo: McpAuthInfo | undefined,
   ): Promise<boolean> {
-    const entry = this.tools.get(name);
-    if (!entry) return false;
+    if (!this.tools.has(name)) return false;
 
     if (this.toolVisibility === 'authorized') {
       const required = this.getToolRequiredScopes(name);
@@ -254,6 +253,21 @@ export class McpToolRegistry {
       }
     }
 
+    return this.toolFilterAllows(name, authInfo);
+  }
+
+  /**
+   * Whether `toolFilter` alone lets a request whose auth is `authInfo` (already resolved, as
+   * `resolveAuthInfo` gives it) see the tool: `true` without a filter, `false` for an unknown
+   * tool or a filter that throws. The HTTP `insufficient_scope` pre-check uses it, so it
+   * doesn't challenge for scopes when the filter hides the tool anyway.
+   */
+  async toolFilterAllows(
+    name: string,
+    authInfo: McpAuthInfo | undefined,
+  ): Promise<boolean> {
+    const entry = this.tools.get(name);
+    if (!entry) return false;
     if (!this.toolFilter) return true;
     try {
       return (await this.toolFilter(entry.metadata, authInfo)) === true;

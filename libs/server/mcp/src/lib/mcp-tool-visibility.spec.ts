@@ -353,4 +353,123 @@ describe('wireRegistryToServer with visibility rules', () => {
     });
     expect(result.content[0].text).toBe('la');
   });
+
+  it('fails at wiring, even with no tools yet, on a server whose SDK lacks the hooks it needs', () => {
+    const registry = new McpToolRegistry();
+    registry.setToolVisibility({ toolVisibility: 'authorized' });
+    const server = new McpServer({ name: 's', version: '1' });
+    (server.server as any)._getRequestHandler = undefined;
+
+    expect(() => wireRegistryToServer(registry, server)).toThrow(
+      /does not expose the request handler hooks/,
+    );
+  });
+
+  it('checks a tool registered later on a server wired with no tools and no tools capability', async () => {
+    const registry = new McpToolRegistry();
+    registry.setGuardResolver(() => new McpScopeGuard());
+    registry.setToolVisibility({ toolVisibility: 'authorized' });
+    registry.setAuthStrategy({ resolveAuth });
+    const server = new McpServer({ name: 's', version: '1' });
+    wireRegistryToServer(registry, server);
+
+    // Registered before connecting: the SDK installs its tool handlers with the first one.
+    registry.registerTool({ name: 'late', description: 'l' }, async () => 'l');
+    registry.registerTool(
+      { name: 'late-admin', description: 'la' },
+      async () => 'la',
+      [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
+    );
+    const client = new Client(
+      { name: 'c', version: '1' },
+      { versionNegotiation: { mode: 'legacy' } },
+    );
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport),
+    ]);
+
+    expect(await names(client)).toEqual(['late']);
+    await expect(
+      client.callTool({ name: 'late-admin', arguments: {} }),
+    ).rejects.toThrow(/Tool late-admin not found/);
+  });
+
+  it('removes a tool rather than serving it unchecked if the check cannot be installed with it', () => {
+    const registry = new McpToolRegistry();
+    registry.setToolVisibility({ toolVisibility: 'authorized' });
+    const server = new McpServer({ name: 's', version: '1' });
+    wireRegistryToServer(registry, server);
+    // The SDK now has no handlers to check.
+    (server.server as any)._getRequestHandler = () => undefined;
+
+    registry.registerTool({ name: 'late', description: 'l' }, async () => 'l');
+
+    expect(Object.keys((server as any)._registeredTools)).toEqual([]);
+    expect(Logger.prototype.error).toHaveBeenCalled();
+  });
+
+  it("leaves the server's own _wrapHandler in place, still used for handlers installed later", () => {
+    const registry = buildRegistry();
+    registry.setToolVisibility({ toolVisibility: 'authorized' });
+    const server = new McpServer(
+      { name: 's', version: '1' },
+      { capabilities: buildCapabilities(registry) },
+    );
+    const wrap = jest.spyOn(server.server as any, '_wrapHandler');
+    wireRegistryToServer(registry, server);
+
+    expect((server.server as any)._wrapHandler).toBe(wrap);
+    wrap.mockClear();
+    server.registerPrompt('later', { description: 'p' }, async () => ({
+      messages: [],
+    }));
+    expect(wrap).toHaveBeenCalledWith('prompts/get', expect.any(Function));
+  });
+
+  it('answers malformed tools/call and tools/list exactly as the SDK does without rules', async () => {
+    const errors = async (rules: boolean) => {
+      const registry = buildRegistry();
+      if (rules) registry.setToolVisibility({ toolVisibility: 'authorized' });
+      registry.setAuthStrategy({ resolveAuth });
+      const server = new McpServer(
+        { name: 's', version: '1' },
+        { capabilities: buildCapabilities(registry) },
+      );
+      wireRegistryToServer(registry, server);
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      const responses = new Map<number, any>();
+      clientTransport.onmessage = (message: any) => {
+        if ('id' in message) responses.set(message.id, message);
+      };
+      await server.connect(serverTransport);
+      await clientTransport.start();
+      const send = (message: Record<string, unknown>) =>
+        clientTransport.send({ jsonrpc: '2.0', ...message } as any);
+      await send({
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'raw', version: '1' },
+        },
+      });
+      await send({ method: 'notifications/initialized' });
+      await send({ id: 2, method: 'tools/call', params: { name: 42 } });
+      await send({ id: 3, method: 'tools/list', params: { cursor: 5 } });
+      for (let i = 0; i < 50 && responses.size < 3; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      return [responses.get(2), responses.get(3)];
+    };
+
+    const without = await errors(false);
+    expect(without[0].error.code).toBe(-32602);
+    expect(without[1].error).toBeDefined();
+    expect(await errors(true)).toEqual(without);
+  });
 });

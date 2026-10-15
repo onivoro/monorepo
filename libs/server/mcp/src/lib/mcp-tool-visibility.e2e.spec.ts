@@ -603,6 +603,85 @@ describe('Per-caller tool visibility over HTTP', () => {
     },
   );
 
+  describe.each([
+    ['stateless', {}],
+    ['stateful', { session: {} }],
+  ] as Array<[string, Partial<McpModuleConfig>]>)(
+    'the insufficient_scope pre-check, %s server',
+    (_name, config) => {
+      let app: any;
+      let url: URL;
+      let registry: McpToolRegistry;
+
+      beforeEach(async () => {
+        ({ app, url, registry } = await startApp({
+          ...config,
+          toolVisibility: 'authorized',
+          // `beta-*` tools only for beta tokens.
+          toolFilter: (tool, authInfo) =>
+            !tool.name.startsWith('beta-') ||
+            authInfo?.extra?.['beta'] === true,
+        }));
+        registry.registerTool(
+          { name: 'beta-admin', description: 'Beta admins only' },
+          async () => 'beta admin',
+          [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
+        );
+      });
+
+      afterEach(async () => {
+        await app?.close();
+      });
+
+      it.each(['auto', 'legacy'] as const)(
+        "doesn't challenge for a disabled tool: not found for a caller who may not see it, disabled for one who may (%s)",
+        async (mode) => {
+          registry.setToolEnabled('admin-only', false);
+          const agent = await connect(url, mode, 'agent-token');
+          await expect(
+            agent.callTool({ name: 'admin-only', arguments: {} }),
+          ).rejects.toThrow(/Tool admin-only not found/);
+          const admin = await connect(url, mode, 'admin-token');
+          await expect(
+            admin.callTool({ name: 'admin-only', arguments: {} }),
+          ).rejects.toThrow(/Tool admin-only disabled/);
+          expect(adminCalls).toEqual([]);
+          await agent.close();
+          await admin.close();
+        },
+      );
+
+      it.each(['auto', 'legacy'] as const)(
+        "doesn't challenge for a tool toolFilter hides from the caller (%s)",
+        async (mode) => {
+          const agent = await connect(url, mode, 'agent-token');
+          await expect(
+            agent.callTool({ name: 'beta-admin', arguments: {} }),
+          ).rejects.toThrow(/Tool beta-admin not found/);
+          await agent.close();
+        },
+      );
+
+      it.each(['auto', 'legacy'] as const)(
+        'still challenges when only scopes are missing, and the stepped-up token runs the tool (%s)',
+        async (mode) => {
+          const agent = await connect(url, mode, 'agent-token');
+          await expect(
+            agent.callTool({ name: 'admin-only', arguments: {} }),
+          ).rejects.toThrow(/Insufficient scope/);
+          const admin = await connect(url, mode, 'admin-token');
+          const result: any = await admin.callTool({
+            name: 'admin-only',
+            arguments: {},
+          });
+          expect(result.content[0].text).toBe('admin');
+          await agent.close();
+          await admin.close();
+        },
+      );
+    },
+  );
+
   describe('tools registered on a server outside the registry, over HTTP', () => {
     let httpServer: http.Server;
     let url: URL;

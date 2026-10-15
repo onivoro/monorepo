@@ -378,7 +378,8 @@ export class McpHttpService implements OnModuleDestroy {
    * The caller's scopes are those of its auth as the auth strategy resolves it: the same
    * auth `McpScopeGuard` and tool visibility see, so a scope the strategy grants is honoured
    * here too. If the strategy throws, the token's own scopes are used (the call then fails in
-   * the registry, as it would have).
+   * the registry, as it would have). No challenge is sent for a disabled tool, or one
+   * `toolFilter` hides from the caller: scopes aren't what stops those calls.
    */
   private async getMissingToolScopes(
     req: http.IncomingMessage,
@@ -396,20 +397,35 @@ export class McpHttpService implements OnModuleDestroy {
       return [];
     }
 
-    const required = this.registry.getToolRequiredScopes(message.params.name);
-    if (required.length === 0) return [];
+    const name = message.params.name;
+    const required = this.registry.getToolRequiredScopes(name);
+    // Challenge only when scopes are what stands in the way: a disabled tool can't be called
+    // whatever the token carries, so the call fails as such (without revealing the tool to a
+    // caller who may not see it).
+    if (required.length === 0 || !this.registry.isToolEnabled(name)) return [];
 
     let scopes = authInfo.scopes;
+    let resolved: McpAuthInfo | undefined;
     try {
       // A copy, so auth from a transport is never trusted as already resolved.
-      const resolved = await this.registry.resolveAuthInfo({
+      resolved = await this.registry.resolveAuthInfo({
         ...(authInfo as McpAuthInfo),
       });
       scopes = resolved?.scopes ?? [];
     } catch {
-      // Keep the token's own scopes.
+      // Keep the token's own scopes; tool visibility treats the caller as unauthenticated.
     }
-    return required.filter((scope) => !scopes.includes(scope));
+    const missing = required.filter((scope) => !scopes.includes(scope));
+    if (missing.length === 0) return [];
+    // Nor when `toolFilter` hides the tool from this caller: more scopes wouldn't help, and the
+    // call fails as for a tool that doesn't exist.
+    if (
+      this.registry.hasToolVisibilityRules() &&
+      !(await this.registry.toolFilterAllows(name, resolved))
+    ) {
+      return [];
+    }
+    return missing;
   }
 
   private sendInsufficientScope(

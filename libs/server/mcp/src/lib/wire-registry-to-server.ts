@@ -387,6 +387,24 @@ interface ServerHandlerHooks {
 }
 
 /**
+ * The SDK hooks `enforceToolVisibility` builds on, or an error if this SDK lacks them. Checked
+ * when a server is wired, so a server that can't enforce visibility rules fails then, before
+ * any tool is registered on it, rather than serving tools unchecked.
+ */
+function assertCanEnforceToolVisibility(server: McpServer): ServerHandlerHooks {
+  const hooks = server.server as unknown as Partial<ServerHandlerHooks>;
+  if (
+    typeof hooks._getRequestHandler !== 'function' ||
+    typeof hooks._wrapHandler !== 'function'
+  ) {
+    throw new Error(
+      'Tool visibility rules are set, but this MCP SDK version does not expose the request handler hooks needed to enforce them.',
+    );
+  }
+  return hooks as ServerHandlerHooks;
+}
+
+/**
  * Puts a check in front of the SDK's own `tools/list` and `tools/call` handlers on `server`,
  * so each request sees only the registry tools it may see (`McpToolRegistry.setToolVisibility`),
  * decided from that request's own auth:
@@ -403,21 +421,22 @@ interface ServerHandlerHooks {
  * about the server depends on who is calling.
  *
  * The SDK installs its tool handlers once (when the server gets the `tools` capability or its
- * first tool) and doesn't replace them, so this runs after the first tool is registered. Each
- * check is installed through the SDK's protected handler accessor, without its handler
- * wrapper, so the SDK's handler (which carries that wrapper) runs exactly as before.
+ * first tool) and doesn't replace them, so this runs once they exist. Each check is stored as
+ * the method's handler as is: it receives the raw request and hands it to the SDK's handler,
+ * which validates it and carries the SDK's handler wrapper, so a malformed request gets
+ * exactly the SDK's error.
  */
 function enforceToolVisibility(
   registry: McpToolRegistry,
   server: McpServer,
   ownTools: ReadonlyMap<string, RegisteredTool>,
 ): void {
-  const hooks = server.server as unknown as ServerHandlerHooks;
-  const sdkList = hooks._getRequestHandler?.('tools/list');
-  const sdkCall = hooks._getRequestHandler?.('tools/call');
-  if (typeof hooks._wrapHandler !== 'function' || !sdkList || !sdkCall) {
+  const hooks = assertCanEnforceToolVisibility(server);
+  const sdkList = hooks._getRequestHandler('tools/list');
+  const sdkCall = hooks._getRequestHandler('tools/call');
+  if (!sdkList || !sdkCall) {
     throw new Error(
-      "Tool visibility rules need the MCP SDK's tool handlers on the server; this SDK version does not expose them.",
+      "Tool visibility rules need the MCP SDK's tool handlers on the server, and it has none.",
     );
   }
 
@@ -428,19 +447,21 @@ function enforceToolVisibility(
     return registry.resolveToolVisibility(authInfo && { ...(authInfo as any) });
   };
 
+  // `setRequestHandler` stores what the server's `_wrapHandler` returns; for this one call
+  // that is the check itself, not the validating, wrapping layers it would add around it.
+  // Any `_wrapHandler` of the instance's own is put back afterwards.
   const install = (
     method: 'tools/list' | 'tools/call',
     handler: (request: any, ctx: ServerContext) => Promise<any>,
   ) => {
-    const ownWrap = Object.prototype.hasOwnProperty.call(
-      server.server,
-      '_wrapHandler',
-    );
-    (server.server as any)._wrapHandler = (_method: string, h: unknown) => h;
+    const target = server.server as any;
+    const own = Object.getOwnPropertyDescriptor(target, '_wrapHandler');
+    target._wrapHandler = () => handler;
     try {
       server.server.setRequestHandler(method, handler as any);
     } finally {
-      if (!ownWrap) delete (server.server as any)._wrapHandler;
+      if (own) Object.defineProperty(target, '_wrapHandler', own);
+      else delete target._wrapHandler;
     }
   };
 
@@ -525,11 +546,30 @@ export function wireRegistryToServer(
   // has a tool, and so the SDK's tool handlers to replace).
   const enforcesVisibility = registry.hasToolVisibilityRules();
   let enforcing = false;
+  if (enforcesVisibility) {
+    // Fail closed: a server that can't enforce the rules fails here, before it has a tool.
+    const hooks = assertCanEnforceToolVisibility(server);
+    // A server with the `tools` capability already has the SDK's tool handlers.
+    if (
+      hooks._getRequestHandler('tools/list') &&
+      hooks._getRequestHandler('tools/call')
+    ) {
+      enforceToolVisibility(registry, server, registeredTools);
+      enforcing = true;
+    }
+  }
   const wireTool = (name: string) => {
     wireToolToServer(registry, server, name, registeredTools, wiring);
-    if (enforcesVisibility && !enforcing && registeredTools.size > 0) {
-      enforcing = true;
+    if (!enforcesVisibility || enforcing) return;
+    // The SDK installed its tool handlers with this, the server's first tool: check them in
+    // the same tick, before any request can reach the tool. If that fails, the tool goes.
+    try {
       enforceToolVisibility(registry, server, registeredTools);
+      enforcing = true;
+    } catch (error) {
+      registeredTools.get(name)?.remove();
+      registeredTools.delete(name);
+      throw error;
     }
   };
 
