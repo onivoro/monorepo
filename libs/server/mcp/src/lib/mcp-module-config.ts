@@ -35,7 +35,9 @@ export interface McpHttpSessionConfig {
  * `toolVisibility` and `toolFilter` (from `McpToolVisibilityOptions`) decide which tools each
  * caller sees, checked on every `tools/list` and `tools/call` from that request's auth (its
  * verified bearer token with `requireBearerAuth`) as `authStrategy` resolves it, in every
- * serving mode, stateful sessions included.
+ * serving mode, stateful sessions included. `McpHttpService` applies them from this config
+ * when it's created, so they hold whether `McpHttpModule` provides it or an app provides it by
+ * hand (say, around a Fastify controller).
  */
 export interface McpModuleConfig
   extends McpServerBaseConfig,

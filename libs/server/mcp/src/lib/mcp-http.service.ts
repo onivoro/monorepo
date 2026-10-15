@@ -82,6 +82,13 @@ export class McpHttpService implements OnModuleDestroy {
     // The sweep only matters while the app runs; it must not keep the process alive.
     this.sweepInterval.unref?.();
     warnAboutIgnoredCapabilities(config, this.logger);
+    // The visibility rules belong to whatever serves this config, so they apply however the
+    // service is provided: by McpHttpModule, or by hand around a Fastify controller. Left to
+    // the module, a hand-provided service would serve every tool to everyone (fail open).
+    registry.setToolVisibility({
+      toolVisibility: config.toolVisibility,
+      toolFilter: config.toolFilter,
+    });
 
     const onerror = (error: unknown) =>
       this.logger.error('MCP request handling error:', error);

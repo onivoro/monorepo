@@ -23,6 +23,9 @@ import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { buildCapabilities } from './build-capabilities';
 import { wireRegistryToServer } from './wire-registry-to-server';
+import { McpRegistryModule } from './mcp-registry.module';
+import { McpHttpService } from './mcp-http.service';
+import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 
 // Per-caller tool visibility over HTTP, with the MCP SDK's own client in both protocol eras,
 // against stateless and stateful servers. Two bearer tokens: one with the `admin` scope, one
@@ -821,6 +824,71 @@ describe('Per-caller tool visibility over HTTP', () => {
       },
     );
   });
+});
+
+describe('McpHttpService provided without McpHttpModule (the Fastify path)', () => {
+  beforeEach(() => {
+    adminCalls.length = 0;
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(['auto', 'legacy'] as const)(
+    'applies toolVisibility and toolFilter from MCP_MODULE_CONFIG (%s)',
+    async (mode) => {
+      const moduleRef = await Test.createTestingModule({
+        imports: [McpRegistryModule.registerOnly()],
+        providers: [
+          VisibilityToolService,
+          {
+            provide: MCP_MODULE_CONFIG,
+            useValue: {
+              metadata: { name: 'by-hand', version: '1.0.0' },
+              exposeErrorMessages: true,
+              toolFilter: (tool: { name: string }) =>
+                tool.name !== 'admin-only',
+            } satisfies McpModuleConfig,
+          },
+          McpHttpService,
+        ],
+      }).compile();
+      await moduleRef.init();
+      const service = moduleRef.get(McpHttpService);
+      // A stand-in for a Fastify controller: parse the body, hand over the raw request.
+      const server = http.createServer(async (req, res) => {
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        (req as { body?: unknown }).body = raw ? JSON.parse(raw) : undefined;
+        await service.handleRequest(req, res);
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve),
+      );
+      const { port } = server.address() as AddressInfo;
+      try {
+        const client = new Client(
+          { name: 'by-hand-client', version: '1.0.0' },
+          { versionNegotiation: { mode } },
+        );
+        await client.connect(
+          new StreamableHTTPClientTransport(
+            new URL(`http://localhost:${port}/mcp`),
+          ),
+        );
+        expect(await toolNames(client)).toEqual(['public']);
+        await expect(
+          client.callTool({ name: 'admin-only', arguments: {} }),
+        ).rejects.toThrow(/Tool admin-only not found/);
+        expect(adminCalls).toEqual([]);
+        await client.close();
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await moduleRef.close();
+      }
+    },
+  );
 });
 
 function onToolsChanged(client: Client): () => number {

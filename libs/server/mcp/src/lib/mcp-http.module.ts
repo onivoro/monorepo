@@ -161,10 +161,6 @@ export class McpHttpModule implements OnModuleInit {
       this.config.exposeErrorMessages,
       this.logger,
     );
-    this.registry.setToolVisibility({
-      toolVisibility: this.config.toolVisibility,
-      toolFilter: this.config.toolFilter,
-    });
     if (this.config.authStrategy) {
       const provider = this.moduleRef.get(this.config.authStrategy, {
         strict: false,
