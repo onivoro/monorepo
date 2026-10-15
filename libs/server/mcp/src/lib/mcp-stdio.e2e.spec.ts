@@ -821,6 +821,34 @@ describe('McpStdioModule end to end with the MCP SDK client', () => {
           await moduleRef.close();
         });
 
+        it('lists and serves a tool onServerCreated registers, as without rules', async () => {
+          stdioScopes = ['agent'];
+          const { moduleRef, client, names } = await connectScoped(
+            {
+              toolVisibility: 'authorized',
+              onServerCreated: (server) => {
+                server.registerTool(
+                  'outside',
+                  { description: "Not the registry's" },
+                  async () => ({
+                    content: [{ type: 'text', text: 'outside' }],
+                  }),
+                );
+              },
+            },
+            mode,
+          );
+
+          expect(names).toEqual(['outside', 'public']);
+          const result: any = await client.callTool({
+            name: 'outside',
+            arguments: {},
+          });
+          expect(result.content[0].text).toBe('outside');
+          await client.close();
+          await moduleRef.close();
+        });
+
         it('applies toolFilter', async () => {
           stdioScopes = ['admin'];
           const { moduleRef, client, names } = await connectScoped(

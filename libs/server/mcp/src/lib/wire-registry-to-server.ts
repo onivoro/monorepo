@@ -7,11 +7,9 @@ import {
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
 import type {
-  CallToolResult,
   RegisteredTool,
   ServerContext,
 } from '@modelcontextprotocol/server';
-import { isInputRequiredResult } from './is-input-required-result';
 import { z } from 'zod';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpLogLevel } from './mcp-log-level';
@@ -375,68 +373,54 @@ function wirePromptToServer(
   );
 }
 
-/** The input schema of a tool listed without one, as the SDK lists it. */
-const EMPTY_OBJECT_JSON_SCHEMA = { type: 'object', properties: {} };
-
-/** A tool as `tools/list` describes it: the fields the SDK's own handler lists. */
-function listedTool(server: McpServer, name: string, tool: RegisteredTool) {
-  return {
-    name,
-    title: tool.title,
-    description: tool.description,
-    inputSchema: server.toolInputSchemaJson(name) ?? EMPTY_OBJECT_JSON_SCHEMA,
-    annotations: tool.annotations,
-    icons: tool.icons,
-    execution: tool.execution,
-    _meta: tool._meta,
-    ...(tool.outputSchemaJson && { outputSchema: tool.outputSchemaJson }),
-  };
-}
-
-/** The SDK's check of a tool's structured content against its output schema. */
-async function validateToolOutput(
-  name: string,
-  tool: RegisteredTool,
-  result: CallToolResult,
-): Promise<void> {
-  if (!tool.outputSchema || result.isError) return;
-  if (result.structuredContent === undefined) {
-    throw new ProtocolError(
-      ProtocolErrorCode.InvalidParams,
-      `Output validation error: Tool ${name} has an output schema but no structured content was provided`,
-    );
-  }
-  const outcome = await tool.outputSchema['~standard'].validate(
-    result.structuredContent,
-  );
-  if (outcome.issues?.length) {
-    throw new ProtocolError(
-      ProtocolErrorCode.InvalidParams,
-      `Output validation error: Invalid structured content for tool ${name}: ${outcome.issues
-        .map((issue) => issue.message)
-        .join(', ')}`,
-    );
-  }
+/** The parts of the SDK's `Server` the visibility handlers build on. */
+interface ServerHandlerHooks {
+  /** The SDK's protected accessor for an installed request handler. */
+  _getRequestHandler(
+    method: string,
+  ): ((request: any, ctx: any) => Promise<any>) | undefined;
+  /** The SDK's protected hook that wraps each handler as it is installed. */
+  _wrapHandler(
+    method: string,
+    handler: (request: any, ctx: any) => Promise<any>,
+  ): (request: any, ctx: any) => Promise<any>;
 }
 
 /**
- * Replaces the SDK's `tools/list` and `tools/call` handlers on `server` with ones that decide,
- * for each request, which tools it may see (`McpToolRegistry.setToolVisibility`), from the
- * request's own auth: `tools/list` lists only those, and `tools/call` answers a call to any
- * other tool as for a tool that doesn't exist. Every tool stays registered on the server, so
- * nothing about the server depends on who is calling. Otherwise the handlers do what the
- * SDK's do: hide and refuse disabled tools, call the tool's callback, check its structured
- * content against the output schema, and project the result for the client's era.
+ * Puts a check in front of the SDK's own `tools/list` and `tools/call` handlers on `server`,
+ * so each request sees only the registry tools it may see (`McpToolRegistry.setToolVisibility`),
+ * decided from that request's own auth:
  *
- * The SDK installs its own handlers once, when the server gets the `tools` capability or its
- * first tool, and doesn't replace them later, so these are installed after the first tool is
- * registered on the server.
+ * - `tools/list` is the SDK's answer, without the registry tools the request may not see.
+ * - `tools/call` of a registry tool the request may not see fails as for a tool that doesn't
+ *   exist, before anything else (so a disabled tool the request may not see isn't revealed
+ *   either). Every other call goes to the SDK's handler unchanged: input validation and its
+ *   `maxToolInputElements` limit, disabled tools, the tool itself, output validation, result
+ *   projection and error shapes are all the SDK's.
+ *
+ * Tools registered on the server outside the registry are left to the SDK: listed and
+ * callable as without visibility rules. Every tool stays registered on the server, so nothing
+ * about the server depends on who is calling.
+ *
+ * The SDK installs its tool handlers once (when the server gets the `tools` capability or its
+ * first tool) and doesn't replace them, so this runs after the first tool is registered. Each
+ * check is installed through the SDK's protected handler accessor, without its handler
+ * wrapper, so the SDK's handler (which carries that wrapper) runs exactly as before.
  */
 function enforceToolVisibility(
   registry: McpToolRegistry,
   server: McpServer,
-  tools: ReadonlyMap<string, RegisteredTool>,
+  ownTools: ReadonlyMap<string, RegisteredTool>,
 ): void {
+  const hooks = server.server as unknown as ServerHandlerHooks;
+  const sdkList = hooks._getRequestHandler?.('tools/list');
+  const sdkCall = hooks._getRequestHandler?.('tools/call');
+  if (typeof hooks._wrapHandler !== 'function' || !sdkList || !sdkCall) {
+    throw new Error(
+      "Tool visibility rules need the MCP SDK's tool handlers on the server; this SDK version does not expose them.",
+    );
+  }
+
   // Resolved once per request; the auth is a copy, so auth from a transport is never
   // trusted as already resolved (see markMcpAuthInfoResolved).
   const visibilityFor = (ctx: ServerContext | undefined) => {
@@ -444,64 +428,51 @@ function enforceToolVisibility(
     return registry.resolveToolVisibility(authInfo && { ...(authInfo as any) });
   };
 
-  server.server.setRequestHandler('tools/list', async (_request, ctx) => {
-    const isVisible = await visibilityFor(ctx);
-    // The tools registered once the request's auth is resolved, so none registered
-    // meanwhile is missed.
-    const listed = await Promise.all(
-      [...tools].map(async ([name, tool]) =>
-        tool.enabled && (!isVisible || (await isVisible(name)))
-          ? listedTool(server, name, tool)
-          : undefined,
+  const install = (
+    method: 'tools/list' | 'tools/call',
+    handler: (request: any, ctx: ServerContext) => Promise<any>,
+  ) => {
+    const ownWrap = Object.prototype.hasOwnProperty.call(
+      server.server,
+      '_wrapHandler',
+    );
+    (server.server as any)._wrapHandler = (_method: string, h: unknown) => h;
+    try {
+      server.server.setRequestHandler(method, handler as any);
+    } finally {
+      if (!ownWrap) delete (server.server as any)._wrapHandler;
+    }
+  };
+
+  install('tools/list', async (request, ctx) => {
+    const [isVisible, result] = await Promise.all([
+      visibilityFor(ctx),
+      sdkList(request, ctx),
+    ]);
+    if (!isVisible) return result;
+    const decisions = await Promise.all(
+      (result.tools as Array<{ name: string }>).map(
+        (tool) => !ownTools.has(tool.name) || isVisible(tool.name),
       ),
     );
-    return { tools: listed.filter((tool) => tool !== undefined) } as any;
+    return {
+      ...result,
+      tools: result.tools.filter((_: unknown, i: number) => decisions[i]),
+    };
   });
 
-  server.server.setRequestHandler('tools/call', async (request, ctx) => {
-    const name = request.params.name;
-    const isVisible = await visibilityFor(ctx);
-    const tool = tools.get(name);
-    if (!tool || (isVisible && !(await isVisible(name)))) {
-      throw new ProtocolError(
-        ProtocolErrorCode.InvalidParams,
-        `Tool ${name} not found`,
-      );
-    }
-    if (!tool.enabled) {
-      throw new ProtocolError(
-        ProtocolErrorCode.InvalidParams,
-        `Tool ${name} disabled`,
-      );
-    }
-    try {
-      const result = (await (tool.handler as any)(
-        request.params.arguments ?? {},
-        ctx,
-      )) as CallToolResult;
-      if (isInputRequiredResult(result)) return result as any;
-      await validateToolOutput(name, tool, result);
-      return server.server.projectCallToolResult(
-        result,
-        tool.outputSchemaJson,
-      ) as any;
-    } catch (error) {
-      if (
-        error instanceof ProtocolError &&
-        error.code === ProtocolErrorCode.UrlElicitationRequired
-      ) {
-        throw error;
+  install('tools/call', async (request, ctx) => {
+    const name = request.params?.name;
+    if (ownTools.has(name)) {
+      const isVisible = await visibilityFor(ctx);
+      if (isVisible && !(await isVisible(name))) {
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          `Tool ${name} not found`,
+        );
       }
-      return {
-        content: [
-          {
-            type: 'text',
-            text: error instanceof Error ? error.message : String(error),
-          },
-        ],
-        isError: true,
-      } as any;
     }
+    return sdkCall(request, ctx);
   });
 }
 

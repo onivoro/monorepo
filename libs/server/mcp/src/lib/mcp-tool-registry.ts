@@ -188,6 +188,19 @@ export class McpToolRegistry {
   }
 
   /**
+   * The auth guards see for `authInfo`: what the auth strategy resolves it to, unless there is
+   * no strategy or the object was marked with `markMcpAuthInfoResolved`. Rejects if the
+   * strategy throws. Pass auth that arrived over a transport as a copy.
+   */
+  async resolveAuthInfo(
+    authInfo?: McpAuthInfo,
+  ): Promise<McpAuthInfo | undefined> {
+    return this.authStrategy && !isMcpAuthInfoResolved(authInfo)
+      ? this.authStrategy.resolveAuth(authInfo)
+      : authInfo;
+  }
+
+  /**
    * Decides which tools one request may see, or returns `undefined` when every caller sees
    * every tool (no visibility rules are set). `authInfo` is resolved with the auth strategy
    * once, as for a tool call, unless it was marked with `markMcpAuthInfoResolved`; if the
@@ -203,10 +216,7 @@ export class McpToolRegistry {
 
     let resolvedAuthInfo: McpAuthInfo | undefined;
     try {
-      resolvedAuthInfo =
-        this.authStrategy && !isMcpAuthInfoResolved(authInfo)
-          ? await this.authStrategy.resolveAuth(authInfo)
-          : authInfo;
+      resolvedAuthInfo = await this.resolveAuthInfo(authInfo);
     } catch (error) {
       this.logger.warn(
         `The auth strategy failed while deciding which tools a request may see, so it sees only the tools an unauthenticated caller may: ${

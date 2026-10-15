@@ -21,6 +21,7 @@ import * as http from 'http';
 import type { McpModuleConfig } from './mcp-module-config';
 import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
+import type { McpAuthInfo } from './mcp-auth-info';
 import {
   buildMcpServer,
   warnAboutIgnoredCapabilities,
@@ -369,15 +370,20 @@ export class McpHttpService implements OnModuleDestroy {
   }
 
   /**
-   * The scopes a `tools/call` needs that the caller's token lacks, from the tool's
+   * The scopes a `tools/call` needs that the caller lacks, from the tool's
    * `@McpGuard(McpScopeGuard, { scopes })` guards. Checked at the HTTP layer so the client
    * gets a 403 `insufficient_scope` challenge it can act on (step-up authorization), rather
    * than a tool error it can't.
+   *
+   * The caller's scopes are those of its auth as the auth strategy resolves it: the same
+   * auth `McpScopeGuard` and tool visibility see, so a scope the strategy grants is honoured
+   * here too. If the strategy throws, the token's own scopes are used (the call then fails in
+   * the registry, as it would have).
    */
-  private getMissingToolScopes(
+  private async getMissingToolScopes(
     req: http.IncomingMessage,
     body: unknown,
-  ): string[] {
+  ): Promise<string[]> {
     const authInfo = (req as { auth?: AuthInfo }).auth;
     if (!this.bearerTokenVerifier || !authInfo) return [];
     if (!body || typeof body !== 'object' || Array.isArray(body)) return [];
@@ -391,8 +397,19 @@ export class McpHttpService implements OnModuleDestroy {
     }
 
     const required = this.registry.getToolRequiredScopes(message.params.name);
+    if (required.length === 0) return [];
 
-    return required.filter((scope) => !authInfo.scopes.includes(scope));
+    let scopes = authInfo.scopes;
+    try {
+      // A copy, so auth from a transport is never trusted as already resolved.
+      const resolved = await this.registry.resolveAuthInfo({
+        ...(authInfo as McpAuthInfo),
+      });
+      scopes = resolved?.scopes ?? [];
+    } catch {
+      // Keep the token's own scopes.
+    }
+    return required.filter((scope) => !scopes.includes(scope));
   }
 
   private sendInsufficientScope(
@@ -569,7 +586,7 @@ export class McpHttpService implements OnModuleDestroy {
       const parsedBody = (req as any).body;
 
       if (req.method === 'POST') {
-        const missingScopes = this.getMissingToolScopes(req, parsedBody);
+        const missingScopes = await this.getMissingToolScopes(req, parsedBody);
         if (missingScopes.length > 0) {
           this.sendInsufficientScope(req, res, missingScopes);
           return;

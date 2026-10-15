@@ -259,14 +259,73 @@ describe('wireRegistryToServer with visibility rules', () => {
 
     registry.setToolEnabled('admin', false);
     expect(await names(client)).toEqual(['public']);
+    // A caller who may see the tool learns it is disabled...
     await expect(
       client.callTool({ name: 'admin', arguments: {} }),
     ).rejects.toThrow(/Tool admin disabled/);
+    // ...one who may not isn't told it exists.
+    scopes = [];
+    await expect(
+      client.callTool({ name: 'admin', arguments: {} }),
+    ).rejects.toThrow(/Tool admin not found/);
+    scopes = ['admin'];
 
     registry.setToolEnabled('admin', true);
     expect(await names(client)).toEqual(['admin', 'public']);
     scopes = [];
     expect(await names(client)).toEqual(['public']);
+  });
+
+  it("applies the server's maxToolInputElements exactly as the SDK does without rules", async () => {
+    const call = async (rules: boolean) => {
+      const registry = buildRegistry();
+      if (rules) registry.setToolVisibility({ toolFilter: () => true });
+      registry.setAuthStrategy({ resolveAuth });
+      const server = new McpServer(
+        { name: 's', version: '1' },
+        { capabilities: buildCapabilities(registry), maxToolInputElements: 3 },
+      );
+      wireRegistryToServer(registry, server);
+      const client = new Client(
+        { name: 'c', version: '1' },
+        { versionNegotiation: { mode: 'legacy' } },
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        server.connect(serverTransport),
+        client.connect(clientTransport),
+      ]);
+      return client.callTool({
+        name: 'public',
+        arguments: { items: [1, 2, 3, 4, 5] },
+      });
+    };
+
+    const withoutRules: any = await call(false);
+    expect(withoutRules.isError).toBe(true);
+    expect(withoutRules.content[0].text).toMatch(/maximum of 3 elements/);
+    expect(await call(true)).toEqual(withoutRules);
+  });
+
+  it('lists and serves tools registered on the server outside the registry, as without rules', async () => {
+    const registry = buildRegistry();
+    registry.setToolVisibility({ toolVisibility: 'authorized' });
+    const { server, client } = await connect(registry);
+    server.registerTool(
+      'outside',
+      { description: "Not the registry's" },
+      async () => ({
+        content: [{ type: 'text', text: 'outside' }],
+      }),
+    );
+
+    expect(await names(client)).toEqual(['outside', 'public']);
+    const result: any = await client.callTool({
+      name: 'outside',
+      arguments: {},
+    });
+    expect(result.content[0].text).toBe('outside');
   });
 
   it('serves tools registered later, by the same rules', async () => {

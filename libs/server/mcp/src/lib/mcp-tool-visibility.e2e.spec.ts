@@ -19,6 +19,10 @@ import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpAuthInfo } from './mcp-auth-info';
 import type { McpAuthStrategy } from './mcp-auth-strategy';
 import type { McpModuleConfig } from './mcp-module-config';
+import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
+import { toNodeHandler } from '@modelcontextprotocol/node';
+import { buildCapabilities } from './build-capabilities';
+import { wireRegistryToServer } from './wire-registry-to-server';
 
 // Per-caller tool visibility over HTTP, with the MCP SDK's own client in both protocol eras,
 // against stateless and stateful servers. Two bearer tokens: one with the `admin` scope, one
@@ -28,6 +32,7 @@ const TOKENS: Record<string, string[]> = {
   'admin-token': ['admin'],
   'agent-token': ['agent'],
   'beta-token': ['agent'],
+  'promoted-token': ['agent'],
 };
 
 @Injectable()
@@ -47,7 +52,11 @@ class TokenAuthStrategy implements McpAuthStrategy, OAuthTokenVerifier {
     };
   }
 
+  // Grants `admin` to the promoted token, which doesn't carry it (say, from a DB role).
   async resolveAuth(authInfo?: McpAuthInfo) {
+    if (authInfo?.token === 'promoted-token') {
+      return { ...authInfo, scopes: [...authInfo.scopes, 'admin'] };
+    }
     return authInfo;
   }
 }
@@ -549,6 +558,128 @@ describe('Per-caller tool visibility over HTTP', () => {
       expect(await toolNames(client)).toEqual(['public']);
       await client.close();
     });
+  });
+
+  describe.each([
+    ['stateless', {}],
+    ['stateful', { session: {} }],
+  ] as Array<[string, Partial<McpModuleConfig>]>)(
+    'a scope the auth strategy grants, %s server',
+    (_name, config) => {
+      let app: any;
+      let url: URL;
+
+      beforeAll(async () => {
+        ({ app, url } = await startApp({
+          ...config,
+          toolVisibility: 'authorized',
+        }));
+      });
+
+      afterAll(async () => {
+        await app?.close();
+      });
+
+      it.each(['auto', 'legacy'] as const)(
+        'is honoured by the listing, the 403 pre-check and the guard alike (%s)',
+        async (mode) => {
+          const promoted = await connect(url, mode, 'promoted-token');
+          expect(await toolNames(promoted)).toEqual(['admin-only', 'public']);
+          const result: any = await promoted.callTool({
+            name: 'admin-only',
+            arguments: {},
+          });
+          expect(result.content[0].text).toBe('admin');
+
+          const agent = await connect(url, mode, 'agent-token');
+          await expect(
+            agent.callTool({ name: 'admin-only', arguments: {} }),
+          ).rejects.toThrow(/Insufficient scope/);
+          expect(adminCalls).toEqual(['admin-only']);
+          await promoted.close();
+          await agent.close();
+        },
+      );
+    },
+  );
+
+  describe('tools registered on a server outside the registry, over HTTP', () => {
+    let httpServer: http.Server;
+    let url: URL;
+
+    beforeAll(async () => {
+      const registry = new McpToolRegistry();
+      registry.setGuardResolver(() => new McpScopeGuard());
+      registry.registerTool(
+        { name: 'public', description: 'Anyone' },
+        async () => 'public',
+      );
+      registry.registerTool(
+        { name: 'admin-only', description: 'Admins only' },
+        async () => 'admin',
+        [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
+      );
+      registry.setToolVisibility({ toolVisibility: 'authorized' });
+
+      // A custom transport: one server per request, in both eras, with a tool of its own.
+      const handler = createMcpHandler((ctx) => {
+        const server = new McpServer(
+          { name: 'custom', version: '1.0.0' },
+          {
+            capabilities: buildCapabilities(registry, {
+              notifications: ctx.era === 'modern',
+            }),
+          },
+        );
+        wireRegistryToServer(registry, server, {
+          era: ctx.era,
+          followRegistry: false,
+          unsolicitedMessages: ctx.era === 'modern',
+        });
+        server.registerTool(
+          'outside',
+          { description: "Not the registry's" },
+          async () => ({ content: [{ type: 'text', text: 'outside' }] }),
+        );
+        return server;
+      });
+      const nodeHandler = toNodeHandler(handler);
+      httpServer = http.createServer((req, res) => {
+        (req as any).auth = { token: 'agent', clientId: 'c', scopes: [] };
+        void nodeHandler(req, res);
+      });
+      await new Promise<void>((resolve) =>
+        httpServer.listen(0, '127.0.0.1', () => resolve()),
+      );
+      const { port } = httpServer.address() as AddressInfo;
+      url = new URL(`http://localhost:${port}/mcp`);
+    });
+
+    afterAll(async () => {
+      await new Promise((resolve) => httpServer.close(resolve));
+    });
+
+    it.each(['auto', 'legacy'] as const)(
+      "lists and serves them as without rules, and still hides the registry's (%s)",
+      async (mode) => {
+        const client = new Client(
+          { name: 'custom-client', version: '1.0.0' },
+          { versionNegotiation: { mode } },
+        );
+        await client.connect(new StreamableHTTPClientTransport(url));
+
+        expect(await toolNames(client)).toEqual(['outside', 'public']);
+        const result: any = await client.callTool({
+          name: 'outside',
+          arguments: {},
+        });
+        expect(result.content[0].text).toBe('outside');
+        await expect(
+          client.callTool({ name: 'admin-only', arguments: {} }),
+        ).rejects.toThrow(/Tool admin-only not found/);
+        await client.close();
+      },
+    );
   });
 });
 
