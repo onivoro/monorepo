@@ -23,7 +23,8 @@ Code written against the libraries' own API — the `@McpTool`, `@McpResource` a
 ## Behavior changes
 
 - **HTTP responses are SSE streams by default** (`enableJsonResponse` defaults to `false`), so progress and log messages reach the client. Set `enableJsonResponse: true` for one JSON body per request; you then lose progress and log messages for every client, and `inputRequired` for 2025-era clients.
-- **Cross-origin browser requests are rejected** unless the origin is in `allowedOrigins` (`'*'` allows any). A server on a loopback address only answers to `localhost`, `127.0.0.1` and `[::1]` host names unless a proxy forwards the request or you set `allowedHosts`. Non-browser clients are unaffected.
+- **Cross-origin browser requests are rejected** unless the origin is in `allowedOrigins` (`'*'` allows any). A server on a loopback address only answers to `localhost`, `127.0.0.1` and `[::1]` host names, unless you set `allowedHosts` or the request carries a forwarding header (`X-Forwarded-For`, `X-Forwarded-Host` or `Forwarded`). That exemption is a DNS-rebinding hole, since a rebound page can add those headers itself; see [Forwarding headers and `allowedHosts` ports](#forwarding-headers-and-allowedhosts-ports). Non-browser clients are unaffected.
+- **Forwarding headers on loopback: a warning now, a new default next major.** By default a loopback server still lets in a request that carries a forwarding header, and logs a warning the first time it does. In the next major release `trustForwardedHosts` defaults to `false`, and the loopback check reads `Host` strictly. To prepare, set `trustForwardedHosts: false` when no proxy is in front, or set `allowedHosts` to the names a local proxy sends; or set `trustForwardedHosts: true` to keep today's behavior deliberately.
 - **Error messages: a warning now, a new default next major.** Clients still see the message of any error a tool throws, and `McpHttpModule`/`McpStdioModule` log a warning at startup unless you set `exposeErrorMessages`. In the next major release the default becomes `false`: a tool error the client sees is then `Error executing <tool>: Internal error`, unless the error is an `McpToolError` (or a guard denial or argument validation failure). To prepare, throw `McpToolError` for messages meant for the client and set `exposeErrorMessages: false`; or set `true` to keep today's behavior deliberately.
 - **Arguments are validated after the auth strategy and guards**, over every transport. A denied caller gets the denial, not a schema error, and transforms run once.
 - **Tools guarded by `McpScopeGuard` get a 403 `insufficient_scope` challenge** over HTTP with `requireBearerAuth` when the token lacks the scopes, instead of a tool error, so clients can ask the user for them.
@@ -32,6 +33,13 @@ Code written against the libraries' own API — the `@McpTool`, `@McpResource` a
 - **stdio servers send Nest's logs to stderr**, since stdout carries the protocol.
 - **`@onivoro/server-mcp-audit`** records errors, guard denials and rejected calls (with an `outcome`), skips `inputRequired` rounds, and no longer passes the bearer token to the sink. Sinks that read `event.context.authInfo.token` must stop.
 - **`@onivoro/server-mcp-llm-adapter`** reports tool results marked `isError: true` and `inputRequired(...)` results as failures.
+
+## Forwarding headers and `allowedHosts` ports
+
+These changes came after the SDK v2 release, in a minor release.
+
+- **`allowedHosts` entries without a port match any port.** Before, `allowedHosts: ['localhost']` matched only a `Host` of exactly `localhost` (port 80); it now matches `localhost:3000` and every other port too. Entries with a port behave as before, and every `Host` accepted before is still accepted. This doesn't weaken rebinding protection: a rebound page's requests name the attacker's host name, which still matches no entry. To keep a single port, write it in the entry (`'localhost:3000'`).
+- **New option `trustForwardedHosts`.** Unset, it behaves as before, apart from a one-time warning when a forwarding header is what let a request in. `false` closes the hole: a loopback request must name a loopback host whatever headers it carries, `Host` is read strictly, and the same-origin `Origin` check ignores `X-Forwarded-Host`. See "DNS rebinding protection" in the `@onivoro/server-mcp` README.
 
 ## Spec 2026-07-28 and server-to-client requests
 
