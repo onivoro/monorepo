@@ -66,7 +66,7 @@ export interface McpModuleConfig
    *
    * When not set, a request with an `Origin` header is only allowed from the server's own
    * origin: the origin's host (and port) must match the request's (`X-Forwarded-Host`, else
-   * `Host`).
+   * `Host`; `Host` only with `trustForwardedHosts: false`).
    * Requests without an `Origin` header (non-browser MCP clients like Claude Desktop,
    * Claude Code, curl) are always allowed.
    *
@@ -95,6 +95,9 @@ export interface McpModuleConfig
    * `false` also makes the loopback check parse `Host` strictly, as `allowedHosts` does
    * (the default reads it as a URL authority, for compatibility), and makes the same-origin
    * `Origin` check (without `allowedOrigins`) compare with `Host` only, not `X-Forwarded-Host`.
+   * And it makes the URLs the module derives from the request (the OAuth protected-resource
+   * metadata URL in a `WWW-Authenticate` challenge) take their host from `Host` and their
+   * scheme from the socket, ignoring `X-Forwarded-Host` and `X-Forwarded-Proto`.
    *
    * Default: `true`, which keeps earlier releases' behavior, but a DNS-rebound page is
    * same-origin with the server and can add those headers itself, so it also lets such a page

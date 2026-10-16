@@ -286,17 +286,27 @@ export class McpHttpService implements OnModuleDestroy {
     return first?.split(',')[0]?.trim() || undefined;
   }
 
+  /**
+   * The request's host: `X-Forwarded-Host`, else `Host`. With `trustForwardedHosts: false`,
+   * nothing forwarded is trusted, so it is `Host` only.
+   */
   private getRequestHost(req: http.IncomingMessage): string | undefined {
-    return (
-      this.firstHeader(req.headers['x-forwarded-host']) ??
-      this.firstHeader(req.headers.host)
-    );
+    const host = this.firstHeader(req.headers.host);
+    if (this.config.trustForwardedHosts === false) return host;
+    return this.firstHeader(req.headers['x-forwarded-host']) ?? host;
   }
 
+  /**
+   * The request's origin, for URLs the module derives (the OAuth resource metadata URL). The
+   * scheme is `X-Forwarded-Proto`, else the socket's; with `trustForwardedHosts: false` it
+   * is the socket's only.
+   */
   private getRequestOrigin(req: http.IncomingMessage): string | undefined {
+    const socketProto = (req.socket as any)?.encrypted ? 'https' : 'http';
     const proto =
-      this.firstHeader(req.headers['x-forwarded-proto']) ??
-      ((req.socket as any)?.encrypted ? 'https' : 'http');
+      this.config.trustForwardedHosts === false
+        ? socketProto
+        : (this.firstHeader(req.headers['x-forwarded-proto']) ?? socketProto);
 
     const host = this.getRequestHost(req);
     if (!host) return undefined;
@@ -318,11 +328,8 @@ export class McpHttpService implements OnModuleDestroy {
       return allowedOrigins.includes('*') || allowedOrigins.includes(origin);
     }
 
-    // With trustForwardedHosts: false, nothing forwarded is trusted: compare with Host only.
-    const host =
-      this.config.trustForwardedHosts === false
-        ? this.firstHeader(req.headers.host)
-        : this.getRequestHost(req);
+    // With trustForwardedHosts: false, this is Host only.
+    const host = this.getRequestHost(req);
     try {
       return !!host && new URL(origin).host === host.toLowerCase();
     } catch {

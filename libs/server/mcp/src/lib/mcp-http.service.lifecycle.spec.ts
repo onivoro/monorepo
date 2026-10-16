@@ -347,6 +347,101 @@ describe('McpHttpService session lifecycle', () => {
       expect(header).toContain('https://secure.example.com/.well-known/');
     });
 
+    describe('with trustForwardedHosts', () => {
+      const spoofed = {
+        host: 'internal:3000',
+        'x-forwarded-proto': 'https',
+        'x-forwarded-host': 'spoofed.example.com',
+        forwarded: 'proto=https;host=spoofed.example.com',
+      };
+
+      async function useService(trustForwardedHosts: boolean | undefined) {
+        await service.onModuleDestroy();
+        service = new McpHttpService(
+          { ...config, trustForwardedHosts } as any,
+          registry,
+        );
+      }
+
+      it('false: ignores spoofed X-Forwarded-Host and X-Forwarded-Proto', async () => {
+        await useService(false);
+
+        const header = await wwwAuthenticate(mockReq({ headers: spoofed }));
+
+        expect(header).toContain(
+          'resource_metadata="http://internal:3000/.well-known/oauth-protected-resource/mcp"',
+        );
+        expect(header).not.toContain('spoofed.example.com');
+      });
+
+      it('false: takes the scheme from the socket only', async () => {
+        await useService(false);
+
+        const header = await wwwAuthenticate(
+          mockReq({
+            headers: {
+              host: 'secure.example.com',
+              'x-forwarded-proto': 'http',
+            },
+            socket: { encrypted: true },
+          }),
+        );
+
+        expect(header).toContain(
+          'resource_metadata="https://secure.example.com/.well-known/',
+        );
+      });
+
+      it('false: resolves a root-relative resourceMetadataUrl against Host', async () => {
+        await useService(false);
+        service.setBearerAuthVerifier(verifier, {
+          resourceMetadataUrl: '/.well-known/custom',
+        });
+        const res = mockRes();
+
+        await service.handleRequest(mockReq({ headers: spoofed }), res);
+
+        expect(sentHeader(res, 'WWW-Authenticate')).toContain(
+          'resource_metadata="http://internal:3000/.well-known/custom"',
+        );
+      });
+
+      it('false: derives no URL from forwarding headers alone', async () => {
+        await useService(false);
+
+        const header = await wwwAuthenticate(
+          mockReq({
+            headers: {
+              'x-forwarded-proto': 'https',
+              'x-forwarded-host': 'spoofed.example.com',
+            },
+          }),
+        );
+
+        expect(header).not.toContain('resource_metadata');
+      });
+
+      it.each([
+        ['true', true],
+        ['unset', undefined],
+      ])(
+        '%s: still follows X-Forwarded-Host and X-Forwarded-Proto, without a warning',
+        async (_, trustForwardedHosts) => {
+          await useService(trustForwardedHosts);
+          const warn = jest
+            .spyOn((service as any).logger, 'warn')
+            .mockImplementation(() => undefined);
+
+          const header = await wwwAuthenticate(mockReq({ headers: spoofed }));
+
+          expect(header).toContain(
+            'resource_metadata="https://spoofed.example.com/.well-known/oauth-protected-resource/mcp"',
+          );
+          expect(warn).not.toHaveBeenCalled();
+        },
+      );
+    });
+
     it('should omit resource_metadata when no host can be determined', async () => {
       const header = await wwwAuthenticate(mockReq({ headers: {} }));
 
