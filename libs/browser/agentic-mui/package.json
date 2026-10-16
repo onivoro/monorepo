@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/browser-agentic-mui",
-  "version": "25.3.1",
+  "version": "25.3.2",
   "description": "MUI chat components for @onivoro/browser-agentic: a conversation page, a streaming message surface, and a contextual resource drawer",
   "license": "MIT",
   "type": "commonjs",
@@ -42,8 +42,8 @@
     "@emotion/styled": "^11.0.0",
     "@mui/icons-material": "^6.0.0 || ^7.0.0",
     "@mui/material": "^6.0.0 || ^7.0.0",
-    "@onivoro/browser-agentic": "^25.3.1",
-    "@onivoro/isomorphic-agentic": "^25.3.1",
+    "@onivoro/browser-agentic": "^25.3.2",
+    "@onivoro/isomorphic-agentic": "^25.3.2",
     "react": ">=18",
     "react-markdown": ">=9",
     "remark-gfm": ">=4"

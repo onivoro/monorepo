@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-aws-kinesis",
-  "version": "25.3.1",
+  "version": "25.3.2",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -22,8 +22,8 @@
     "url": "https://github.com/onivoro/monorepo.git"
   },
   "dependencies": {
-    "@onivoro/server-aws-credential-providers": "25.3.1",
-    "@onivoro/server-common": "25.3.1",
+    "@onivoro/server-aws-credential-providers": "25.3.2",
+    "@onivoro/server-common": "25.3.2",
     "tslib": "^2.3.0"
   },
   "peerDependencies": {

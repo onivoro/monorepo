@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/isomorphic-common",
-  "version": "25.3.1",
+  "version": "25.3.2",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
