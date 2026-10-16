@@ -298,15 +298,19 @@ export class McpHttpService implements OnModuleDestroy {
 
   /**
    * The request's origin, for URLs the module derives (the OAuth resource metadata URL). The
-   * scheme is `X-Forwarded-Proto`, else the socket's; with `trustForwardedHosts: false` it
-   * is the socket's only.
+   * scheme is `X-Forwarded-Proto` when its first value is `http` or `https` (any case), else
+   * the socket's; with `trustForwardedHosts: false` it is the socket's only.
    */
   private getRequestOrigin(req: http.IncomingMessage): string | undefined {
     const socketProto = (req.socket as any)?.encrypted ? 'https' : 'http';
-    const proto =
+    const forwardedProto =
       this.config.trustForwardedHosts === false
-        ? socketProto
-        : (this.firstHeader(req.headers['x-forwarded-proto']) ?? socketProto);
+        ? undefined
+        : this.firstHeader(req.headers['x-forwarded-proto'])?.toLowerCase();
+    const proto =
+      forwardedProto === 'http' || forwardedProto === 'https'
+        ? forwardedProto
+        : socketProto;
 
     const host = this.getRequestHost(req);
     if (!host) return undefined;

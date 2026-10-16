@@ -98,6 +98,8 @@ export interface McpModuleConfig
    * And it makes the URLs the module derives from the request (the OAuth protected-resource
    * metadata URL in a `WWW-Authenticate` challenge) take their host from `Host` and their
    * scheme from the socket, ignoring `X-Forwarded-Host` and `X-Forwarded-Proto`.
+   * Otherwise they follow `X-Forwarded-Host`, and `X-Forwarded-Proto` when its first value is
+   * `http` or `https`.
    *
    * Default: `true`, which keeps earlier releases' behavior, but a DNS-rebound page is
    * same-origin with the server and can add those headers itself, so it also lets such a page

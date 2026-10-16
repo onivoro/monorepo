@@ -442,6 +442,93 @@ describe('McpHttpService session lifecycle', () => {
       );
     });
 
+    describe('X-Forwarded-Proto values', () => {
+      async function useService(trustForwardedHosts: boolean | undefined) {
+        await service.onModuleDestroy();
+        service = new McpHttpService(
+          { ...config, trustForwardedHosts } as any,
+          registry,
+        );
+      }
+
+      async function schemeFor(
+        trustForwardedHosts: boolean | undefined,
+        proto: string | string[],
+        encrypted: boolean,
+      ) {
+        await useService(trustForwardedHosts);
+        const header = await wwwAuthenticate(
+          mockReq({
+            headers: { host: 'public.example.com', 'x-forwarded-proto': proto },
+            socket: { encrypted },
+          }),
+        );
+        const match =
+          /resource_metadata="([a-z]*):\/\/public\.example\.com\//.exec(header);
+        return match?.[1];
+      }
+
+      const modes: [string, boolean | undefined][] = [
+        ['unset', undefined],
+        ['true', true],
+      ];
+
+      describe.each(modes)('%s', (_, trustForwardedHosts) => {
+        it.each([
+          ['https', false, 'https'],
+          ['HTTPS', false, 'https'],
+          [' Https ', false, 'https'],
+          ['http', true, 'http'],
+          ['HTTP', true, 'http'],
+          [['https', 'http'], false, 'https'],
+        ])(
+          'honours %j (encrypted socket: %s) as %s',
+          async (proto, encrypted, expected) => {
+            expect(await schemeFor(trustForwardedHosts, proto, encrypted)).toBe(
+              expected,
+            );
+          },
+        );
+
+        it.each([
+          ['javascript'],
+          ['JavaScript'],
+          ['ftp'],
+          ['https:'],
+          ['HTTPS junk'],
+          ['h%74tps'],
+          ['<script>'],
+          [''],
+          [' '],
+        ])('falls back to the socket scheme for %j', async (proto) => {
+          expect(await schemeFor(trustForwardedHosts, proto, false)).toBe(
+            'http',
+          );
+          expect(await schemeFor(trustForwardedHosts, proto, true)).toBe(
+            'https',
+          );
+        });
+      });
+
+      it('never puts a non-http(s) scheme in the challenge', async () => {
+        await useService(undefined);
+
+        const header = await wwwAuthenticate(
+          mockReq({
+            headers: {
+              host: 'public.example.com',
+              'x-forwarded-proto': 'javascript',
+            },
+          }),
+        );
+
+        expect(header).toContain(
+          'resource_metadata="http://public.example.com/.well-known/oauth-protected-resource/mcp"',
+        );
+        expect(header).not.toContain('javascript');
+      });
+    });
+
     it('should omit resource_metadata when no host can be determined', async () => {
       const header = await wwwAuthenticate(mockReq({ headers: {} }));
 
