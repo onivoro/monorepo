@@ -14,7 +14,13 @@
     "./bootstrap": {
       "types": "./src/bootstrap.d.ts",
       "default": "./src/bootstrap.js"
-    }
+    },
+    "./package.json": "./package.json",
+    "./*.js": "./*.js",
+    "./*": "./*.js"
+  },
+  "engines": {
+    "node": ">=22.16.0"
   },
   "repository": {
     "type": "git",

@@ -1,7 +1,7 @@
 name: ci.yml
 
 # Checks every pull request into main, and main itself after each merge: formatting of the changed
-# files, unit tests for every project, and a build of every published library.
+# files, the package manifests, unit tests for every project, and a build of every published library.
 #
 # Hardening, as in publish.yml:
 # - read-only token and no secrets, so pull request code can't publish or write to the repository
@@ -53,8 +53,15 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: npx nx format:check --base="$BASE" --head=HEAD
 
+      # Every published package.json declares the standard exports map and engines (tools/package-manifests.js)
+      - name: Package manifests
+        run: npm run manifests:check
+
       - name: Test
         run: npx nx run-many -t test --passWithNoTests --skip-nx-cache
 
       - name: Build
         run: npx nx run-many -t build --projects='lib-server-*,lib-isomorphic-*,lib-browser-*' --skip-nx-cache
+
+      - name: Built package manifests
+        run: node tools/package-manifests.js --dist

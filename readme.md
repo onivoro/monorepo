@@ -54,6 +54,7 @@ Copy an existing library from the same runtime folder, for example `libs/server/
   - `version`: the current shared version. Copy it from `libs/server/common/package.json`. `publish.yml` refuses a release tag that doesn't match every package's version.
   - `repository`: `{ "type": "git", "url": "https://github.com/onivoro/monorepo.git" }`. Provenance fails without it.
   - `license`, `main`, `types` and `files`, as in the library you copied.
+  - `exports` and `engines`: run `npm run manifests:fix`, which writes the standard ones (see [Package manifests](#package-manifests)). CI fails until they're there.
 - **`tsconfig.base.json`**: add the `@onivoro/<runtime>-<name>` path mapping.
 
 Nothing in `publish.yml` or `.github/CODEOWNERS` needs changing, because both match every `libs/*/*/package.json`.
@@ -87,9 +88,35 @@ Naming the package limits the run to it: it reads the package's trust settings, 
 
 `npm run release:minor` and `npm run release:push`. CI now publishes the new package with the others. Release within about 48 hours of step 4, or the new trust expires; see [Trusted publishing setup](#trusted-publishing-setup).
 
+## Package manifests
+
+Every library's `package.json` is copied into `dist/` by the build, so it is what npm publishes. `tools/package-manifests.js` keeps two fields the same in all of them:
+
+- **`engines`**: `{ "node": ">=22.16.0" }`. Node 22.16 is the oldest version the monorepo builds and tests on (the root `package.json`), and there is no upper bound, so Node 24 LTS and later install without engine warnings.
+- **`exports`**: a map that keeps every import that worked before it was added working:
+
+  ```json
+  {
+    ".": { "types": "./src/index.d.ts", "default": "./src/index.js" },
+    "./package.json": "./package.json",
+    "./*.js": "./*.js",
+    "./*": "./*.js"
+  }
+  ```
+
+  `.` is the package entry, with `types` first for TypeScript's `node16`, `nodenext` and `bundler` resolution. Any explicit subpath a package declares stays, such as `@onivoro/server-aws-observability/bootstrap`. `./*.js` and `./*` keep deep imports resolving, with or without the `.js` extension (`@onivoro/server-common/src/lib/functions/configure-api-app.function`), and TypeScript finds the `.d.ts` beside each `.js`. Only directory imports such as `@onivoro/x/src/lib`, and requests for files other than `.js` and `package.json`, no longer resolve. `main` and `types` stay for TypeScript's legacy `node` resolution and older bundlers.
+
+```bash
+npm run manifests:check                   # check every libs/*/*/package.json
+npm run manifests:fix                     # write the standard fields, keeping any explicit subpaths
+node tools/package-manifests.js --dist    # after a build: check dist/libs, and that each explicit export target exists
+```
+
+`release:build` runs the `--dist` check after building.
+
 ## Checks
 
-`.github/workflows/ci.yml` runs on every pull request into `main` and on `main` after each merge. It checks the formatting of the changed files (`nx format:check`; locally, a Husky pre-commit hook runs Prettier on staged files through lint-staged), runs every project's unit tests, and builds every published library. Like `publish.yml`, it installs with no install scripts, has a read-only token and no secrets, and pins its actions to commit SHAs. The `check` job must pass before a pull request can merge (see the `main` ruleset below). The Nest 11 smoke test (`npm run smoke:nest11`) runs only locally.
+`.github/workflows/ci.yml` runs on every pull request into `main` and on `main` after each merge. It checks the formatting of the changed files (`nx format:check`; locally, a Husky pre-commit hook runs Prettier on staged files through lint-staged), checks that every library's `package.json` declares the standard `exports` map and `engines` (`npm run manifests:check`, see [Package manifests](#package-manifests)), runs every project's unit tests, builds every published library and checks the built manifests. Like `publish.yml`, it installs with no install scripts, has a read-only token and no secrets, and pins its actions to commit SHAs. The `check` job must pass before a pull request can merge (see the `main` ruleset below). The Nest 11 smoke test (`npm run smoke:nest11`) runs only locally.
 
 ## Repository settings
 

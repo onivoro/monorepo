@@ -2133,7 +2133,7 @@ MCP_CORS_CONFIG; // Complete CORS config object (methods, allowedHeaders, expose
 }
 ```
 
-`express` is optional: only its types are used, by `McpHttpModule`. The MCP SDK's v2 packages need Node 20 or later and zod 4.2 or later.
+`express` is optional: only its types are used, by `McpHttpModule`. The package declares Node 22.16 or later (`engines`), and the MCP SDK's v2 packages need zod 4.2 or later.
 
 Coming from a version built on `@modelcontextprotocol/sdk` 1.x: see [UPGRADING.md](https://github.com/onivoro/monorepo/blob/main/libs/server/mcp/UPGRADING.md) for every required change and changed default.
 
