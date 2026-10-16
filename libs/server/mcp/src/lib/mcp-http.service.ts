@@ -19,6 +19,7 @@ import {
 } from '@modelcontextprotocol/node';
 import * as crypto from 'crypto';
 import * as http from 'http';
+import * as net from 'net';
 import type { McpModuleConfig } from './mcp-module-config';
 import { MCP_MODULE_CONFIG } from './mcp-module-config-token';
 import { McpToolRegistry } from './mcp-tool-registry';
@@ -44,6 +45,39 @@ const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
+ * Splits a `Host` value into its lowercased host name and port, or `undefined` when it isn't
+ * a plain `host[:port]`: no userinfo, path, empty port or stray characters. IPv6 literals
+ * keep their brackets (`[::1]`).
+ */
+function parseHost(
+  value: string,
+): { hostname: string; port?: string } | undefined {
+  const match =
+    /^(\[[0-9a-f:.]+\]|[a-z0-9_-]+(?:\.[a-z0-9_-]+)*)(?::(\d{1,5}))?$/i.exec(
+      value,
+    );
+  if (!match) return undefined;
+  const [, hostname, port] = match;
+  if (hostname.startsWith('[') && !net.isIPv6(hostname.slice(1, -1))) {
+    return undefined;
+  }
+  if (port !== undefined && Number(port) > 65535) return undefined;
+  return { hostname: hostname.toLowerCase(), port };
+}
+
+/**
+ * Whether a `Host` header matches an `allowedHosts` entry: the whole value, case-insensitive
+ * (as before), or, for an entry without a port, the host name on any port.
+ */
+function hostMatches(allowed: string, host: string): boolean {
+  if (allowed.toLowerCase() === host.toLowerCase()) return true;
+  const entry = parseHost(allowed);
+  if (!entry || entry.port !== undefined) return false;
+  const request = parseHost(host);
+  return !!request && request.hostname === entry.hostname;
+}
+
+/**
  * The default session owner: the OAuth client plus, when the token carries one, the
  * subject (`extra.sub`, which `@onivoro/server-mcp-auth` fills from the JWT `sub` claim).
  */
@@ -64,6 +98,7 @@ export class McpHttpService implements OnModuleDestroy {
   private bearerAuthResourceMetadataUrl?: string;
   private bearerAuthExpectedResource?: URL;
   private warnedAboutLegacyOAuthError = false;
+  private warnedAboutTrustedForwardedHost = false;
   /** Serves 2026-07-28 clients: stateless, one fresh server per request. */
   private readonly modern: McpHttpHandler;
   private readonly modernNode: (
@@ -283,35 +318,59 @@ export class McpHttpService implements OnModuleDestroy {
   }
 
   /**
-   * With `allowedHosts` set, the `Host` header must be listed. Without it, a server reached
-   * on a loopback address only answers to loopback host names: a DNS-rebound page reaches
-   * it under the attacker's host name (and same-origin `Origin`), which this rejects.
+   * With `allowedHosts` set, the `Host` header must match an entry. Without it, a server
+   * reached on a loopback address only answers to loopback host names: a DNS-rebound page
+   * reaches it under the attacker's host name (and same-origin `Origin`), which this rejects.
+   * A request with forwarding headers is exempt unless `trustForwardedHosts` is `false`.
    */
   private isHostAllowed(req: http.IncomingMessage): boolean {
     const host = req.headers.host?.toLowerCase();
     const allowedHosts = this.config.allowedHosts;
     if (allowedHosts) {
       return (
-        !!host && allowedHosts.some((allowed) => allowed.toLowerCase() === host)
+        !!host && allowedHosts.some((allowed) => hostMatches(allowed, host))
       );
     }
 
     if (!LOOPBACK_ADDRESSES.has(req.socket?.localAddress ?? '')) return true;
-    // A local reverse proxy forwards the public host name. A browser can't add these
-    // headers to a cross-origin request without a CORS preflight, which a rebound page fails.
+    if (this.isLoopbackHost(host)) return true;
+    // A local reverse proxy forwards the public host name. But a DNS-rebound page is
+    // same-origin with the server, so it can add these headers too: trusting them is opt-out
+    // now, and off by default in the next major release.
+    const trustForwardedHosts = this.config.trustForwardedHosts ?? true;
     if (
-      req.headers['x-forwarded-host'] ||
-      req.headers['x-forwarded-for'] ||
-      req.headers['forwarded']
+      trustForwardedHosts &&
+      (req.headers['x-forwarded-host'] ||
+        req.headers['x-forwarded-for'] ||
+        req.headers['forwarded'])
     ) {
+      if (this.config.trustForwardedHosts === undefined) {
+        this.warnAboutTrustedForwardedHost(req.headers.host);
+      }
       return true;
     }
+    return false;
+  }
+
+  private isLoopbackHost(host: string | undefined): boolean {
     if (!host) return false;
     try {
       return LOOPBACK_HOSTNAMES.has(new URL(`http://${host}`).hostname);
     } catch {
       return false;
     }
+  }
+
+  private warnAboutTrustedForwardedHost(host: string | undefined): void {
+    if (this.warnedAboutTrustedForwardedHost) return;
+    this.warnedAboutTrustedForwardedHost = true;
+    this.logger.warn(
+      `Accepted a request for Host "${host ?? ''}" on a loopback address because it carries forwarding headers ` +
+        '(X-Forwarded-For, X-Forwarded-Host or Forwarded). A DNS-rebinding web page can add those headers itself, ' +
+        'so this lets it reach the server. Behind a local reverse proxy, set allowedHosts to the host names it serves; ' +
+        'with no proxy, set trustForwardedHosts: false. Setting either silences this warning. ' +
+        'trustForwardedHosts defaults to true for now and becomes false in the next major release.',
+    );
   }
 
   private async authenticateRequest(

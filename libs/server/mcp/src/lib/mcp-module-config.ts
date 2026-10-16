@@ -74,14 +74,31 @@ export interface McpModuleConfig
    */
   allowedOrigins?: string[];
   /**
-   * Allowed `Host` header values (`host` or `host:port`, as clients send them). Requests for
-   * any other host get 403.
+   * Allowed `Host` header values. Requests for any other host get 403. Host names compare
+   * case-insensitively. An entry without a port (`'mcp.example.com'`, `'localhost'`,
+   * `'[::1]'`) matches that host on any port; an entry with one (`'localhost:3000'`) matches
+   * only that port. Forwarding headers don't exempt a request from this check: it is the
+   * `Host` header the server receives that must match.
    *
-   * When not set, a request that arrives on a loopback address (`127.0.0.1`, `::1`) without
-   * proxy headers must name `localhost`, `127.0.0.1` or `[::1]` as its host, which stops a
-   * DNS-rebound web page from reaching a local server. Other requests aren't checked.
+   * When not set, a request that arrives on a loopback address (`127.0.0.1`, `::1`) must
+   * name `localhost`, `127.0.0.1` or `[::1]` as its host, which stops a DNS-rebound web page
+   * from reaching a local server, unless it carries forwarding headers and
+   * `trustForwardedHosts` allows that. Other requests aren't checked.
    */
   allowedHosts?: string[];
+  /**
+   * Whether a request that arrives on a loopback address carrying `X-Forwarded-For`,
+   * `X-Forwarded-Host` or `Forwarded` is exempt from the loopback `Host` check (meant for a
+   * local reverse proxy forwarding a public host name). Only applies when `allowedHosts` is
+   * not set.
+   *
+   * Default: `true`, which keeps earlier releases' behavior, but a DNS-rebound page is
+   * same-origin with the server and can add those headers itself, so it also lets such a page
+   * through. The first request let through this way logs a warning. Set `false` when no proxy
+   * sits in front of the server, or set `allowedHosts` (with the public host name) when one
+   * does. The default becomes `false` in the next major release.
+   */
+  trustForwardedHosts?: boolean;
   /**
    * When `true`, the transport answers each POST with a single JSON response.
    * Default: `false`, which answers with an SSE stream.
