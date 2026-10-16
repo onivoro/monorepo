@@ -6,6 +6,18 @@
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json",
+    "./*.js": "./*.js",
+    "./*": "./*.js"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  },
   "homepage": "https://github.com/onivoro/monorepo/blob/main/libs/server/mcp-llm-adapter/README.md",
   "repository": {
     "type": "git",
