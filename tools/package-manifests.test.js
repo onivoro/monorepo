@@ -151,6 +151,93 @@ test('fix refuses, and changes nothing, when it would overwrite a declared targe
   }
 });
 
+test('fix refuses to reorder the conditions of "."', () => {
+  const cases = [
+    // default before import: the import branch is dead today and would go live
+    { default: './src/index.js', import: './esm/index.mjs' },
+    {
+      import: './esm/index.mjs',
+      types: './src/index.d.ts',
+      default: './src/index.js',
+    },
+    {
+      types: './src/index.d.ts',
+      default: './src/index.js',
+      node: './src/node.js',
+    },
+    // no types: adding it first would change what TypeScript resolves
+    { import: './esm/index.mjs', default: './src/index.js' },
+  ];
+  for (const entry of cases) {
+    const pkg = { ...base, exports: { '.': entry } };
+    assert.match(
+      conflicts(pkg).join('\n'),
+      /exports\["\."\]/,
+      JSON.stringify(entry),
+    );
+    const dir = workspace(pkg);
+    const log = quiet();
+    assert.equal(run('fix', dir, log), 1);
+    assert.deepEqual(read(dir), pkg);
+    assert.deepEqual(Object.keys(read(dir).exports['.']), Object.keys(entry));
+  }
+});
+
+test('fix keeps "." in order when it only adds types first or default last', () => {
+  for (const entry of [
+    { types: './src/index.d.ts', import: './esm/index.mjs' },
+    { default: './src/index.js' },
+    {},
+  ]) {
+    const pkg = { ...base, exports: { '.': entry } };
+    assert.deepEqual(conflicts(pkg), [], JSON.stringify(entry));
+    assert.equal(Object.keys(standardExports(pkg)['.']).at(-1), 'default');
+  }
+});
+
+test('fix never lowers or rewrites a declared engines.node', () => {
+  for (const node of [
+    '>=24',
+    '>=24.0.0',
+    '>=22.17',
+    '>=22.16.0',
+    '>= 23.1.0',
+  ]) {
+    const pkg = { ...base, engines: { node, npm: '>=10' } };
+    assert.deepEqual(conflicts(pkg), [], node);
+    const dir = workspace(pkg);
+    assert.equal(run('fix', dir, quiet()), 0);
+    assert.deepEqual(read(dir).engines, { node, npm: '>=10' });
+    assert.equal(run('check', dir, quiet()), 0, node);
+  }
+
+  for (const node of [
+    '>=20',
+    '>=22.15.9',
+    '^22.16.0',
+    '>=22.16.0 <25',
+    '*',
+    '24',
+  ]) {
+    const pkg = { ...base, engines: { node } };
+    assert.match(conflicts(pkg).join(), /engines\.node/, node);
+    const dir = workspace(pkg);
+    const log = quiet();
+    assert.equal(run('fix', dir, log), 1, node);
+    assert.deepEqual(read(dir), pkg);
+    assert.match(log.lines.error.join('\n'), /not fixed: engines\.node/);
+    assert.equal(run('check', dir, quiet()), 1, node);
+  }
+});
+
+test('check reports a missing engines.node', () => {
+  const pkg = { ...base, exports: standardExports(base) };
+  const dir = workspace(pkg);
+  const log = quiet();
+  assert.equal(run('check', dir, log), 1);
+  assert.match(log.lines.error.join('\n'), /engines\.node is missing/);
+});
+
 test('a non-subpath exports value is a conflict, not a crash', () => {
   assert.ok(conflicts({ ...base, exports: './src/index.js' }).length);
   assert.ok(

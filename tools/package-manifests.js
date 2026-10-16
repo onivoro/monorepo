@@ -19,17 +19,33 @@
 //   package.json stop resolving.
 // `main` and `types` stay for TypeScript's legacy `node` resolution and older bundlers.
 //
-// --fix never drops or rewrites anything a package declares: if a manifest's `.` types or default
-// disagree with its `types` and `main`, or it maps `./package.json`, `./*.js` or `./*` elsewhere,
-// it refuses and names the conflict.
+// --fix never drops, reorders or rewrites anything a package declares. It refuses, and names the
+// conflict, when a manifest's `.` types or default disagree with its `types` and `main`, when its
+// `.` conditions are in a different order from the standard one (types first, default last), when
+// it maps `./package.json`, `./*.js` or `./*` elsewhere, or when it declares an `engines.node` that
+// isn't a `>=` floor at or above the standard one.
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 
-// Node 22.16 is the floor the monorepo builds and tests on (root package.json); no upper bound, so
-// Node 24 LTS and later install without engine warnings.
+// Node 22.16 is the floor the root package.json declares; CI builds and tests on Node 24. No upper
+// bound, so Node 24 LTS and later install without engine warnings. A package may declare a higher
+// `>=` floor of its own, such as `>=24`, and keeps it.
 const ENGINES = { node: '>=22.16.0' };
+const FLOOR = [22, 16, 0];
+
+// `>=X`, `>=X.Y` or `>=X.Y.Z` at or above FLOOR. Anything else is for a person to decide.
+function isStandardOrHigherFloor(range) {
+  const match = /^>=\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(
+    String(range).trim(),
+  );
+  if (!match) return false;
+  const version = match.slice(1).map((part) => Number(part ?? 0));
+  for (let i = 0; i < 3; i++)
+    if (version[i] !== FLOOR[i]) return version[i] > FLOOR[i];
+  return true;
+}
 
 const STANDARD_SUBPATHS = {
   './package.json': './package.json',
@@ -59,6 +75,18 @@ const isObject = (value) =>
 // What the standard map would overwrite in the package's current one. Empty means
 // standardExports(pkg) keeps everything the package declares.
 function conflicts(pkg) {
+  return [...engineConflicts(pkg), ...exportsConflicts(pkg)];
+}
+
+function engineConflicts(pkg) {
+  const node = pkg.engines?.node;
+  if (node === undefined || isStandardOrHigherFloor(node)) return [];
+  return [
+    `engines.node is ${JSON.stringify(node)}; use ${JSON.stringify(ENGINES.node)} or a higher ">=" floor`,
+  ];
+}
+
+function exportsConflicts(pkg) {
   const current = pkg.exports;
   if (current === undefined) return [];
   if (
@@ -85,6 +113,20 @@ function conflicts(pkg) {
       found.push(
         `exports["."].default is ${JSON.stringify(entry.default)}, but main is ${JSON.stringify(pkg.main)}`,
       );
+    // Condition order decides resolution (the first matching key wins), so the standard entry may
+    // only add `types` and `default` around the declared conditions, never move any of them.
+    const declared = Object.keys(entry);
+    const standard = Object.keys(standardEntry(pkg)).filter((key) =>
+      declared.includes(key),
+    );
+    if (declared.join() !== standard.join())
+      found.push(
+        `exports["."] conditions are in the order ${declared.join(', ')}; the standard order is ${standard.join(', ')} (types first, default last)`,
+      );
+    else if (!('types' in entry) && declared.some((key) => key !== 'default'))
+      found.push(
+        `exports["."] has conditions (${declared.join(', ')}) but no types; adding types first would change what TypeScript resolves`,
+      );
   } else if (entry !== undefined) {
     found.push(`exports["."] is ${JSON.stringify(entry)}; write it by hand`);
   }
@@ -100,21 +142,27 @@ function conflicts(pkg) {
   return found;
 }
 
-// The standard map, keeping every condition and subpath the package already declares.
-function standardExports(pkg) {
+// The standard `.` entry: types first, the declared conditions in their order, default last.
+function standardEntry(pkg) {
   const current = isObject(pkg.exports) ? pkg.exports : {};
   const {
     types,
     default: _default,
     ...conditions
   } = isObject(current['.']) ? current['.'] : {};
+  return { types: pkg.types, ...conditions, default: pkg.main };
+}
+
+// The standard map, keeping every condition and subpath the package already declares.
+function standardExports(pkg) {
+  const current = isObject(pkg.exports) ? pkg.exports : {};
   const declared = Object.fromEntries(
     Object.entries(current).filter(
       ([key]) => key !== '.' && !(key in STANDARD_SUBPATHS),
     ),
   );
   return {
-    '.': { types: pkg.types, ...conditions, default: pkg.main },
+    '.': standardEntry(pkg),
     ...declared,
     ...STANDARD_SUBPATHS,
   };
@@ -125,7 +173,10 @@ function standardExports(pkg) {
 function withStandardFields(pkg) {
   const fields = {
     exports: standardExports(pkg),
-    engines: { ...(pkg.engines || {}), ...ENGINES },
+    engines: {
+      ...(pkg.engines || {}),
+      node: pkg.engines?.node ?? ENGINES.node,
+    },
   };
   const out = {};
   for (const [key, value] of Object.entries(pkg)) {
@@ -149,8 +200,10 @@ function problems(pkg) {
     JSON.stringify(pkg.exports) !== JSON.stringify(standardExports(pkg))
   )
     found.push('exports is not the standard map');
-  if (pkg.engines?.node !== ENGINES.node)
-    found.push(`engines.node is not ${JSON.stringify(ENGINES.node)}`);
+  if (pkg.engines?.node === undefined)
+    found.push(
+      `engines.node is missing; the standard is ${JSON.stringify(ENGINES.node)}`,
+    );
   return found;
 }
 

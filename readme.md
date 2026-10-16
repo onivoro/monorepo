@@ -92,7 +92,7 @@ Naming the package limits the run to it: it reads the package's trust settings, 
 
 Every library's `package.json` is copied into `dist/` by the build, so it is what npm publishes. `tools/package-manifests.js` keeps two fields the same in all of them:
 
-- **`engines`**: `{ "node": ">=22.16.0" }`. Node 22.16 is the oldest version the monorepo builds and tests on (the root `package.json`), and there is no upper bound, so Node 24 LTS and later install without engine warnings.
+- **`engines`**: `{ "node": ">=22.16.0" }`. 22.16 is the floor the root `package.json` declares. CI builds and tests only on Node 24 (24.20.0), so CI doesn't check that floor: it was checked by hand when the field was added, by building and testing every library on Node 22.16.0. There is no upper bound, so Node 24 LTS and later install without engine warnings. A package that needs a newer Node can declare a higher `>=` floor of its own, such as `>=24`, and the script keeps it.
 - **`exports`**: a map that keeps every import that worked before it was added working:
 
   ```json
@@ -113,7 +113,15 @@ npm run manifests:test                    # the script's own tests (node --test)
 node tools/package-manifests.js --dist    # after a build: check dist/libs, and that each explicit export target exists
 ```
 
-`manifests:fix` never drops or rewrites what a package declares. If a package's `.` entry has `types` or `default` that differ from its `types` and `main`, or it maps `./package.json`, `./*.js` or `./*` to something else, the script leaves that file unchanged, names the conflict and exits non-zero, so you can resolve it by hand. `release:build` runs the `--dist` check after building. That check walks nested conditions and fallback arrays, and reports any target that isn't a path.
+`manifests:fix` never drops, reorders or rewrites what a package declares. In any of these cases it leaves that file unchanged, names the conflict and exits non-zero, so you can resolve it by hand:
+
+- The `.` entry's `types` or `default` differ from the package's `types` and `main`.
+- The `.` entry's conditions are in a different order from the standard one: `types` first, the rest as declared, `default` last. Order decides resolution, because the first matching condition wins.
+- The `.` entry has conditions but no `types`. Adding `types` first would change what TypeScript resolves.
+- `./package.json`, `./*.js` or `./*` maps to something else.
+- `engines.node` is something other than a `>=` floor at or above 22.16.0.
+
+`manifests:check` reports the same conflicts. `release:build` runs the `--dist` check after building. That check walks nested conditions and fallback arrays, and reports any target that isn't a path.
 
 ## Checks
 
