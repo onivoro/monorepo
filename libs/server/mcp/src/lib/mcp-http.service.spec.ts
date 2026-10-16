@@ -647,6 +647,43 @@ describe('McpHttpService', () => {
       expect(res.writeHead).not.toHaveBeenCalledWith(403, expect.anything());
       expect(mockTransportHandleRequest).toHaveBeenCalled();
     });
+
+    it('should compare the origin with Host only when trustForwardedHosts is false', async () => {
+      const strictService = new McpHttpService(
+        { ...config, trustForwardedHosts: false } as any,
+        registry,
+      );
+      const spoofed = mockRes();
+      const sameHost = mockRes();
+
+      await strictService.handleRequest(
+        mockReq({
+          headers: {
+            origin: 'https://mcp.example.com',
+            'x-forwarded-host': 'mcp.example.com',
+            host: 'internal:3000',
+          },
+        }),
+        spoofed,
+      );
+      await strictService.handleRequest(
+        mockReq({
+          headers: {
+            origin: 'https://mcp.example.com',
+            'x-forwarded-host': 'other.example.com',
+            host: 'mcp.example.com',
+          },
+        }),
+        sameHost,
+      );
+
+      expect(spoofed.writeHead).toHaveBeenCalledWith(403, expect.anything());
+      expect(sameHost.writeHead).not.toHaveBeenCalledWith(
+        403,
+        expect.anything(),
+      );
+      await strictService.onModuleDestroy();
+    });
   });
 
   describe('Host validation', () => {
