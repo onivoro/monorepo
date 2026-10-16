@@ -51,11 +51,18 @@ const MODERN_HEADERS = {
   'Mcp-Name': 'ping',
 };
 
-const MODES: Array<
-  [string, Partial<McpModuleConfig>, string, Record<string, string>]
-> = [
-  ['stateless', {}, MODERN_TOOL_CALL, MODERN_HEADERS],
-  ['stateful', { session: {} }, LEGACY_INITIALIZE, {}],
+/** A request body, and the headers its protocol era needs. */
+interface Era {
+  body: string;
+  headers: Record<string, string>;
+}
+
+const MODERN: Era = { body: MODERN_TOOL_CALL, headers: MODERN_HEADERS };
+const LEGACY: Era = { body: LEGACY_INITIALIZE, headers: {} };
+
+const MODES: Array<[string, Partial<McpModuleConfig>, Era]> = [
+  ['stateless', {}, MODERN],
+  ['stateful', { session: {} }, LEGACY],
 ];
 
 async function startApp(
@@ -89,23 +96,24 @@ function decodeChunked(raw: string): string {
   }
 }
 
-/** Headers the request body's protocol era needs; set per describe block. */
-let eraHeaders: Record<string, string> = {};
-
-/** Sends `POST /mcp` with this `Host` and extra headers; resolves to the status and body. */
+/**
+ * Sends `POST /mcp` with this `Host`, the era's body and headers, and extra headers; resolves
+ * to the status and body.
+ */
 function post(
   port: number,
   host: string,
-  body: string,
+  era: Era,
   headers: Record<string, string> = {},
 ): Promise<{ status: number; body: string }> {
+  const { body } = era;
   const allHeaders: Record<string, string> = {
     Host: host,
     Connection: 'close',
     Accept: 'application/json, text/event-stream',
     'Content-Type': 'application/json',
     'Content-Length': String(Buffer.byteLength(body)),
-    ...eraHeaders,
+    ...era.headers,
     ...headers,
   };
   const head =
@@ -137,6 +145,19 @@ function post(
   });
 }
 
+/**
+ * Host values a URL parser reads as a loopback host but that aren't a plain loopback
+ * `host[:port]`. A browser never sends them.
+ */
+const LENIENT_LOOPBACK_HOSTS = [
+  'user@localhost',
+  'localhost/x',
+  'localhost:',
+  'localhost:0',
+  '127.1',
+  '0x7f000001',
+];
+
 const FORWARDING_HEADERS: Array<[string, Record<string, string>]> = [
   ['X-Forwarded-For', { 'X-Forwarded-For': '203.0.113.9' }],
   ['X-Forwarded-Host', { 'X-Forwarded-Host': 'rebound.example.com' }],
@@ -160,11 +181,7 @@ describe('McpHttpModule Host check over HTTP', () => {
       String(message).includes('trustForwardedHosts'),
     );
 
-  describe.each(MODES)('%s server', (_mode, modeConfig, body, headers) => {
-    beforeAll(() => {
-      eraHeaders = headers;
-    });
-
+  describe.each(MODES)('%s server', (_mode, modeConfig, era) => {
     describe('trustForwardedHosts unset (the default)', () => {
       let app: any;
       let port: number;
@@ -178,16 +195,16 @@ describe('McpHttpModule Host check over HTTP', () => {
       });
 
       it('still lets a rebound Host with X-Forwarded-For through, and warns once', async () => {
-        const first = await post(port, 'rebound.example.com', body, {
+        const first = await post(port, 'rebound.example.com', era, {
           'X-Forwarded-For': '203.0.113.9',
         });
-        const second = await post(port, 'rebound.example.com', body, {
+        const second = await post(port, 'rebound.example.com', era, {
           'X-Forwarded-For': '203.0.113.9',
         });
 
         expect(first.status).toBe(200);
         expect(second.status).toBe(200);
-        if (body === MODERN_TOOL_CALL) {
+        if (era === MODERN) {
           expect(first.body).toContain('pong-from-tool');
         }
         const warnings = forwardedHostWarnings();
@@ -198,8 +215,17 @@ describe('McpHttpModule Host check over HTTP', () => {
         expect(warnings[0][0]).toContain('next major release');
       });
 
+      it('bounds the Host it logs in the warning', async () => {
+        const longHost = `${'a'.repeat(60)}.${'b'.repeat(60)}.example.com`;
+        await post(port, longHost, era, { 'X-Forwarded-For': '203.0.113.9' });
+
+        const [[message]] = forwardedHostWarnings();
+        expect(message).toContain(`Host "${longHost.slice(0, 100)}..."`);
+        expect(message).not.toContain(longHost);
+      });
+
       it('refuses a rebound Host without forwarding headers with 403', async () => {
-        const response = await post(port, 'rebound.example.com', body);
+        const response = await post(port, 'rebound.example.com', era);
 
         expect(response.status).toBe(403);
         expect(JSON.parse(response.body).error.message).toBe(
@@ -208,16 +234,54 @@ describe('McpHttpModule Host check over HTTP', () => {
       });
 
       it('does not warn for a loopback Host, with or without forwarding headers', async () => {
-        expect((await post(port, `localhost:${port}`, body)).status).toBe(200);
+        expect((await post(port, `localhost:${port}`, era)).status).toBe(200);
         expect(
           (
-            await post(port, `127.0.0.1:${port}`, body, {
+            await post(port, `127.0.0.1:${port}`, era, {
               'X-Forwarded-For': '203.0.113.9',
             })
           ).status,
         ).toBe(200);
 
         expect(forwardedHostWarnings()).toHaveLength(0);
+      });
+    });
+
+    describe('trustForwardedHosts unset: compatibility of the other checks', () => {
+      let app: any;
+      let port: number;
+
+      beforeAll(async () => {
+        ({ app, port } = await startApp(modeConfig));
+      });
+
+      afterAll(async () => {
+        await app?.close();
+      });
+
+      // As in earlier releases, the default loopback check reads Host as a URL authority.
+      it.each(LENIENT_LOOPBACK_HOSTS)(
+        'still lets the loopback-looking Host %s past the Host check',
+        async (host) => {
+          expect((await post(port, host, era)).status).not.toBe(403);
+        },
+      );
+
+      it('still takes the same-origin host from X-Forwarded-Host', async () => {
+        const forwarded = await post(port, `localhost:${port}`, era, {
+          'X-Forwarded-Host': 'mcp.example.com',
+          Origin: 'http://mcp.example.com',
+        });
+        const direct = await post(port, `localhost:${port}`, era, {
+          'X-Forwarded-Host': 'mcp.example.com',
+          Origin: `http://localhost:${port}`,
+        });
+
+        expect(forwarded.status).toBe(200);
+        expect(direct.status).toBe(403);
+        expect(JSON.parse(direct.body).error.message).toBe(
+          `Origin "http://localhost:${port}" is not allowed`,
+        );
       });
     });
 
@@ -237,7 +301,7 @@ describe('McpHttpModule Host check over HTTP', () => {
       });
 
       it('lets a forwarded request through without warning, since it was chosen', async () => {
-        const response = await post(port, 'mcp.example.com', body, {
+        const response = await post(port, 'mcp.example.com', era, {
           'X-Forwarded-For': '203.0.113.9',
         });
 
@@ -267,7 +331,7 @@ describe('McpHttpModule Host check over HTTP', () => {
           const response = await post(
             port,
             'rebound.example.com',
-            body,
+            era,
             headers,
           );
 
@@ -280,9 +344,7 @@ describe('McpHttpModule Host check over HTTP', () => {
       );
 
       it('refuses a rebound Host without forwarding headers with 403', async () => {
-        expect((await post(port, 'rebound.example.com', body)).status).toBe(
-          403,
-        );
+        expect((await post(port, 'rebound.example.com', era)).status).toBe(403);
       });
 
       it.each([
@@ -294,11 +356,35 @@ describe('McpHttpModule Host check over HTTP', () => {
         '[::1]',
         '[::1]:3000',
       ])('accepts the loopback Host %s', async (host) => {
-        expect((await post(port, host, body)).status).toBe(200);
+        expect((await post(port, host, era)).status).toBe(200);
+      });
+
+      it.each(LENIENT_LOOPBACK_HOSTS)(
+        'parses Host strictly and refuses %s with 403',
+        async (host) => {
+          expect((await post(port, host, era)).status).toBe(403);
+        },
+      );
+
+      it('takes the same-origin host from Host only, not X-Forwarded-Host', async () => {
+        const forwarded = await post(port, `localhost:${port}`, era, {
+          'X-Forwarded-Host': 'mcp.example.com',
+          Origin: 'http://mcp.example.com',
+        });
+        const direct = await post(port, `localhost:${port}`, era, {
+          'X-Forwarded-Host': 'mcp.example.com',
+          Origin: `http://localhost:${port}`,
+        });
+
+        expect(forwarded.status).toBe(403);
+        expect(JSON.parse(forwarded.body).error.message).toBe(
+          'Origin "http://mcp.example.com" is not allowed',
+        );
+        expect(direct.status).toBe(200);
       });
 
       it('accepts a loopback Host that also carries forwarding headers', async () => {
-        const response = await post(port, `localhost:${port}`, body, {
+        const response = await post(port, `localhost:${port}`, era, {
           'X-Forwarded-For': '203.0.113.9',
         });
 
@@ -328,7 +414,7 @@ describe('McpHttpModule Host check over HTTP', () => {
         'localhost',
         'localhost:54321',
       ])('accepts %s', async (host) => {
-        expect((await post(port, host, body)).status).toBe(200);
+        expect((await post(port, host, era)).status).toBe(200);
       });
 
       it.each([
@@ -347,16 +433,18 @@ describe('McpHttpModule Host check over HTTP', () => {
         'mcp.example.com:8443:8443',
         'mcp.example.com:99999',
         'mcp.example.com:abc',
+        'mcp.example.com:0',
+        'localhost:0',
         'localhost:3000.rebound.example.com',
       ])('refuses %s with 403', async (host) => {
-        expect((await post(port, host, body)).status).toBe(403);
+        expect((await post(port, host, era)).status).toBe(403);
       });
 
       it.each(FORWARDING_HEADERS)(
         'does not let %s exempt a rebound Host',
         async (_name, headers) => {
           expect(
-            (await post(port, 'rebound.example.com', body, headers)).status,
+            (await post(port, 'rebound.example.com', era, headers)).status,
           ).toBe(403);
           expect(forwardedHostWarnings()).toHaveLength(0);
         },
@@ -381,14 +469,14 @@ describe('McpHttpModule Host check over HTTP', () => {
       it.each(['localhost:3000', '[::1]', '[::1]:54321'])(
         'accepts %s',
         async (host) => {
-          expect((await post(port, host, body)).status).toBe(200);
+          expect((await post(port, host, era)).status).toBe(200);
         },
       );
 
       // The Host check lets it through; past it, the 2025-era transport (@hono/node-server)
       // answers a host name with capitals and a port with its own 400.
       it('matches a port entry case-insensitively', async () => {
-        expect((await post(port, 'LOCALHOST:3000', body)).status).not.toBe(403);
+        expect((await post(port, 'LOCALHOST:3000', era)).status).not.toBe(403);
       });
 
       it.each([
@@ -401,7 +489,7 @@ describe('McpHttpModule Host check over HTTP', () => {
         '[::1]x',
         '[localhost]',
       ])('refuses %s with 403', async (host) => {
-        expect((await post(port, host, body)).status).toBe(403);
+        expect((await post(port, host, era)).status).toBe(403);
       });
     });
   });

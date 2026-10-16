@@ -45,15 +45,15 @@ const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
- * Splits a `Host` value into its lowercased host name and port, or `undefined` when it isn't
- * a plain `host[:port]`: no userinfo, path, empty port or stray characters. IPv6 literals
- * keep their brackets (`[::1]`).
+ * Splits a lowercased `Host` value into its host name and port, or `undefined` when it isn't
+ * a plain `host[:port]`: no userinfo, path, trailing dot, empty or out-of-range port (1-65535),
+ * or stray characters. IPv6 literals keep their brackets (`[::1]`).
  */
 function parseHost(
   value: string,
 ): { hostname: string; port?: string } | undefined {
   const match =
-    /^(\[[0-9a-f:.]+\]|[a-z0-9_-]+(?:\.[a-z0-9_-]+)*)(?::(\d{1,5}))?$/i.exec(
+    /^(\[[0-9a-f:.]+\]|[a-z0-9_-]+(?:\.[a-z0-9_-]+)*)(?::(\d{1,5}))?$/.exec(
       value,
     );
   if (!match) return undefined;
@@ -61,20 +61,29 @@ function parseHost(
   if (hostname.startsWith('[') && !net.isIPv6(hostname.slice(1, -1))) {
     return undefined;
   }
-  if (port !== undefined && Number(port) > 65535) return undefined;
-  return { hostname: hostname.toLowerCase(), port };
+  if (port !== undefined && (Number(port) < 1 || Number(port) > 65535)) {
+    return undefined;
+  }
+  return { hostname, port };
 }
 
 /**
- * Whether a `Host` header matches an `allowedHosts` entry: the whole value, case-insensitive
- * (as before), or, for an entry without a port, the host name on any port.
+ * Whether a lowercased `Host` header matches an `allowedHosts` entry: the whole value,
+ * case-insensitive (as before), or, for an entry without a port, the host name on any port.
  */
 function hostMatches(allowed: string, host: string): boolean {
-  if (allowed.toLowerCase() === host.toLowerCase()) return true;
-  const entry = parseHost(allowed);
+  const entryValue = allowed.toLowerCase();
+  if (entryValue === host) return true;
+  const entry = parseHost(entryValue);
   if (!entry || entry.port !== undefined) return false;
-  const request = parseHost(host);
-  return !!request && request.hostname === entry.hostname;
+  return parseHost(host)?.hostname === entry.hostname;
+}
+
+/** A request header value made safe to log: control characters removed, length bounded. */
+function forLog(value: string | undefined, maxLength = 100): string {
+  // eslint-disable-next-line no-control-regex
+  const clean = (value ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+  return clean.length > maxLength ? `${clean.slice(0, maxLength)}...` : clean;
 }
 
 /**
@@ -309,7 +318,11 @@ export class McpHttpService implements OnModuleDestroy {
       return allowedOrigins.includes('*') || allowedOrigins.includes(origin);
     }
 
-    const host = this.getRequestHost(req);
+    // With trustForwardedHosts: false, nothing forwarded is trusted: compare with Host only.
+    const host =
+      this.config.trustForwardedHosts === false
+        ? this.firstHeader(req.headers.host)
+        : this.getRequestHost(req);
     try {
       return !!host && new URL(origin).host === host.toLowerCase();
     } catch {
@@ -333,11 +346,11 @@ export class McpHttpService implements OnModuleDestroy {
     }
 
     if (!LOOPBACK_ADDRESSES.has(req.socket?.localAddress ?? '')) return true;
-    if (this.isLoopbackHost(host)) return true;
+    const trustForwardedHosts = this.config.trustForwardedHosts ?? true;
+    if (this.isLoopbackHost(host, !trustForwardedHosts)) return true;
     // A local reverse proxy forwards the public host name. But a DNS-rebound page is
     // same-origin with the server, so it can add these headers too: trusting them is opt-out
     // now, and off by default in the next major release.
-    const trustForwardedHosts = this.config.trustForwardedHosts ?? true;
     if (
       trustForwardedHosts &&
       (req.headers['x-forwarded-host'] ||
@@ -352,8 +365,18 @@ export class McpHttpService implements OnModuleDestroy {
     return false;
   }
 
-  private isLoopbackHost(host: string | undefined): boolean {
+  /**
+   * Whether a lowercased `Host` names a loopback host. `strict` (with `trustForwardedHosts:
+   * false`) parses it as `allowedHosts` does. Otherwise it is parsed as a URL authority, as in
+   * earlier releases, which also reads `user@localhost`, `localhost/x`, `localhost:` and
+   * `127.1` as loopback; that leniency stays for compatibility until the next major release.
+   */
+  private isLoopbackHost(host: string | undefined, strict: boolean): boolean {
     if (!host) return false;
+    if (strict) {
+      const hostname = parseHost(host)?.hostname;
+      return !!hostname && LOOPBACK_HOSTNAMES.has(hostname);
+    }
     try {
       return LOOPBACK_HOSTNAMES.has(new URL(`http://${host}`).hostname);
     } catch {
@@ -365,7 +388,7 @@ export class McpHttpService implements OnModuleDestroy {
     if (this.warnedAboutTrustedForwardedHost) return;
     this.warnedAboutTrustedForwardedHost = true;
     this.logger.warn(
-      `Accepted a request for Host "${host ?? ''}" on a loopback address because it carries forwarding headers ` +
+      `Accepted a request for Host "${forLog(host)}" on a loopback address because it carries forwarding headers ` +
         '(X-Forwarded-For, X-Forwarded-Host or Forwarded). A DNS-rebinding web page can add those headers itself, ' +
         'so this lets it reach the server. Behind a local reverse proxy, set allowedHosts to the host names it serves; ' +
         'with no proxy, set trustForwardedHosts: false. Setting either silences this warning. ' +

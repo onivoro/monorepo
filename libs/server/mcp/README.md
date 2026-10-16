@@ -1706,7 +1706,7 @@ The package test suite covers:
 - Streamable HTTP session lifecycle, stale-session recovery, and session ownership
 - stateless HTTP: `405` for `GET`/`DELETE`, ignored session headers, and the capabilities it advertises
 - `Origin` and `Host` validation
-- end to end over HTTP, the `Host` check on a loopback server, stateless and stateful: by default a request for another host is refused with `403`, but let through (and a tool runs) when it carries `X-Forwarded-For`, which logs one warning; `trustForwardedHosts: true` lets it through without the warning; `trustForwardedHosts: false` refuses it with `X-Forwarded-For`, `X-Forwarded-Host` or `Forwarded` and accepts `localhost`, `127.0.0.1` and `[::1]` on any port; `allowedHosts` entries without a port match any port and case-insensitively, entries with one match only that port, forwarding headers exempt nothing, and a trailing dot, userinfo, a path, a suffix or prefix, a doubled, empty, non-numeric or out-of-range port, and a malformed IPv6 literal are refused
+- end to end over HTTP, the `Host` check on a loopback server, stateless and stateful: by default a request for another host is refused with `403`, but let through (and a tool runs) when it carries `X-Forwarded-For`, which logs one warning; `trustForwardedHosts: true` lets it through without the warning; `trustForwardedHosts: false` refuses it with `X-Forwarded-For`, `X-Forwarded-Host` or `Forwarded` and accepts `localhost`, `127.0.0.1` and `[::1]` on any port; `allowedHosts` entries without a port match any port and case-insensitively, entries with one match only that port, forwarding headers exempt nothing, and a trailing dot, userinfo, a path, a suffix or prefix, a doubled, empty, zero, non-numeric or out-of-range port, and a malformed IPv6 literal are refused; the default loopback check still reads `user@localhost`, `localhost/x`, `localhost:`, `localhost:0`, `127.1` and `0x7f000001` as loopback, while `trustForwardedHosts: false` refuses them; the same-origin `Origin` check follows `X-Forwarded-Host` by default and ignores it with `trustForwardedHosts: false`; and the warning logs at most 100 characters of the `Host`, without control characters
 - end to end over HTTP, POSTs whose body went unparsed (with Express 4's parser, and without body parsing as Express 5 leaves them), in both eras and both session modes: `415` for a missing or non-JSON `Content-Type`, `400` Parse error for a JSON POST with no body, `500` only for a JSON body the app didn't parse, all after the `403` `Host`/`Origin` and `401` bearer checks; `npm run smoke:nest11` checks the same on Nest 11 and Express 5
 - stdio transport wiring and its stderr logging
 - registry discovery and execution, including which error messages reach the client
@@ -1751,10 +1751,15 @@ The MCP spec requires Streamable HTTP servers to validate the `Origin` header, a
 
 The module checks every request, before authentication:
 
-- **`Origin`.** A request without `Origin` is allowed; non-browser MCP clients (Claude Desktop, Claude Code, curl) don't send it. With `allowedOrigins` set, the origin must be in the list (`'*'` allows any). Without it, only the server's own origin is allowed: the origin's host (and port) must match the request's, taken from `X-Forwarded-Host` when a proxy sets it, else `Host`.
+- **`Origin`.** A request without `Origin` is allowed; non-browser MCP clients (Claude Desktop, Claude Code, curl) don't send it. With `allowedOrigins` set, the origin must be in the list (`'*'` allows any). Without it, only the server's own origin is allowed: the origin's host (and port) must match the request's, taken from `X-Forwarded-Host` when a proxy sets it, else `Host`. With `trustForwardedHosts: false` it is taken from `Host` only.
 - **`Host`.** With `allowedHosts` set, the `Host` header must match an entry, and forwarding headers change nothing: it is the `Host` the server receives that is checked. Without it, a request that arrives on a loopback address (`127.0.0.1`, `::1`) must name `localhost`, `127.0.0.1` or `[::1]` (on any port), unless it carries `X-Forwarded-For`, `X-Forwarded-Host` or `Forwarded` and `trustForwardedHosts` is `true`, the default. Other requests aren't checked.
 
-`allowedHosts` entries compare case-insensitively. An entry without a port (`'mcp.example.com'`, `'localhost'`, `'[::1]'`) matches that host on any port, so a server on an ephemeral port can list its loopback names; an entry with a port (`'localhost:3000'`) matches only that port. A `Host` that isn't a plain `host[:port]` (with userinfo, a path, a trailing dot, an empty or out-of-range port) only matches an entry written exactly the same way.
+`allowedHosts` entries compare case-insensitively. An entry without a port (`'mcp.example.com'`, `'localhost'`, `'[::1]'`) matches that host on any port, so a server on an ephemeral port can list its loopback names; an entry with a port (`'localhost:3000'`) matches only that port.
+
+How strictly `Host` is read depends on the path:
+
+- **Strict: `allowedHosts`, and the loopback check with `trustForwardedHosts: false`.** `Host` must be a plain `host[:port]`: a host name or a bracketed IPv6 literal, and a port from 1 to 65535. A value with userinfo (`user@localhost`), a path (`localhost/x`), a trailing dot, an empty, zero or out-of-range port, or an IPv4 shorthand (`127.1`) never counts as a loopback host, and only matches an `allowedHosts` entry that is the identical string (compared case-insensitively, as in earlier releases).
+- **Lenient: the default loopback check.** For compatibility with earlier releases it reads `Host` as a URL authority, so `user@localhost`, `localhost/x`, `localhost:`, `localhost:0`, `127.1` and `0x7f000001` all count as loopback. A browser never sends such a `Host`, so a rebound page can't use this. The strict reading becomes the default in the next major release, with the `trustForwardedHosts` flip below.
 
 A rebound page sends a matching `Origin` (it is same-origin), so the `Host` check is what stops it: the page's requests name the attacker's host name.
 
@@ -1764,7 +1769,17 @@ A local reverse proxy (nginx, Caddy) passes on the public host name, so without 
 
 That exemption is a hole: a rebound page is same-origin with the server, so it can add those headers itself, without a CORS preflight, and get past the check. `trustForwardedHosts: false` closes it: a loopback request must then name a loopback host whatever headers it carries. `allowedHosts` closes it too, since forwarding headers never exempt a request from that list.
 
+`trustForwardedHosts: false` affects two checks, and nothing else (the URLs the module derives for OAuth metadata still follow `X-Forwarded-Host` and `X-Forwarded-Proto`):
+
+- the loopback `Host` check (used when `allowedHosts` isn't set): forwarding headers exempt nothing, and `Host` is read strictly;
+- the same-origin `Origin` check (used when `allowedOrigins` isn't set): the request's host is taken from `Host` only, never from `X-Forwarded-Host`.
+
 `trustForwardedHosts` defaults to `true` so that existing proxy setups keep working. While the default is in effect, the first request that gets in only because of a forwarding header logs a warning; setting `trustForwardedHosts` or `allowedHosts` silences it. **The default becomes `false` in the next major release.**
+
+### Behavior changes in this release
+
+- **`allowedHosts` entries without a port now match any port.** Before, `allowedHosts: ['localhost']` matched only a `Host` of exactly `localhost` (port 80); it now matches `localhost:3000` and every other port too. Entries with a port behave as before, and every `Host` accepted before is still accepted. This doesn't weaken rebinding protection: a rebound page's requests name the attacker's host name, which still matches no entry. To keep a single port, write it in the entry (`'localhost:3000'`).
+- **New option `trustForwardedHosts`.** Leaving it unset changes nothing except the warning above.
 
 ### Recommended setup
 
@@ -1934,17 +1949,17 @@ For production, implement `EventStore` with a persistent backend (Redis, databas
 
 Additional transport options:
 
-| Option                | Default                                            | Description                                                                                                                                    |
-| --------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session`             | `undefined`                                        | Omit for stateless mode. Configure to enable stateful MCP sessions                                                                             |
-| `session.ttlMinutes`  | `30`                                               | Idle timeout for stateful sessions                                                                                                             |
-| `session.idGenerator` | `crypto.randomUUID()`                              | Custom stateful session ID generator                                                                                                           |
-| `session.eventStore`  | `undefined`                                        | Event store for SSE resumability                                                                                                               |
-| `session.principal`   | `clientId` + `extra.sub`                           | Who owns a session; see [Transport-level authentication](#transport-level-authentication)                                                      |
-| `enableJsonResponse`  | `false`                                            | Return one JSON body instead of an SSE stream                                                                                                  |
-| `allowedOrigins`      | same origin only                                   | See [DNS rebinding protection](#dns-rebinding-protection)                                                                                      |
-| `allowedHosts`        | loopback names on a loopback socket                | Entries without a port match any port. See [DNS rebinding protection](#dns-rebinding-protection)                                               |
-| `trustForwardedHosts` | `true` (with a warning); `false` in the next major | Whether forwarding headers exempt a loopback request from the loopback `Host` check. See [DNS rebinding protection](#dns-rebinding-protection) |
+| Option                | Default                                            | Description                                                                                                                                                                                                                                |
+| --------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `session`             | `undefined`                                        | Omit for stateless mode. Configure to enable stateful MCP sessions                                                                                                                                                                         |
+| `session.ttlMinutes`  | `30`                                               | Idle timeout for stateful sessions                                                                                                                                                                                                         |
+| `session.idGenerator` | `crypto.randomUUID()`                              | Custom stateful session ID generator                                                                                                                                                                                                       |
+| `session.eventStore`  | `undefined`                                        | Event store for SSE resumability                                                                                                                                                                                                           |
+| `session.principal`   | `clientId` + `extra.sub`                           | Who owns a session; see [Transport-level authentication](#transport-level-authentication)                                                                                                                                                  |
+| `enableJsonResponse`  | `false`                                            | Return one JSON body instead of an SSE stream                                                                                                                                                                                              |
+| `allowedOrigins`      | same origin only                                   | See [DNS rebinding protection](#dns-rebinding-protection)                                                                                                                                                                                  |
+| `allowedHosts`        | loopback names on a loopback socket                | Entries without a port match any port. See [DNS rebinding protection](#dns-rebinding-protection)                                                                                                                                           |
+| `trustForwardedHosts` | `true` (with a warning); `false` in the next major | Whether forwarding headers exempt a loopback request from the loopback `Host` check; `false` also reads `Host` strictly and ignores `X-Forwarded-Host` in the same-origin check. See [DNS rebinding protection](#dns-rebinding-protection) |
 
 ### Stdio (`McpStdioModule`)
 

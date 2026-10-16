@@ -89,8 +89,12 @@ export interface McpModuleConfig
   /**
    * Whether a request that arrives on a loopback address carrying `X-Forwarded-For`,
    * `X-Forwarded-Host` or `Forwarded` is exempt from the loopback `Host` check (meant for a
-   * local reverse proxy forwarding a public host name). Only applies when `allowedHosts` is
-   * not set.
+   * local reverse proxy forwarding a public host name). The exemption only applies when
+   * `allowedHosts` is not set; forwarding headers never exempt a request from that list.
+   *
+   * `false` also makes the loopback check parse `Host` strictly, as `allowedHosts` does
+   * (the default reads it as a URL authority, for compatibility), and makes the same-origin
+   * `Origin` check (without `allowedOrigins`) compare with `Host` only, not `X-Forwarded-Host`.
    *
    * Default: `true`, which keeps earlier releases' behavior, but a DNS-rebound page is
    * same-origin with the server and can add those headers itself, so it also lets such a page

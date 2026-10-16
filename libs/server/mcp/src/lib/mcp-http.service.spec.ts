@@ -685,6 +685,26 @@ describe('McpHttpService', () => {
       expect(mockTransportHandleRequest).toHaveBeenCalled();
     });
 
+    it('should log the Host in the forwarded-host warning without control characters, truncated', async () => {
+      const warn = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => undefined);
+      const req = mockReq({
+        headers: {
+          host: `evil\r\n\u0007${'a'.repeat(300)}`,
+          'x-forwarded-for': '203.0.113.9',
+        },
+      });
+      req.socket = loopback;
+
+      await service.handleRequest(req, mockRes());
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      const message = warn.mock.calls[0][0] as string;
+      expect(message).toContain(`Host "evil${'a'.repeat(96)}..."`);
+      expect(message).not.toMatch(/[\u0000-\u001f]/);
+    });
+
     it('should only accept listed hosts when allowedHosts is set', async () => {
       const hostService = new McpHttpService(
         { ...config, allowedHosts: ['mcp.example.com'] } as any,
