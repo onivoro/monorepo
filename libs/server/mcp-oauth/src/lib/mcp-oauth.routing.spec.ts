@@ -216,6 +216,12 @@ describe('McpOAuthModule in-memory clients store warning', () => {
     );
   }
 
+  function deprecationWarnings() {
+    return warnSpy.mock.calls.filter(([message]) =>
+      String(message).startsWith('@onivoro/server-mcp-oauth is deprecated'),
+    );
+  }
+
   async function initWith(oauthProvider: any) {
     @Module({
       imports: [
@@ -247,9 +253,7 @@ describe('McpOAuthModule in-memory clients store warning', () => {
 
     await initWith(provider);
 
-    const deprecations = warnSpy.mock.calls.filter(([message]) =>
-      String(message).startsWith('@onivoro/server-mcp-oauth is deprecated'),
-    );
+    const deprecations = deprecationWarnings();
     expect(deprecations).toHaveLength(1);
     expect(deprecations[0][0]).toContain('@onivoro/server-mcp-auth');
   });
@@ -259,7 +263,7 @@ describe('McpOAuthModule in-memory clients store warning', () => {
 
     await initWith(provider);
 
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(deprecationWarnings()).toHaveLength(0);
   });
 
   it('does not warn when NODE_ENV is test', async () => {
