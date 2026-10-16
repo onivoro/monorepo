@@ -1706,7 +1706,14 @@ The package test suite covers:
 - Streamable HTTP session lifecycle, stale-session recovery, and session ownership
 - stateless HTTP: `405` for `GET`/`DELETE`, ignored session headers, and the capabilities it advertises
 - `Origin` and `Host` validation
-- end to end over HTTP, the `Host` check on a loopback server, stateless and stateful: by default a request for another host is refused with `403`, but let through (and a tool runs) when it carries `X-Forwarded-For`, which logs one warning; `trustForwardedHosts: true` lets it through without the warning; `trustForwardedHosts: false` refuses it with `X-Forwarded-For`, `X-Forwarded-Host` or `Forwarded` and accepts `localhost`, `127.0.0.1` and `[::1]` on any port; `allowedHosts` entries without a port match any port and case-insensitively, entries with one match only that port, forwarding headers exempt nothing, and a trailing dot, userinfo, a path, a suffix or prefix, a doubled, empty, zero, non-numeric or out-of-range port, and a malformed IPv6 literal are refused; the default loopback check still reads `user@localhost`, `localhost/x`, `localhost:`, `localhost:0`, `127.1` and `0x7f000001` as loopback, while `trustForwardedHosts: false` refuses them; the same-origin `Origin` check follows `X-Forwarded-Host` by default and ignores it with `trustForwardedHosts: false`; and the warning logs at most 100 characters of the `Host`, without control characters
+- end to end over HTTP, the `Host` check on a loopback server, stateless and stateful:
+  - by default, a request for another host is refused with `403`, but let through (and a tool runs) when it carries `X-Forwarded-For`, which logs one warning
+  - `trustForwardedHosts: true` lets it through without the warning
+  - `trustForwardedHosts: false` refuses it with `X-Forwarded-For`, `X-Forwarded-Host` or `Forwarded`, and accepts `localhost`, `127.0.0.1` and `[::1]` on any port
+  - `allowedHosts` entries without a port match any port, case-insensitively; entries with one match only that port; forwarding headers exempt nothing; and a trailing dot, userinfo, a path, a suffix or prefix, a doubled, empty, zero, non-numeric or out-of-range port, and a malformed IPv6 literal are refused
+  - the default loopback check still reads `user@localhost`, `localhost/x`, `localhost:`, `localhost:0`, `127.1` and `0x7f000001` as loopback, while `trustForwardedHosts: false` refuses them
+  - the same-origin `Origin` check follows `X-Forwarded-Host` by default and ignores it with `trustForwardedHosts: false`
+  - the warning logs at most 100 characters of the `Host`, without control characters
 - end to end over HTTP, POSTs whose body went unparsed (with Express 4's parser, and without body parsing as Express 5 leaves them), in both eras and both session modes: `415` for a missing or non-JSON `Content-Type`, `400` Parse error for a JSON POST with no body, `500` only for a JSON body the app didn't parse, all after the `403` `Host`/`Origin` and `401` bearer checks; `npm run smoke:nest11` checks the same on Nest 11 and Express 5
 - stdio transport wiring and its stderr logging
 - registry discovery and execution, including which error messages reach the client
@@ -1776,10 +1783,7 @@ That exemption is a hole: a rebound page is same-origin with the server, so it c
 
 `trustForwardedHosts` defaults to `true` so that existing proxy setups keep working. While the default is in effect, the first request that gets in only because of a forwarding header logs a warning; setting `trustForwardedHosts` or `allowedHosts` silences it. **The default becomes `false` in the next major release.**
 
-### Behavior changes in this release
-
-- **`allowedHosts` entries without a port now match any port.** Before, `allowedHosts: ['localhost']` matched only a `Host` of exactly `localhost` (port 80); it now matches `localhost:3000` and every other port too. Entries with a port behave as before, and every `Host` accepted before is still accepted. This doesn't weaken rebinding protection: a rebound page's requests name the attacker's host name, which still matches no entry. To keep a single port, write it in the entry (`'localhost:3000'`).
-- **New option `trustForwardedHosts`.** Leaving it unset changes nothing except the warning above.
+`allowedHosts` entries without a port match any port, and `trustForwardedHosts` is new; [UPGRADING.md](./UPGRADING.md#forwarding-headers-and-allowedhosts-ports) lists what that changes for an existing server.
 
 ### Recommended setup
 

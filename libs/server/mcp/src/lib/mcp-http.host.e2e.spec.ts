@@ -219,7 +219,9 @@ describe('McpHttpModule Host check over HTTP', () => {
         const longHost = `${'a'.repeat(60)}.${'b'.repeat(60)}.example.com`;
         await post(port, longHost, era, { 'X-Forwarded-For': '203.0.113.9' });
 
-        const [[message]] = forwardedHostWarnings();
+        const warnings = forwardedHostWarnings();
+        expect(warnings).toHaveLength(1);
+        const [[message]] = warnings;
         expect(message).toContain(`Host "${longHost.slice(0, 100)}..."`);
         expect(message).not.toContain(longHost);
       });
