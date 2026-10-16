@@ -104,15 +104,16 @@ Every library's `package.json` is copied into `dist/` by the build, so it is wha
   }
   ```
 
-  `.` is the package entry, with `types` first for TypeScript's `node16`, `nodenext` and `bundler` resolution. Any explicit subpath a package declares stays, such as `@onivoro/server-aws-observability/bootstrap`. `./*.js` and `./*` keep deep imports resolving, with or without the `.js` extension (`@onivoro/server-common/src/lib/functions/configure-api-app.function`), and TypeScript finds the `.d.ts` beside each `.js`. Only directory imports such as `@onivoro/x/src/lib`, and requests for files other than `.js` and `package.json`, no longer resolve. `main` and `types` stay for TypeScript's legacy `node` resolution and older bundlers.
+  `.` is the package entry, with `types` first for TypeScript's `node16`, `nodenext` and `bundler` resolution. Every other subpath a package declares stays as written, wildcards included, such as `@onivoro/server-aws-observability/bootstrap`, and so do any extra conditions on `.` (`import`, `node` and so on). `./*.js` and `./*` keep deep imports resolving, with or without the `.js` extension (`@onivoro/server-common/src/lib/functions/configure-api-app.function`), and TypeScript finds the `.d.ts` beside each `.js`. Only directory imports such as `@onivoro/x/src/lib`, and requests for files other than `.js` and `package.json`, no longer resolve. `main` and `types` stay for TypeScript's legacy `node` resolution and older bundlers.
 
 ```bash
 npm run manifests:check                   # check every libs/*/*/package.json
-npm run manifests:fix                     # write the standard fields, keeping any explicit subpaths
+npm run manifests:fix                     # write the standard fields, keeping every declared subpath and condition
+npm run manifests:test                    # the script's own tests (node --test)
 node tools/package-manifests.js --dist    # after a build: check dist/libs, and that each explicit export target exists
 ```
 
-`release:build` runs the `--dist` check after building.
+`manifests:fix` never drops or rewrites what a package declares. If a package's `.` entry has `types` or `default` that differ from its `types` and `main`, or it maps `./package.json`, `./*.js` or `./*` to something else, the script leaves that file unchanged, names the conflict and exits non-zero, so you can resolve it by hand. `release:build` runs the `--dist` check after building. That check walks nested conditions and fallback arrays, and reports any target that isn't a path.
 
 ## Checks
 

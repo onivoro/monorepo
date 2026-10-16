@@ -55,7 +55,7 @@ jobs:
 
       # Every published package.json declares the standard exports map and engines (tools/package-manifests.js)
       - name: Package manifests
-        run: npm run manifests:check
+        run: npm run manifests:test && npm run manifests:check
 
       - name: Test
         run: npx nx run-many -t test --passWithNoTests --skip-nx-cache
