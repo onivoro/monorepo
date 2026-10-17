@@ -59,6 +59,12 @@ export { McpPromptMetadata } from './lib/mcp-prompt-metadata';
 export { McpAuthInfo } from './lib/mcp-auth-info';
 export { McpAuthStrategy } from './lib/mcp-auth-strategy';
 export {
+  McpListenStream,
+  McpListenStreamGate,
+  McpListenStreamRefusal,
+  MCP_LISTEN_STREAM_REFUSED,
+} from './lib/mcp-listen-stream';
+export {
   markMcpAuthInfoResolved,
   isMcpAuthInfoResolved,
 } from './lib/mcp-resolved-auth-info';

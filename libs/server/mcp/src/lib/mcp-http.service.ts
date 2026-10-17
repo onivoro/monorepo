@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import {
   bearerAuthChallengeResponse,
   createMcpHandler,
+  isSpecType,
   OAuthError,
   isJsonContentType,
   isLegacyRequest,
@@ -10,7 +11,9 @@ import {
 } from '@modelcontextprotocol/server';
 import type {
   AuthInfo,
+  McpHandlerRequestOptions,
   McpHttpHandler,
+  McpRequestContext,
   OAuthTokenVerifier,
 } from '@modelcontextprotocol/server';
 import {
@@ -26,10 +29,17 @@ import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpAuthInfo } from './mcp-auth-info';
 import {
   buildMcpServer,
+  mcpServerIdentity,
   warnAboutIgnoredCapabilities,
 } from './build-mcp-server';
 import { wireRegistryToServer } from './wire-registry-to-server';
 import { normalizeMcpHttpRoute, normalizePath } from './mcp-http-route';
+import {
+  MCP_LISTEN_STREAM_REFUSED,
+  type McpListenStream,
+  type McpListenStreamGate,
+} from './mcp-listen-stream';
+import { listenRequestId, TrackedListenStream } from './tracked-listen-stream';
 
 interface SessionEntry {
   server: McpServer;
@@ -116,6 +126,15 @@ export class McpHttpService implements OnModuleDestroy {
     parsedBody?: unknown,
   ) => Promise<void>;
   private readonly unsubscribeModern: () => void;
+  /** 2026-07-28 `subscriptions/listen` streams, open or opening. */
+  private readonly listenStreams = new Set<TrackedListenStream>();
+  /** Listen requests on their way through the SDK to the server factory, by request. */
+  private readonly openingListenStreams = new WeakMap<
+    Request,
+    TrackedListenStream
+  >();
+  private listenStreamGate?: McpListenStreamGate;
+  private shuttingDown = false;
 
   constructor(
     @Inject(MCP_MODULE_CONFIG) private readonly config: McpModuleConfig,
@@ -135,15 +154,24 @@ export class McpHttpService implements OnModuleDestroy {
       toolFilter: config.toolFilter,
     });
 
-    const onerror = (error: unknown) =>
+    const onerror = (error: unknown) => {
+      // A refused listen request: serveModern answers it.
+      if (error instanceof ListenStreamRefused) return;
       this.logger.error('MCP request handling error:', error);
-    this.modern = createMcpHandler(() => this.createModernServer(), {
+    };
+    // The SDK calls the factory once it has checked the request's protocol revision, standard
+    // headers and required client capabilities, so a listen request meets the gate there.
+    this.modern = createMcpHandler((ctx) => this.createModernServerFor(ctx), {
       // Legacy clients are classified first and served by the session logic below.
       legacy: 'reject',
       responseMode: this.jsonResponse ? 'json' : 'auto',
       onerror,
     });
-    this.modernNode = toNodeHandler(this.modern, { onerror });
+    // Listen requests pass through serveModern, which tracks their streams so they can be closed.
+    this.modernNode = toNodeHandler(
+      { fetch: (request, options) => this.serveModern(request, options) },
+      { onerror },
+    );
     this.unsubscribeModern = this.notifyModernClientsOfChanges();
   }
 
@@ -177,6 +205,30 @@ export class McpHttpService implements OnModuleDestroy {
   }
 
   /**
+   * The SDK's server factory. For a tracked listen request, the gate is consulted first, and a
+   * refused (or abandoned) one gets no server: `ListenStreamRefused` ends the SDK's handling,
+   * and serveModern answers it.
+   */
+  private async createModernServerFor(
+    ctx: McpRequestContext,
+  ): Promise<McpServer> {
+    const stream = ctx.requestInfo
+      ? this.openingListenStreams.get(ctx.requestInfo)
+      : undefined;
+    if (stream) {
+      const refusal = await this.admitListenStream(
+        stream,
+        ctx.requestInfo!.signal,
+      );
+      if (refusal) {
+        stream.refusal = refusal;
+        throw new ListenStreamRefused();
+      }
+    }
+    return this.createModernServer();
+  }
+
+  /**
    * A server for one 2026-07-28 request. It needs no registry subscriptions: it sees the
    * registry as it is now, and change notifications go through the handler.
    */
@@ -191,6 +243,174 @@ export class McpHttpService implements OnModuleDestroy {
       followRegistry: false,
     });
     return server;
+  }
+
+  /**
+   * The 2026-07-28 `subscriptions/listen` streams open on this instance, and those still
+   * opening (their request has arrived, but the stream isn't open yet), across every caller.
+   */
+  getListenStreams(): McpListenStream[] {
+    return [...this.listenStreams].map((stream) => stream.info);
+  }
+
+  /**
+   * Closes the 2026-07-28 `subscriptions/listen` streams `predicate` picks (all of them when it
+   * is omitted), on this instance, and returns how many it picked. Use it when a caller's
+   * credentials are revoked, so nothing more is sent to them: pick by `authInfo`.
+   *
+   * Each stream closes gracefully: after its acknowledgement, the listen request's result,
+   * which the client reads as the server ending the subscription, then the end of the
+   * response. Nothing more is written to it. A stream still opening is refused instead (or, if
+   * the SDK has already accepted it, closed right after its acknowledgement).
+   *
+   * It closes streams; it doesn't stop the client opening new ones. Refuse those with the
+   * auth strategy's token check or `acceptListenStream`. On several instances, call it on
+   * each (say, from a pub/sub message). 2025-era clients don't use listen streams; their
+   * stateful sessions are untouched.
+   */
+  closeListenStreams(predicate?: (stream: McpListenStream) => boolean): number {
+    let picked = 0;
+    for (const stream of [...this.listenStreams]) {
+      if (predicate && !predicate(stream.info)) continue;
+      picked++;
+      stream.close();
+    }
+    return picked;
+  }
+
+  /**
+   * Sets (or, with `undefined`, removes) the gate consulted before each 2026-07-28
+   * `subscriptions/listen` stream opens. `McpHttpModule` sets it to the auth strategy's
+   * `acceptListenStream`, when it has one. See `McpAuthStrategy.acceptListenStream`.
+   */
+  setListenStreamGate(gate: McpListenStreamGate | undefined): void {
+    this.listenStreamGate = gate;
+  }
+
+  /**
+   * Serves a 2026-07-28 request. A `subscriptions/listen` request whose filter is well formed
+   * is tracked from now until its response ends, meets the gate in the server factory, and
+   * has its stream passed through a `TrackedListenStream`, which can close it. Any other
+   * request (a malformed listen request included, which the SDK refuses) goes to the SDK as
+   * it came.
+   */
+  private async serveModern(
+    request: Request,
+    options?: McpHandlerRequestOptions,
+  ): Promise<Response> {
+    const subscriptionId = listenRequestId(options?.parsedBody);
+    if (
+      subscriptionId === undefined ||
+      !isSpecType.SubscriptionFilter(
+        (options?.parsedBody as { params?: { notifications?: unknown } }).params
+          ?.notifications,
+      )
+    ) {
+      return this.modern.fetch(request, options);
+    }
+    if (this.shuttingDown) {
+      return listenStreamRefusal(subscriptionId, 'closed');
+    }
+
+    const stream = new TrackedListenStream(
+      subscriptionId,
+      options?.authInfo as McpAuthInfo | undefined,
+      mcpServerIdentity(this.config),
+      (finished) => this.listenStreams.delete(finished),
+    );
+    this.listenStreams.add(stream);
+    this.openingListenStreams.set(request, stream);
+    let response: Response;
+    try {
+      response = await this.modern.fetch(request, options);
+    } catch (error) {
+      // The handler closed (shutdown) before the request reached the factory.
+      stream.abandon();
+      if (this.shuttingDown)
+        return listenStreamRefusal(subscriptionId, 'closed');
+      throw error;
+    } finally {
+      this.openingListenStreams.delete(request);
+    }
+
+    if (stream.refusal) {
+      stream.abandon();
+      return listenStreamRefusal(subscriptionId, stream.refusal);
+    }
+    const eventStream =
+      response.status === 200 &&
+      /^text\/event-stream/i.test(response.headers.get('content-type') ?? '');
+    if (!eventStream) {
+      stream.abandon();
+      return response;
+    }
+    return stream.wrap(response);
+  }
+
+  /**
+   * Whether a listen stream may open: `undefined` if so, else the reason it may not. The gate
+   * is raced against its timeout, the client going away and a close asked for meanwhile; a
+   * close asked for at any point before this returns refuses it.
+   */
+  private async admitListenStream(
+    stream: TrackedListenStream,
+    signal: AbortSignal,
+  ): Promise<string | undefined> {
+    const gate = this.listenStreamGate;
+    let refusal: string | undefined;
+    if (gate) {
+      const timeoutMs = this.config.listenStreamGateTimeoutMs ?? 10_000;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let onAbort: (() => void) | undefined;
+      const answers: Promise<string | undefined>[] = [
+        (async () => {
+          try {
+            const answer = await gate(stream.info);
+            if (answer === true) return undefined;
+            if (answer && typeof answer === 'object') {
+              return String(answer.reason);
+            }
+            return 'refused';
+          } catch (error) {
+            this.logger.warn(
+              `The listen-stream gate failed, so a subscriptions/listen stream was refused: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            return 'gate_failed';
+          }
+        })(),
+        stream.whenCloseRequested.then(() => 'closed'),
+        new Promise<string>((resolve) => {
+          onAbort = () => resolve('client_gone');
+          if (signal.aborted) onAbort();
+          else signal.addEventListener('abort', onAbort, { once: true });
+        }),
+      ];
+      if (timeoutMs > 0) {
+        answers.push(
+          new Promise<string>((resolve) => {
+            timer = setTimeout(() => {
+              this.logger.warn(
+                `The listen-stream gate didn't answer within ${timeoutMs}ms, so a subscriptions/listen stream was refused`,
+              );
+              resolve('gate_timeout');
+            }, timeoutMs);
+            timer.unref?.();
+          }),
+        );
+      }
+      try {
+        refusal = await Promise.race(answers);
+      } finally {
+        if (timer) clearTimeout(timer);
+        if (onAbort) signal.removeEventListener('abort', onAbort);
+      }
+    }
+    if (refusal) return refusal;
+    if (signal.aborted) return 'client_gone';
+    if (stream.closeRequested) return 'closed';
+    return undefined;
   }
 
   setBearerAuthVerifier(
@@ -924,6 +1144,10 @@ export class McpHttpService implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    // First, so that listen streams still opening are refused or closed rather than opened
+    // after the handler has closed the ones it knows.
+    this.shuttingDown = true;
+    this.closeListenStreams();
     clearInterval(this.sweepInterval);
     this.unsubscribeModern();
     try {
@@ -937,4 +1161,27 @@ export class McpHttpService implements OnModuleDestroy {
     this.sessions.clear();
     this.logger.log('All MCP sessions closed');
   }
+}
+
+/** Thrown from the server factory for a refused listen request; serveModern answers it. */
+class ListenStreamRefused extends Error {
+  constructor() {
+    super('subscriptions/listen refused');
+  }
+}
+
+/** The in-band refusal of a listen request: HTTP 200 and a JSON-RPC error, as the SDK's are. */
+function listenStreamRefusal(id: string | number, reason: string): Response {
+  return Response.json(
+    {
+      jsonrpc: '2.0',
+      id,
+      error: {
+        code: MCP_LISTEN_STREAM_REFUSED,
+        message: 'Listen stream refused',
+        data: { reason },
+      },
+    },
+    { status: 200 },
+  );
 }

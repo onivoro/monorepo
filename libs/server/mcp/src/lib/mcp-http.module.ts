@@ -24,6 +24,7 @@ import { McpScopeGuard } from './mcp-scope-guard';
 import { discoverAndRegisterMcpEntities } from './mcp-discovery';
 import { applyExposeErrorMessages } from './apply-expose-error-messages';
 import type { OAuthTokenVerifier } from '@modelcontextprotocol/server';
+import type { McpAuthStrategy } from './mcp-auth-strategy';
 import { normalizeMcpHttpRoute } from './mcp-http-route';
 
 function createMcpController(configuredRoute?: string) {
@@ -189,6 +190,12 @@ export class McpHttpModule implements OnModuleInit {
         });
       }
       this.registry.setAuthStrategy(provider);
+      const strategy = provider as McpAuthStrategy;
+      if (typeof strategy.acceptListenStream === 'function') {
+        this.httpService.setListenStreamGate((stream) =>
+          strategy.acceptListenStream!(stream),
+        );
+      }
     }
   }
 

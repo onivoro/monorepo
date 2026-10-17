@@ -8,6 +8,25 @@ import type { McpServerBaseConfig } from './mcp-server-base-config';
 import type { McpToolRegistry } from './mcp-tool-registry';
 
 /**
+ * The server's identity (`serverInfo`) as a config describes it: what the `McpServer` is built
+ * with, and so what the SDK reports in `server/discover`, `initialize` and a listen stream's
+ * result. Anything else that reports the identity uses this, so they can't drift apart.
+ */
+export function mcpServerIdentity(config: McpServerBaseConfig): {
+  name: string;
+  version: string;
+  description?: string;
+} {
+  return {
+    name: config.metadata.name,
+    version: config.metadata.version,
+    ...(config.metadata.description && {
+      description: config.metadata.description,
+    }),
+  };
+}
+
+/**
  * Builds an `McpServer` from a module config: its metadata, `serverOptions`, and the
  * capabilities built from the registry plus the config's own.
  */
@@ -16,25 +35,16 @@ export function buildMcpServer(
   registry: McpToolRegistry,
   capabilityOptions?: { logging?: boolean; notifications?: boolean },
 ): McpServer {
-  return new McpServer(
-    {
-      name: config.metadata.name,
-      version: config.metadata.version,
-      ...(config.metadata.description && {
-        description: config.metadata.description,
-      }),
-    },
-    {
-      ...config.serverOptions,
-      capabilities: buildCapabilities(registry, {
-        ...capabilityOptions,
-        extra: config.capabilities,
-      }),
-      ...(config.metadata.instructions && {
-        instructions: config.metadata.instructions,
-      }),
-    },
-  );
+  return new McpServer(mcpServerIdentity(config), {
+    ...config.serverOptions,
+    capabilities: buildCapabilities(registry, {
+      ...capabilityOptions,
+      extra: config.capabilities,
+    }),
+    ...(config.metadata.instructions && {
+      instructions: config.metadata.instructions,
+    }),
+  });
 }
 
 /** Warns, once at startup, about configured capabilities the module ignores. */
