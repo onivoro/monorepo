@@ -118,6 +118,13 @@ export interface McpModuleConfig
    */
   enableJsonResponse?: boolean;
   /**
+   * How long the listen-stream gate (`McpAuthStrategy.acceptListenStream`, or
+   * `McpHttpService.setListenStreamGate`) has to answer, in milliseconds, before the
+   * `subscriptions/listen` stream is refused (reason `'gate_timeout'`). `0` waits for as long
+   * as it takes. Default: 10000.
+   */
+  listenStreamGateTimeoutMs?: number;
+  /**
    * Optional auth strategy class that runs before guards on every tool execution.
    * Must implement `McpAuthStrategy` and be an `@Injectable()` NestJS service.
    * The module resolves it through DI, so it can inject other services
