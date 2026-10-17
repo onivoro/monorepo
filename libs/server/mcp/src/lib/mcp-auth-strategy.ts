@@ -1,4 +1,5 @@
 import type { McpAuthInfo } from './mcp-auth-info';
+import type { McpListenStream } from './mcp-listen-stream';
 
 /**
  * Auth strategy interface that runs before guards on every tool execution.
@@ -9,5 +10,20 @@ import type { McpAuthInfo } from './mcp-auth-info';
  * - Return `undefined` to strip auth (anonymous access).
  */
 export interface McpAuthStrategy {
-  resolveAuth(authInfo: McpAuthInfo | undefined): McpAuthInfo | undefined | Promise<McpAuthInfo | undefined>;
+  resolveAuth(
+    authInfo: McpAuthInfo | undefined,
+  ): McpAuthInfo | undefined | Promise<McpAuthInfo | undefined>;
+
+  /**
+   * Optional, HTTP only. Consulted before each 2026-07-28 `subscriptions/listen` stream opens,
+   * after the stream is tracked, so a `McpHttpService.closeListenStreams()` call made while
+   * this runs (or after) still reaches it. Return `false` (or throw) to refuse the stream: the
+   * client gets a JSON-RPC error instead. `McpHttpModule` installs it as the service's
+   * listen-stream gate (`McpHttpService.setListenStreamGate`).
+   *
+   * Use it when credentials can be revoked while a stream is open: check here that the
+   * caller's session is still live, and close its streams with `closeListenStreams()` when it
+   * ends.
+   */
+  acceptListenStream?(stream: McpListenStream): boolean | Promise<boolean>;
 }

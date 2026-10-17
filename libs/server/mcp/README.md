@@ -624,6 +624,57 @@ How clients subscribe depends on their protocol era, and `notifyResourceUpdated(
 - **2025-era clients** send `resources/subscribe` and `resources/unsubscribe`, which the library handles, tracking subscribers by session ID (see `getResourceSubscribers(uri)`). Subscriptions are only tracked when the request carries a session ID — i.e. HTTP with `session` configured — and are cleaned up when those sessions close. The update goes only to clients that subscribed to that URI on their connection (this includes stdio clients, which have no session ID). Stateless HTTP has nowhere to send it.
 - **2026-07-28 clients** open a `subscriptions/listen` stream whose filter names the URIs (and list changes) they want; the SDK serves it. The update goes to every open stream whose filter names the URI, on HTTP (stateless or not) and stdio.
 
+### Closing listen streams
+
+A 2026-07-28 client keeps its `subscriptions/listen` stream open for as long as it wants to hear about changes, and the bearer token is only checked when the stream opens. When a caller's credentials are revoked (a session ended, a user deactivated), close its streams so nothing more is sent to it, and refuse new ones. Over HTTP, `McpHttpService` (exported by `McpHttpModule`) tracks every listen stream on the instance:
+
+| Method                                   | Does                                                                                                                                           |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getListenStreams(): McpListenStream[]`  | The listen streams open on this instance, and those still opening.                                                                             |
+| `closeListenStreams(predicate?): number` | Closes the streams `predicate` picks (all of them without one), and returns how many it picked.                                                |
+| `setListenStreamGate(gate \| undefined)` | Sets the gate consulted before each listen stream opens. `McpHttpModule` sets it to the auth strategy's `acceptListenStream`, when it has one. |
+
+An `McpListenStream` is `{ subscriptionId, authInfo?, openedAt }`: the listen request's JSON-RPC id, the auth the request carried (with `requireBearerAuth`, what the verifier returned, as `req.auth` holds it, not resolved by the strategy), and when it arrived.
+
+```typescript
+@Injectable()
+export class SessionAuth implements McpAuthStrategy, OAuthTokenVerifier {
+  constructor(private readonly sessions: SessionStore) {}
+
+  async verifyAccessToken(token: string): Promise<AuthInfo> {
+    if (!(await this.sessions.isOpen(token))) {
+      throw new OAuthError(OAuthErrorCode.InvalidToken, 'Session ended');
+    }
+    return { token, clientId: token, scopes: ['agent'] };
+  }
+
+  resolveAuth(authInfo: McpAuthInfo | undefined) {
+    return authInfo;
+  }
+
+  // Runs after the stream is tracked, so a session that ends while this runs, or after, is
+  // still caught by closeListenStreams below.
+  acceptListenStream(stream: McpListenStream) {
+    return this.sessions.isOpen(stream.authInfo?.token ?? '');
+  }
+}
+
+@Injectable()
+export class SessionEnded {
+  constructor(private readonly mcp: McpHttpService) {}
+
+  onSessionEnded(token: string) {
+    this.mcp.closeListenStreams((stream) => stream.authInfo?.token === token);
+  }
+}
+```
+
+- A closed stream ends gracefully, as on shutdown: after its acknowledgement, the listen request's result (the SDK client's `subscription.closed` resolves `'graceful'`), then the end of the response. Nothing more is written to it, and the SDK's side stops listening for changes.
+- A stream still opening is refused instead, with the JSON-RPC error `-32600 Listen stream refused`, or, if the SDK has already accepted it, closed right after its acknowledgement. So is a stream the gate refuses (or whose gate throws, which is logged).
+- To check before each change instead of on an event (say, for sessions that can end where this process can't see), list the streams, check their callers in one query, and close the ended ones before `notifyResourceUpdated`.
+- It works per instance. With several, call it on each, say from a pub/sub message.
+- Only 2026-07-28 listen streams are tracked. 2025-era clients don't open them; on a stateful server their sessions are unaffected. Stdio has a single client, which the module's own shutdown closes.
+
 ### Resource template completion
 
 Resource templates can provide autocompletion for URI variables and listing via injectable strategies. Both `listStrategy` and `completeStrategy` are resolved through NestJS DI, so they can inject any service:
@@ -1636,6 +1687,8 @@ McpHttpModule.registerAndServeHttp({
 
 `McpHttpModule` resolves the existing provider through `ModuleRef`; it does not create a new provider for the strategy class. This follows the same DI pattern as guards.
 
+An auth strategy can also implement `acceptListenStream(stream)` to gate 2026-07-28 `subscriptions/listen` streams over HTTP; see [Closing listen streams](#closing-listen-streams).
+
 **What the auth strategy can do:**
 
 | Action           | How                                          | Effect                                          |
@@ -1723,6 +1776,7 @@ The package test suite covers:
 - HTTP bearer challenge behavior, `insufficient_scope` challenges, the translation of v1-style verifier errors, and PRM URL derivation, which follows `X-Forwarded-Host` and `X-Forwarded-Proto` (only `http` or `https`) by default and with `trustForwardedHosts: true`, and ignores them with `trustForwardedHosts: false`
 - per-caller tool visibility, decided per request, end to end over HTTP with the SDK client in both eras against stateless and stateful servers, and over stdio in both eras: with `toolVisibility: 'authorized'` an `McpScopeGuard({ scopes: ['admin'] })` tool is missing from `tools/list` for a non-admin token and listed for an admin one; a non-admin call is refused (`403 insufficient_scope` over HTTP with `requireBearerAuth`, `Tool <name> not found` otherwise) and never reaches the tool; the default `'all'` lists it and the guard refuses the call; `toolFilter` applies on top of the scope rule and is enforced on each call; on one stateful session, a token a filter allows can list and call a tool while another token on the same session can't, many rotating tokens and a returning opening token each get exactly their own tools, and a client that gets `403 insufficient_scope` and steps up runs the tool and sees it listed while the old token still doesn't; over stdio, each request follows the auth the strategy gives it then; `setToolEnabled` hides a tool from everyone and re-enabling it shows it only to callers who may see it (every session is notified), and a disabled tool's call gets `disabled` only from a caller who may see it (`not found` otherwise); a tool registered while a request was being decided is listed next; a stateless request whose client went away leaves nothing wired to the registry; a scope the auth strategy grants makes a tool listed and callable through `requireBearerAuth`'s pre-check, stateless and stateful, in both eras, while a token without it still gets the `403`; the pre-check doesn't challenge for a disabled tool (`not found` for a caller who may not see it, `disabled` for one who may) or one `toolFilter` hides, and still challenges a scope-only miss that step-up then resolves; a scope the token carries but the strategy withholds (or a token the strategy resolves to no auth) isn't challenged, and the call is refused by visibility or, without rules, by the guard; wiring fails closed (an SDK without the hooks fails at wiring even with no tools, and a tool whose check can't be installed is removed), a tool registered later on a server wired with no tools is still checked, and a server's own `_wrapHandler` stays in place; malformed `tools/call` and `tools/list` get the SDK's exact errors; tools registered on the server outside the registry (stdio's `onServerCreated`, a custom HTTP transport in both eras) are listed and callable as without rules; the server's `maxToolInputElements` refuses an oversized argument exactly as without rules; and an `McpHttpService` provided by hand (the Fastify path, without `McpHttpModule`) applies `toolVisibility` and `toolFilter` from its config. The HTTP end-to-end and in-memory SDK suites also run with a `toolFilter` that allows everything, so tools behave the same behind the visibility check: inputRequired, progress, logs, structured output and error messages. Unit tests cover the auth strategy's role (enrichment, failure, marked auth, once per request), filters that throw, and the wiring's handlers
 - auth strategy resolution through Nest DI
+- end to end over HTTP with the SDK client, closing and gating 2026-07-28 listen streams: `getListenStreams` lists each stream (and each one still opening) with its verified auth; `closeListenStreams` closes only the picked caller's streams, gracefully, they get nothing more and the SDK stops delivering to them, while another caller's stream still gets updates; with no predicate it closes them all; `acceptListenStream` gets the verified auth, and a stream it refuses, or one whose gate throws (logged), or one closed while the gate runs, is refused with `Listen stream refused` and not tracked; a stream the client closes stops being tracked; shutdown closes tracked streams gracefully; and a server without auth or a gate tracks and closes streams too. Unit tests cover a close asked for before the acknowledgement (sent right after it), the SDK ending a stream itself, and the client going away
 - the PRM route helpers: wildcard syntax per Nest major, reading the installed Nest version and its fallback, and trailing-slash handling
 
 ## Troubleshooting

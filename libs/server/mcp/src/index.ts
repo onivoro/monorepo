@@ -58,6 +58,7 @@ export { McpPromptMetadata } from './lib/mcp-prompt-metadata';
 // Auth & guards
 export { McpAuthInfo } from './lib/mcp-auth-info';
 export { McpAuthStrategy } from './lib/mcp-auth-strategy';
+export { McpListenStream, McpListenStreamGate } from './lib/mcp-listen-stream';
 export {
   markMcpAuthInfoResolved,
   isMcpAuthInfoResolved,

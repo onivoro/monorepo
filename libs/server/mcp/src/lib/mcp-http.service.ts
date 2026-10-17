@@ -10,6 +10,7 @@ import {
 } from '@modelcontextprotocol/server';
 import type {
   AuthInfo,
+  McpHandlerRequestOptions,
   McpHttpHandler,
   OAuthTokenVerifier,
 } from '@modelcontextprotocol/server';
@@ -30,6 +31,8 @@ import {
 } from './build-mcp-server';
 import { wireRegistryToServer } from './wire-registry-to-server';
 import { normalizeMcpHttpRoute, normalizePath } from './mcp-http-route';
+import type { McpListenStream, McpListenStreamGate } from './mcp-listen-stream';
+import { listenRequestId, TrackedListenStream } from './tracked-listen-stream';
 
 interface SessionEntry {
   server: McpServer;
@@ -116,6 +119,9 @@ export class McpHttpService implements OnModuleDestroy {
     parsedBody?: unknown,
   ) => Promise<void>;
   private readonly unsubscribeModern: () => void;
+  /** 2026-07-28 `subscriptions/listen` streams, open or opening. */
+  private readonly listenStreams = new Set<TrackedListenStream>();
+  private listenStreamGate?: McpListenStreamGate;
 
   constructor(
     @Inject(MCP_MODULE_CONFIG) private readonly config: McpModuleConfig,
@@ -143,7 +149,11 @@ export class McpHttpService implements OnModuleDestroy {
       responseMode: this.jsonResponse ? 'json' : 'auto',
       onerror,
     });
-    this.modernNode = toNodeHandler(this.modern, { onerror });
+    // Listen requests pass through serveModern, which tracks their streams so they can be closed.
+    this.modernNode = toNodeHandler(
+      { fetch: (request, options) => this.serveModern(request, options) },
+      { onerror },
+    );
     this.unsubscribeModern = this.notifyModernClientsOfChanges();
   }
 
@@ -191,6 +201,121 @@ export class McpHttpService implements OnModuleDestroy {
       followRegistry: false,
     });
     return server;
+  }
+
+  /**
+   * The 2026-07-28 `subscriptions/listen` streams open on this instance, and those still
+   * opening (their request has arrived, but the stream isn't open yet), across every caller.
+   */
+  getListenStreams(): McpListenStream[] {
+    return [...this.listenStreams].map((stream) => stream.info);
+  }
+
+  /**
+   * Closes the 2026-07-28 `subscriptions/listen` streams `predicate` picks (all of them when it
+   * is omitted), on this instance, and returns how many it picked. Use it when a caller's
+   * credentials are revoked, so nothing more is sent to them: pick by `authInfo`.
+   *
+   * Each stream closes gracefully: after its acknowledgement, the listen request's result,
+   * which the client reads as the server ending the subscription, then the end of the
+   * response. Nothing more is written to it. A stream still opening is refused instead (or, if
+   * the SDK has already accepted it, closed right after its acknowledgement).
+   *
+   * It closes streams; it doesn't stop the client opening new ones. Refuse those with the
+   * auth strategy's token check or `acceptListenStream`. On several instances, call it on
+   * each (say, from a pub/sub message). 2025-era clients don't use listen streams; their
+   * stateful sessions are untouched.
+   */
+  closeListenStreams(predicate?: (stream: McpListenStream) => boolean): number {
+    let picked = 0;
+    for (const stream of [...this.listenStreams]) {
+      if (predicate && !predicate(stream.info)) continue;
+      picked++;
+      stream.close();
+    }
+    return picked;
+  }
+
+  /**
+   * Sets (or, with `undefined`, removes) the gate consulted before each 2026-07-28
+   * `subscriptions/listen` stream opens. `McpHttpModule` sets it to the auth strategy's
+   * `acceptListenStream`, when it has one. See `McpAuthStrategy.acceptListenStream`.
+   */
+  setListenStreamGate(gate: McpListenStreamGate | undefined): void {
+    this.listenStreamGate = gate;
+  }
+
+  /**
+   * Serves a 2026-07-28 request. A `subscriptions/listen` request is tracked from now until
+   * its response ends, passes the listen-stream gate, and has its stream passed through a
+   * `TrackedListenStream`, which can close it.
+   */
+  private async serveModern(
+    request: Request,
+    options?: McpHandlerRequestOptions,
+  ): Promise<Response> {
+    const subscriptionId = listenRequestId(options?.parsedBody);
+    if (subscriptionId === undefined) {
+      return this.modern.fetch(request, options);
+    }
+
+    const stream = new TrackedListenStream(
+      subscriptionId,
+      options?.authInfo as McpAuthInfo | undefined,
+      this.serverInfo(),
+      (finished) => this.listenStreams.delete(finished),
+    );
+    this.listenStreams.add(stream);
+    try {
+      if (!(await this.listenStreamAllowed(stream))) {
+        stream.abandon();
+        return Response.json(
+          {
+            jsonrpc: '2.0',
+            id: subscriptionId,
+            error: { code: -32600, message: 'Listen stream refused' },
+          },
+          { status: 200 },
+        );
+      }
+      const response = await this.modern.fetch(request, options);
+      const eventStream =
+        response.status === 200 &&
+        /^text\/event-stream/i.test(response.headers.get('content-type') ?? '');
+      if (!eventStream) {
+        stream.abandon();
+        return response;
+      }
+      return stream.wrap(response);
+    } catch (error) {
+      stream.abandon();
+      throw error;
+    }
+  }
+
+  /** The gate's answer, after which a close asked for in the meantime still refuses it. */
+  private async listenStreamAllowed(
+    stream: TrackedListenStream,
+  ): Promise<boolean> {
+    if (this.listenStreamGate) {
+      try {
+        if (!(await this.listenStreamGate(stream.info))) return false;
+      } catch (error) {
+        this.logger.warn(
+          `The listen-stream gate failed, so a subscriptions/listen stream was refused: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return false;
+      }
+    }
+    return !stream.closeRequested;
+  }
+
+  /** What the SDK puts in a listen result's server-info `_meta`: the server's identity. */
+  private serverInfo(): Record<string, unknown> {
+    const { name, version, description } = this.config.metadata;
+    return { name, version, ...(description && { description }) };
   }
 
   setBearerAuthVerifier(
