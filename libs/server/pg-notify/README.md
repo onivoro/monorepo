@@ -118,11 +118,11 @@ the payload's length but not its content, since anyone who can connect to the
 database can `NOTIFY`. Pass `parse` to read something other than JSON; a throw
 from it goes to `onBadPayload` too.
 
-`error` is a `NotificationPayloadError`: its message gives the payload's length,
-what the parser threw (`parseErrorName`, such as `SyntaxError`) and, when the
-parser said, the `position`, but never the payload, so it is safe to log.
-(`JSON.parse`'s own message quotes the payload, so it isn't kept, not even as
-`cause`.) The payload is only the `raw` argument.
+`error` is a `NotificationPayloadError`: its message gives the payload's length
+and what the parser threw (`parseErrorName`, such as `SyntaxError`), but never
+the payload, so it is safe to log. Nothing is read from the parser's own
+message, which for `JSON.parse` quotes the payload, and it isn't kept, not even
+as `cause`. The payload is only the `raw` argument.
 
 Postgres delivers `NOTIFY ch` and `NOTIFY ch, ''` alike, as an empty payload.
 Either reaches `onNotification` as `undefined`, and `parse` is never called for
@@ -608,8 +608,16 @@ notification failed in onNotification: <error name>` (it was `... failed:
 <message>`), and a failing `onBadPayload` logs its error's name only.
    Alerts matching the old text need updating.
 9. **`onBadPayload`'s `error`** is a `NotificationPayloadError`, not the
-   parser's own error; read `parseErrorName` and `position` instead of
-   `message`.
+   parser's own error; read `parseErrorName` instead of `message`.
+10. **Deep imports.** `NotificationListener` from
+    `@onivoro/server-pg-notify/src/lib/notification-listener` is now the
+    Nest-free base class, which logs to `console` by default (as
+    `@onivoro/server-pg-notify/listener`'s does). The one that logs through
+    Nest's `Logger` by default is the main entry's `NotificationListener`
+    (from `@onivoro/server-pg-notify`, defined in
+    `src/lib/nest-notification-listener`). If you deep-imported the class and
+    want Nest's logging, import it from the package root, or pass
+    `{ logger: new Logger('NotificationListener') }`.
 
 ## Fanning out a stream across instances
 

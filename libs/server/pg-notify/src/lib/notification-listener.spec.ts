@@ -687,13 +687,42 @@ describe('NotificationListener', () => {
       expect(error.parseErrorName).toBe('SyntaxError');
       // JSON.parse's own message quotes the payload; this one doesn't.
       expect(error.message).not.toContain('s3cr3t');
-      expect(error.message).toMatch(
-        /^a pg "events" notification payload \(17 characters\) could not be parsed: SyntaxError/,
+      expect(error.message).toBe(
+        'a pg "events" notification payload (17 characters) could not be parsed: SyntaxError',
       );
       expect(JSON.stringify(error)).not.toContain('s3cr3t');
       expect(error.cause).toBeUndefined();
       expect(listener.received).toEqual([]);
       expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('takes nothing from the parser message, which quotes the payload', async () => {
+      const seen: NotificationPayloadError[] = [];
+      class Strict extends NotificationListener<unknown> {
+        onNotification() {
+          return undefined;
+        }
+        protected override onBadPayload(
+          _raw: string,
+          error: NotificationPayloadError,
+        ) {
+          seen.push(error);
+        }
+      }
+      const listener = new Strict('events', dataSource);
+      await listener.onModuleInit();
+
+      // JSON.parse's message quotes this, "position 123" included.
+      subscribers[0].notifications.emit('events', '{"a": position 123');
+
+      expect(seen).toHaveLength(1);
+      const [error] = seen;
+      expect(error.message).toBe(
+        'a pg "events" notification payload (18 characters) could not be parsed: SyntaxError',
+      );
+      expect(error.message).not.toMatch(/123|position/);
+      expect(error).not.toHaveProperty('position');
+      expect(JSON.stringify({ ...error })).not.toContain('123');
     });
 
     it('logs what onBadPayload throws', async () => {

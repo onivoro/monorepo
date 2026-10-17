@@ -93,20 +93,15 @@ export class NotificationPayloadError extends Error {
   override readonly name = 'NotificationPayloadError';
   /** The name of what `parse` threw, such as `SyntaxError`. */
   readonly parseErrorName: string;
-  /** Where in the payload parsing failed, when the parser said. */
-  readonly position?: number;
 
+  // Nothing is read from the parser's message: JSON.parse's quotes the payload,
+  // so anything taken from it (even a "position") could be the payload's text.
   constructor(channel: string, raw: string, error: unknown) {
     const parseErrorName = error instanceof Error ? error.name : typeof error;
-    const match =
-      error instanceof Error ? /position (\d+)/.exec(error.message) : null;
-    const position = match ? Number(match[1]) : undefined;
     super(
-      `a pg "${channel}" notification payload (${raw.length} characters) could not be parsed: ${parseErrorName}` +
-        (position === undefined ? '' : ` at position ${position}`),
+      `a pg "${channel}" notification payload (${raw.length} characters) could not be parsed: ${parseErrorName}`,
     );
     this.parseErrorName = parseErrorName;
-    if (position !== undefined) this.position = position;
   }
 }
 
