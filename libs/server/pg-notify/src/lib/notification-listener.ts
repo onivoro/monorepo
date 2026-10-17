@@ -1,4 +1,3 @@
-import { Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import createPgSubscriber, { Subscriber } from 'pg-listen';
 import type { DataSource } from 'typeorm';
 import type { PostgresDriver } from 'typeorm/driver/postgres/PostgresDriver';
@@ -21,27 +20,73 @@ export type NotificationListenerConnection =
   | PgClientConfig
   | string;
 
+/**
+ * Where a NotificationListener logs. Nest's `Logger` and `console` both fit.
+ */
+export interface NotificationListenerLogger {
+  log(message: string): void;
+  warn(message: string): void;
+  error(message: string): void;
+}
+
+export interface NotificationListenerOptions<TNotification> {
+  /**
+   * Where to log: connecting, losing the connection, re-establishing it, and
+   * payloads or handlers that fail. Default: Nest's `Logger` (context
+   * `NotificationListener`) when `@nestjs/common` is installed, else
+   * `console`. `false` logs nothing.
+   */
+  logger?: NotificationListenerLogger | false;
+  /**
+   * Turns each payload, as Postgres delivered it, into what `onNotification`
+   * gets. Default: `JSON.parse`. When it throws, `onBadPayload` gets the raw
+   * payload and the notification is skipped; the connection is kept. A
+   * notification without a payload reaches `onNotification` as `undefined`,
+   * unparsed.
+   */
+  parse?: (raw: string) => TNotification;
+}
+
+/** What `onListening` is told. */
+export interface NotificationListenerListening {
+  /**
+   * `false` for the first LISTEN; `true` for every one after the connection
+   * was lost. Notifications sent while it was lost were not delivered, so
+   * re-read whatever they would have told you.
+   */
+  reconnected: boolean;
+}
+
 /** pg-listen's own options, which it reads from its second argument. */
-const PG_LISTEN_OPTION_KEYS = [
+const PG_LISTEN_RETRY_KEYS = [
   'retryTimeout',
   'retryInterval',
   'retryLimit',
+] as const;
+const PG_LISTEN_OPTION_KEYS = [
+  ...PG_LISTEN_RETRY_KEYS,
   'paranoidChecking',
 ] as const;
 
 /**
- * How long pg-listen keeps trying before it gives up and emits `error`.
+ * How long pg-listen keeps trying, when it is asked to retry at all (by
+ * setting one of its retry options).
  *
  * Its default is 3000ms, which is shorter than most things that interrupt a
- * database connection: a bastion tunnel dropping, a failover, a deploy. Six
- * attempts at 500ms and it is done — so the ordinary case was reaching the
- * give-up path rather than reconnecting through it.
+ * database connection: a bastion tunnel dropping, a failover, a deploy.
  */
 const RETRY_TIMEOUT_MS = 30_000;
 
-/** Backoff for OUR re-initialisation, after pg-listen has given up entirely. */
+/** Backoff for the listener's own re-initialisation. */
 const REINIT_MIN_MS = 1_000;
 const REINIT_MAX_MS = 30_000;
+
+/** Thrown into an in-flight subscribe that the listener has given up on. */
+class SubscriptionAbandoned extends Error {
+  constructor(channel: string) {
+    super(`the pg "${channel}" listener was closed while connecting`);
+  }
+}
 
 /**
  * A pg LISTEN/NOTIFY subscription that survives losing its connection.
@@ -58,19 +103,27 @@ const REINIT_MAX_MS = 30_000;
  * it, over a subscription that is not on the request path at all.
  *
  * The fix is three things, and the third is the one that is easy to miss.
- * Handling the error stops the crash. Raising the retry window means an ordinary
- * blip reconnects rather than reaching the give-up path. And re-initialising
- * afterwards means the process that no longer crashes is not silently deaf
- * instead — trading a loud failure for a quiet one would be no trade at all,
- * because a crash at least restarts into a working listener.
+ * Handling the error stops the crash. Owning the retries means one loop, which
+ * stops when the listener is closed (pg-listen's own loop can't be stopped once
+ * it starts). And re-initialising after every loss means the process that no
+ * longer crashes is not silently deaf instead — trading a loud failure for a
+ * quiet one would be no trade at all, because a crash at least restarts into a
+ * working listener.
+ *
+ * It needs no Nest: `onModuleInit` and `onModuleDestroy` are plain methods Nest
+ * happens to call. Import it from `@onivoro/server-pg-notify/listener` to load
+ * neither Nest nor typeorm.
  */
-export abstract class NotificationListener<TNotification>
-  implements OnModuleInit, OnModuleDestroy
-{
+export abstract class NotificationListener<TNotification> {
   private subscriber?: Subscriber;
+  // What's new is #private, so that it can't collide with a subclass's own members.
+  /** The subscribe in progress, so that closing can wait for it. */
+  #subscribing?: Promise<void>;
   private reinitTimer?: ReturnType<typeof setTimeout>;
   private reinitAttempt = 0;
   private stopping = false;
+  #listening = false;
+  #everListened = false;
 
   /**
    * One stable reference for the lifetime of this listener.
@@ -79,10 +132,10 @@ export abstract class NotificationListener<TNotification>
    * old teardown passed removeListener something it had never added and removed
    * nothing.
    */
-  private readonly boundOnNotification = (payload: TNotification) =>
-    this.onNotification(payload);
+  private readonly boundOnNotification = (raw: unknown) => this.#deliver(raw);
 
-  private readonly logger = new Logger(NotificationListener.name);
+  private readonly logger?: NotificationListenerLogger;
+  readonly #parse: (raw: string) => TNotification;
 
   /**
    * @param channel the channel to LISTEN on.
@@ -90,6 +143,7 @@ export abstract class NotificationListener<TNotification>
    *   connection settings, or a connection string. The listener holds its own
    *   dedicated connection either way; typeorm is never loaded for the latter
    *   two.
+   * @param options where to log, and how to parse payloads.
    * @throws for a channel Postgres cannot carry (empty, over 63 bytes, or
    *   containing NUL). LISTEN would quietly truncate a long one and listen on
    *   a channel nothing sends to.
@@ -97,69 +151,209 @@ export abstract class NotificationListener<TNotification>
   constructor(
     protected readonly channel: string,
     private readonly connection: NotificationListenerConnection,
+    options: NotificationListenerOptions<TNotification> = {},
   ) {
     assertNotifyChannel(channel);
-  }
-
-  async onModuleInit() {
-    // Deliberately not caught. A database that is unreachable at boot should
-    // fail the boot: starting without the subscription would leave an app that
-    // looks healthy and receives nothing.
-    await this.subscribe();
-  }
-
-  async onModuleDestroy() {
-    this.stopping = true;
-
-    if (this.reinitTimer) {
-      clearTimeout(this.reinitTimer);
-      this.reinitTimer = undefined;
-    }
-
-    await this.teardown();
-
-    this.logger.log(`Unlistening to pg "${this.channel}" notifications`);
-  }
-
-  private async subscribe() {
-    this.subscriber = createPgSubscriber(...subscriberArgs(this.connection));
-
-    // Registered BEFORE connect. pg-listen can emit during connection, and an
-    // error arriving before the handler exists is the crash this prevents.
-    this.subscriber.events.on('error', (error: Error) =>
-      this.onSubscriberError(error),
-    );
-    this.subscriber.events.on('reconnect', (attempt: number) => {
-      this.logger.warn(
-        `Reconnecting to pg "${this.channel}" notifications (attempt ${attempt})`,
-      );
-    });
-
-    await this.subscriber.connect();
-    await this.subscriber.listenTo(this.channel);
-    this.subscriber.notifications.addListener(
-      this.channel,
-      this.boundOnNotification,
-    );
-
-    this.reinitAttempt = 0;
-
-    this.logger.log(`Listening to pg "${this.channel}" notifications`);
+    this.logger =
+      options.logger === false
+        ? undefined
+        : (options.logger ?? defaultLogger(NotificationListener.name));
+    this.#parse = options.parse ?? ((raw) => JSON.parse(raw) as TNotification);
   }
 
   /**
-   * pg-listen has exhausted its own retries.
-   *
-   * Logged rather than thrown — throwing from an event handler is the crash
-   * again — and then re-initialised from scratch, because at this point the
-   * subscriber will not recover on its own.
+   * Whether the subscription is in place now: true from each successful
+   * LISTEN until the connection is next lost or the listener is closed.
+   * Notifications sent while it is false are not delivered.
    */
-  private onSubscriberError(error: Error) {
-    this.logger.error(
-      `pg "${this.channel}" notification client failed: ${error?.message}`,
+  get isListening(): boolean {
+    return this.#listening;
+  }
+
+  /**
+   * Opens the subscription, and resolves once the LISTEN is in place.
+   *
+   * Deliberately not caught: a database that is unreachable at boot should
+   * fail the boot, since starting without the subscription would leave an app
+   * that looks healthy and receives nothing. It leaves nothing behind when it
+   * rejects: no connection, and no retry scheduled.
+   */
+  async onModuleInit() {
+    try {
+      await this.subscribe();
+    } catch (error) {
+      this.#cancelReinit();
+      await this.teardown();
+      throw error;
+    }
+  }
+
+  /**
+   * Closes the subscription. No retry runs after this, and a subscribe in
+   * progress is waited for and closed too.
+   */
+  async onModuleDestroy() {
+    this.stopping = true;
+    this.#listening = false;
+    this.#cancelReinit();
+
+    // Closing the connection makes a connect in progress fail rather than
+    // hang; then wait for that subscribe, and close whatever it left.
+    await this.teardown();
+    await this.#subscribing?.catch(() => undefined);
+    await this.teardown();
+
+    this.logger?.log(`Unlistening to pg "${this.channel}" notifications`);
+  }
+
+  abstract onNotification(payload: TNotification): void | Promise<void>;
+
+  /**
+   * Called after every LISTEN that succeeds: the first, with
+   * `{ reconnected: false }`, and each one after the connection was lost,
+   * with `{ reconnected: true }`. Notifications sent while it was lost were
+   * not delivered, so re-read what they would have said here. What it throws
+   * (or rejects with) is logged.
+   */
+  protected onListening(
+    _event: NotificationListenerListening,
+  ): void | Promise<void> {
+    return undefined;
+  }
+
+  /**
+   * Called when the connection is lost, before any retry. `isListening` is
+   * already false. Notifications are missed until the next `onListening`.
+   * What it throws is logged.
+   */
+  protected onConnectionLost(_error: Error): void {
+    return undefined;
+  }
+
+  /**
+   * Called for a payload `parse` rejects, instead of `onNotification`. The
+   * connection is kept. By default it logs a warning, without the payload,
+   * which anyone who can connect to the database can write.
+   */
+  protected onBadPayload(raw: string, _error: Error): void {
+    this.logger?.warn(
+      `Ignored a pg "${this.channel}" notification whose payload (${raw.length} characters) could not be parsed`,
+    );
+  }
+
+  private subscribe(): Promise<void> {
+    const subscribing = this.#connectAndListen();
+    this.#subscribing = subscribing;
+    const settled = () => {
+      if (this.#subscribing === subscribing) this.#subscribing = undefined;
+    };
+    subscribing.then(settled, settled);
+    return subscribing;
+  }
+
+  async #connectAndListen() {
+    const subscriber = createPgSubscriber(...subscriberArgs(this.connection));
+    this.subscriber = subscriber;
+    let listenedOnce = false;
+
+    // Registered BEFORE connect. pg-listen can emit during connection, and an
+    // error arriving before the handler exists is the crash this prevents.
+    subscriber.events.on('error', (error: Error) =>
+      this.onSubscriberError(subscriber, error),
+    );
+    subscriber.events.on('reconnect', (attempt: number) =>
+      this.#onSubscriberReconnecting(subscriber, attempt),
+    );
+    // pg-listen emits `connected` from connect(), before the LISTEN, and again
+    // after each reconnect of its own, once it has re-run the LISTEN.
+    subscriber.events.on('connected', () => {
+      if (this.stopping || this.subscriber !== subscriber) {
+        // A connection pg-listen made after it was closed or replaced.
+        subscriber.close().catch(() => undefined);
+        return;
+      }
+      if (listenedOnce) this.#listened();
+    });
+
+    await subscriber.connect();
+    this.#assertCurrent(subscriber);
+    await subscriber.listenTo(this.channel);
+    this.#assertCurrent(subscriber);
+    subscriber.notifications.addListener(
+      this.channel,
+      this.boundOnNotification,
+    );
+    listenedOnce = true;
+    this.#listened();
+  }
+
+  /** The listener was closed, or gave up on this subscriber, meanwhile. */
+  #assertCurrent(subscriber: Subscriber) {
+    if (this.stopping || this.subscriber !== subscriber) {
+      throw new SubscriptionAbandoned(this.channel);
+    }
+  }
+
+  #listened() {
+    this.reinitAttempt = 0;
+    this.#listening = true;
+    const reconnected = this.#everListened;
+    this.#everListened = true;
+
+    this.logger?.log(
+      reconnected
+        ? `Listening to pg "${this.channel}" notifications again`
+        : `Listening to pg "${this.channel}" notifications`,
     );
 
+    try {
+      const result = this.onListening({ reconnected });
+      if (isPromiseLike(result)) {
+        result.then(undefined, (error: unknown) =>
+          this.#logHookError('onListening', error),
+        );
+      }
+    } catch (error) {
+      this.#logHookError('onListening', error);
+    }
+  }
+
+  /**
+   * The connection is lost, or a connect failed. pg-listen makes no attempt
+   * of its own unless asked to (see subscriberArgs), so this is where every
+   * retry starts.
+   *
+   * Logged rather than thrown — throwing from an event handler is the crash
+   * again — and then re-initialised from scratch.
+   */
+  private onSubscriberError(subscriber: Subscriber, error: Error) {
+    if (this.stopping || this.subscriber !== subscriber) return;
+
+    this.logger?.error(
+      `pg "${this.channel}" notification client failed: ${error?.message}`,
+    );
+    this.#lost(error);
     this.scheduleReinit();
+  }
+
+  /** Only when pg-listen was asked to retry: it lost the connection and is reconnecting. */
+  #onSubscriberReconnecting(subscriber: Subscriber, attempt: number) {
+    if (this.stopping || this.subscriber !== subscriber) return;
+
+    this.logger?.warn(
+      `Reconnecting to pg "${this.channel}" notifications (attempt ${attempt})`,
+    );
+    this.#lost(new Error('the connection was lost; pg-listen is reconnecting'));
+  }
+
+  #lost(error: Error) {
+    if (!this.#listening) return;
+    this.#listening = false;
+    try {
+      this.onConnectionLost(error);
+    } catch (hookError) {
+      this.#logHookError('onConnectionLost', hookError);
+    }
   }
 
   /**
@@ -191,7 +385,9 @@ export abstract class NotificationListener<TNotification>
         await this.teardown();
         await this.subscribe();
       } catch (retryError: any) {
-        this.logger.error(
+        if (this.stopping) return;
+
+        this.logger?.error(
           `could not re-establish pg "${this.channel}" notifications: ${retryError?.message}`,
         );
 
@@ -200,10 +396,18 @@ export abstract class NotificationListener<TNotification>
     }, delay);
   }
 
+  #cancelReinit() {
+    if (this.reinitTimer) {
+      clearTimeout(this.reinitTimer);
+      this.reinitTimer = undefined;
+    }
+  }
+
   /** Best effort: a subscriber that is already broken will throw on the way out. */
   private async teardown() {
     const subscriber = this.subscriber;
     this.subscriber = undefined;
+    this.#listening = false;
 
     if (!subscriber) {
       return;
@@ -215,24 +419,108 @@ export abstract class NotificationListener<TNotification>
         this.boundOnNotification,
       );
       await subscriber.unlisten(this.channel);
+    } catch {
+      // Unlistening on a dead connection failing is not news.
+    }
+    try {
       await subscriber.close();
     } catch {
-      // Closing a dead connection failing is not news, and letting it propagate
-      // would take down shutdown or the retry that is trying to replace it.
+      // Nor is closing one, and letting it propagate would take down shutdown
+      // or the retry that is trying to replace it.
     }
   }
 
-  abstract onNotification(payload: TNotification): void | Promise<void>;
+  /**
+   * Parses and hands over one notification. pg calls this from its socket
+   * handler, where a throw would end the process, so nothing escapes: a bad
+   * payload goes to onBadPayload, and what onNotification throws or rejects
+   * with is logged, without the payload.
+   */
+  #deliver(raw: unknown) {
+    let payload: TNotification;
+    if (typeof raw === 'string') {
+      try {
+        payload = this.#parse(raw);
+      } catch (error) {
+        try {
+          this.onBadPayload(raw, asError(error));
+        } catch (hookError) {
+          this.#logHookError('onBadPayload', hookError);
+        }
+        return;
+      }
+    } else {
+      payload = raw as TNotification;
+    }
+
+    try {
+      const result = this.onNotification(payload);
+      if (isPromiseLike(result)) {
+        result.then(undefined, (error: unknown) =>
+          this.#logNotificationError(error),
+        );
+      }
+    } catch (error) {
+      this.#logNotificationError(error);
+    }
+  }
+
+  #logNotificationError(error: unknown) {
+    this.logger?.error(
+      `A pg "${this.channel}" notification failed: ${asError(error).message}`,
+    );
+  }
+
+  #logHookError(hook: string, error: unknown) {
+    this.logger?.error(
+      `${hook} failed for pg "${this.channel}" notifications: ${asError(error).message}`,
+    );
+  }
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return !!value && typeof (value as PromiseLike<unknown>).then === 'function';
+}
+
+/**
+ * Nest's Logger when `@nestjs/common` is installed, so the listener logs as it
+ * always has in a Nest app; `console` otherwise.
+ */
+function defaultLogger(context: string): NotificationListenerLogger {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Logger } =
+      require('@nestjs/common') as typeof import('@nestjs/common');
+    return new Logger(context);
+  } catch {
+    return {
+      log: (message) => console.log(`[${context}] ${message}`),
+      warn: (message) => console.warn(`[${context}] ${message}`),
+      error: (message) => console.error(`[${context}] ${message}`),
+    };
+  }
 }
 
 /**
  * pg-listen's two arguments: the pg connection config, and its own options.
  *
- * The retry settings belong in the second. They used to be spread into the
- * first along with the connection settings, where pg-listen never looks, so
- * the 30s retry window silently stayed at its 3s default. Retry keys found in
- * the connection settings (typeorm `extra`, or the pg config) are still
- * honoured -- moved to where pg-listen reads them.
+ * By default pg-listen gets `retryLimit: 1`, so it makes no attempt of its own
+ * and reports a lost connection at once; the listener owns every retry. Its
+ * loop can't be stopped once started (it never checks whether it was closed),
+ * so a listener closed while it ran would go on connecting.
+ *
+ * Retry keys found in the connection settings (typeorm `extra`, or the pg
+ * config) are still honoured, as before: moved to where pg-listen reads them,
+ * with its retry window raised to 30s unless they set one. They hand
+ * reconnecting back to pg-listen, which the listener then follows (and still
+ * re-initialises after, when pg-listen gives up).
+ *
+ * Payloads always reach the listener unparsed, so that a payload which isn't
+ * JSON is the listener's to handle, not a connection error.
  */
 function subscriberArgs(
   connection: NotificationListenerConnection,
@@ -244,11 +532,15 @@ function subscriberArgs(
         ? fromDataSource(connection)
         : { ...connection };
 
-  const options: Record<string, unknown> = { retryTimeout: RETRY_TIMEOUT_MS };
+  const retries = PG_LISTEN_RETRY_KEYS.some((key) => config[key] !== undefined);
+  const options: Record<string, unknown> = retries
+    ? { retryTimeout: RETRY_TIMEOUT_MS }
+    : { retryLimit: 1 };
   for (const key of PG_LISTEN_OPTION_KEYS) {
     if (config[key] !== undefined) options[key] = config[key];
     delete config[key];
   }
+  options['parse'] = (raw: string) => raw;
 
   return [config as PgClientConfig, options];
 }

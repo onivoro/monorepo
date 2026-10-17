@@ -11,6 +11,10 @@
       "types": "./src/index.d.ts",
       "default": "./src/index.js"
     },
+    "./listener": {
+      "types": "./src/listener.d.ts",
+      "default": "./src/listener.js"
+    },
     "./package.json": "./package.json",
     "./*.js": "./*.js",
     "./*": "./*.js"
@@ -43,6 +47,9 @@
     "typeorm": "^0.3.0"
   },
   "peerDependenciesMeta": {
+    "@nestjs/common": {
+      "optional": true
+    },
     "typeorm": {
       "optional": true
     }
