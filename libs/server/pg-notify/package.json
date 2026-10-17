@@ -43,7 +43,7 @@
   "peerDependencies": {
     "@nestjs/common": "^10.0.0 || ^11.0.0",
     "pg": "7.x || 8.x",
-    "pg-listen": "^1.7.0",
+    "pg-listen": "~1.7.0",
     "typeorm": "^0.3.0"
   },
   "peerDependenciesMeta": {

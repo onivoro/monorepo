@@ -32,17 +32,20 @@ export interface NotificationListenerLogger {
 export interface NotificationListenerOptions<TNotification> {
   /**
    * Where to log: connecting, losing the connection, re-establishing it, and
-   * payloads or handlers that fail. Default: Nest's `Logger` (context
-   * `NotificationListener`) when `@nestjs/common` is installed, else
-   * `console`. `false` logs nothing.
+   * payloads or handlers that fail. `false` logs nothing. Default: `console`,
+   * prefixed `[NotificationListener]`, from `@onivoro/server-pg-notify/listener`;
+   * Nest's `Logger` (context `NotificationListener`) from the package's main
+   * entry point.
    */
   logger?: NotificationListenerLogger | false;
   /**
    * Turns each payload, as Postgres delivered it, into what `onNotification`
    * gets. Default: `JSON.parse`. When it throws, `onBadPayload` gets the raw
-   * payload and the notification is skipped; the connection is kept. A
-   * notification without a payload reaches `onNotification` as `undefined`,
-   * unparsed.
+   * payload and the notification is skipped; the connection is kept.
+   *
+   * It is only called for a non-empty payload. Postgres delivers `NOTIFY ch`
+   * and `NOTIFY ch, ''` alike, as an empty payload, and either reaches
+   * `onNotification` as `undefined`, without calling `parse`.
    */
   parse?: (raw: string) => TNotification;
 }
@@ -81,6 +84,32 @@ const RETRY_TIMEOUT_MS = 30_000;
 const REINIT_MIN_MS = 1_000;
 const REINIT_MAX_MS = 30_000;
 
+/**
+ * What `onBadPayload` is given when `parse` throws. Its message never includes
+ * the payload (`JSON.parse`'s own message quotes it), so it is safe to log;
+ * the payload itself is only the hook's `raw` argument.
+ */
+export class NotificationPayloadError extends Error {
+  override readonly name = 'NotificationPayloadError';
+  /** The name of what `parse` threw, such as `SyntaxError`. */
+  readonly parseErrorName: string;
+  /** Where in the payload parsing failed, when the parser said. */
+  readonly position?: number;
+
+  constructor(channel: string, raw: string, error: unknown) {
+    const parseErrorName = error instanceof Error ? error.name : typeof error;
+    const match =
+      error instanceof Error ? /position (\d+)/.exec(error.message) : null;
+    const position = match ? Number(match[1]) : undefined;
+    super(
+      `a pg "${channel}" notification payload (${raw.length} characters) could not be parsed: ${parseErrorName}` +
+        (position === undefined ? '' : ` at position ${position}`),
+    );
+    this.parseErrorName = parseErrorName;
+    if (position !== undefined) this.position = position;
+  }
+}
+
 /** Thrown into an in-flight subscribe that the listener has given up on. */
 class SubscriptionAbandoned extends Error {
   constructor(channel: string) {
@@ -112,13 +141,17 @@ class SubscriptionAbandoned extends Error {
  *
  * It needs no Nest: `onModuleInit` and `onModuleDestroy` are plain methods Nest
  * happens to call. Import it from `@onivoro/server-pg-notify/listener` to load
- * neither Nest nor typeorm.
+ * neither Nest nor typeorm: this class never imports Nest, and logs to
+ * `console` by default. The main entry point's `NotificationListener` is a
+ * subclass that logs through Nest's `Logger` by default.
  */
 export abstract class NotificationListener<TNotification> {
   private subscriber?: Subscriber;
   // What's new is #private, so that it can't collide with a subclass's own members.
   /** The subscribe in progress, so that closing can wait for it. */
   #subscribing?: Promise<void>;
+  /** Retries in progress (teardown, then subscribe), so that closing can wait for them. */
+  readonly #retrying = new Set<Promise<void>>();
   private reinitTimer?: ReturnType<typeof setTimeout>;
   private reinitAttempt = 0;
   private stopping = false;
@@ -157,7 +190,7 @@ export abstract class NotificationListener<TNotification> {
     this.logger =
       options.logger === false
         ? undefined
-        : (options.logger ?? defaultLogger(NotificationListener.name));
+        : (options.logger ?? consoleLogger('NotificationListener'));
     this.#parse = options.parse ?? ((raw) => JSON.parse(raw) as TNotification);
   }
 
@@ -189,8 +222,8 @@ export abstract class NotificationListener<TNotification> {
   }
 
   /**
-   * Closes the subscription. No retry runs after this, and a subscribe in
-   * progress is waited for and closed too.
+   * Closes the subscription. No retry starts after this, and one in progress
+   * (its teardown or its subscribe) is waited for, and what it opened closed.
    */
   async onModuleDestroy() {
     this.stopping = true;
@@ -198,9 +231,14 @@ export abstract class NotificationListener<TNotification> {
     this.#cancelReinit();
 
     // Closing the connection makes a connect in progress fail rather than
-    // hang; then wait for that subscribe, and close whatever it left.
+    // hang; then wait for that subscribe and any retry, and close whatever
+    // they left.
     await this.teardown();
-    await this.#subscribing?.catch(() => undefined);
+    await Promise.all(
+      [this.#subscribing, ...this.#retrying].map((step) =>
+        step?.catch(() => undefined),
+      ),
+    );
     await this.teardown();
 
     this.logger?.log(`Unlistening to pg "${this.channel}" notifications`);
@@ -234,8 +272,12 @@ export abstract class NotificationListener<TNotification> {
    * Called for a payload `parse` rejects, instead of `onNotification`. The
    * connection is kept. By default it logs a warning, without the payload,
    * which anyone who can connect to the database can write.
+   *
+   * `error` is a `NotificationPayloadError`, whose message says the payload's
+   * length and where parsing failed but never quotes it, so it is safe to log.
+   * The payload is `raw`; log that only if you trust every writer.
    */
-  protected onBadPayload(raw: string, _error: Error): void {
+  protected onBadPayload(raw: string, _error: NotificationPayloadError): void {
     this.logger?.warn(
       `Ignored a pg "${this.channel}" notification whose payload (${raw.length} characters) could not be parsed`,
     );
@@ -374,26 +416,37 @@ export abstract class NotificationListener<TNotification> {
       REINIT_MAX_MS,
     );
 
-    this.reinitTimer = setTimeout(async () => {
+    this.reinitTimer = setTimeout(() => {
       this.reinitTimer = undefined;
 
       if (this.stopping) {
         return;
       }
 
-      try {
-        await this.teardown();
-        await this.subscribe();
-      } catch (retryError: any) {
-        if (this.stopping) return;
-
-        this.logger?.error(
-          `could not re-establish pg "${this.channel}" notifications: ${retryError?.message}`,
-        );
-
-        this.scheduleReinit();
-      }
+      const retry = this.#retry();
+      this.#retrying.add(retry);
+      void retry.finally(() => this.#retrying.delete(retry));
     }, delay);
+  }
+
+  /** One retry: tear the old subscriber down, then subscribe again. */
+  async #retry() {
+    try {
+      await this.teardown();
+      // Closed while the old connection was closing: don't open a new one.
+      if (this.stopping) return;
+      await this.subscribe();
+    } catch (retryError: any) {
+      // Closed, or a newer retry replaced this subscriber (and owns what
+      // happens next): not a failure of this retry.
+      if (this.stopping || retryError instanceof SubscriptionAbandoned) return;
+
+      this.logger?.error(
+        `could not re-establish pg "${this.channel}" notifications: ${retryError?.message}`,
+      );
+
+      this.scheduleReinit();
+    }
   }
 
   #cancelReinit() {
@@ -434,7 +487,7 @@ export abstract class NotificationListener<TNotification> {
    * Parses and hands over one notification. pg calls this from its socket
    * handler, where a throw would end the process, so nothing escapes: a bad
    * payload goes to onBadPayload, and what onNotification throws or rejects
-   * with is logged, without the payload.
+   * with is logged by its name only, since its message may quote the payload.
    */
   #deliver(raw: unknown) {
     let payload: TNotification;
@@ -443,9 +496,15 @@ export abstract class NotificationListener<TNotification> {
         payload = this.#parse(raw);
       } catch (error) {
         try {
-          this.onBadPayload(raw, asError(error));
+          this.onBadPayload(
+            raw,
+            new NotificationPayloadError(this.channel, raw, error),
+          );
         } catch (hookError) {
-          this.#logHookError('onBadPayload', hookError);
+          // It has the payload, so its message may quote it.
+          this.logger?.error(
+            `onBadPayload failed for pg "${this.channel}" notifications: ${errorName(hookError)}`,
+          );
         }
         return;
       }
@@ -465,9 +524,14 @@ export abstract class NotificationListener<TNotification> {
     }
   }
 
+  /**
+   * By the error's name only: a validation error (zod, class-validator) often
+   * quotes the values it rejected, which anyone who can NOTIFY can write. Catch
+   * inside onNotification to log more.
+   */
   #logNotificationError(error: unknown) {
     this.logger?.error(
-      `A pg "${this.channel}" notification failed: ${asError(error).message}`,
+      `A pg "${this.channel}" notification failed in onNotification: ${errorName(error)}`,
     );
   }
 
@@ -482,27 +546,21 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
+
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return !!value && typeof (value as PromiseLike<unknown>).then === 'function';
 }
 
-/**
- * Nest's Logger when `@nestjs/common` is installed, so the listener logs as it
- * always has in a Nest app; `console` otherwise.
- */
-function defaultLogger(context: string): NotificationListenerLogger {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Logger } =
-      require('@nestjs/common') as typeof import('@nestjs/common');
-    return new Logger(context);
-  } catch {
-    return {
-      log: (message) => console.log(`[${context}] ${message}`),
-      warn: (message) => console.warn(`[${context}] ${message}`),
-      error: (message) => console.error(`[${context}] ${message}`),
-    };
-  }
+/** `console`, with the context as a prefix. */
+function consoleLogger(context: string): NotificationListenerLogger {
+  return {
+    log: (message) => console.log(`[${context}] ${message}`),
+    warn: (message) => console.warn(`[${context}] ${message}`),
+    error: (message) => console.error(`[${context}] ${message}`),
+  };
 }
 
 /**

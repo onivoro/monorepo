@@ -17,17 +17,19 @@ npm install typeorm   # only if you pass TypeORM DataSources
 ```
 
 Peer dependencies: `pg` (7.x or 8.x, as `pg-listen` requires), `pg-listen`
-(^1.7), and optionally `@nestjs/common` (10 or 11) and `typeorm` (^0.3). The
+(~1.7, the release the listener's reconnect handling is tested against), and optionally `@nestjs/common` (10 or 11) and `typeorm` (^0.3). The
 package loads `typeorm` only when Nest resolves `PgNotifyPublisher` as a plain
 class provider (to inject the `DataSource` by type), so without TypeORM nothing
 needs it installed. Its types are still referenced from the declarations, which
 compile without it under `skipLibCheck` (the Nest default).
 
-`@nestjs/common` is needed by the package's main entry point (the publisher and
-the trigger helpers). Without Nest, import from
-`@onivoro/server-pg-notify/listener`, which has `NotificationListener`,
-`buildNotifyQuery` and `notifyInTransaction`, and loads neither Nest nor
-TypeORM.
+`@nestjs/common` is needed by the package's main entry point (the publisher, the
+trigger helpers, and a `NotificationListener` that logs through Nest's
+`Logger`). Without Nest, import from `@onivoro/server-pg-notify/listener`, which
+has `NotificationListener`, `buildNotifyQuery` and `notifyInTransaction`, and
+never loads Nest or TypeORM, even when they are installed: its
+`NotificationListener` logs to `console` unless given a `logger`. The main
+entry's `NotificationListener` is a subclass of that one.
 
 ## Listening
 
@@ -101,8 +103,11 @@ waits for (and closes) a connection still being made. The channel name is
 available to subclasses as `this.channel`.
 
 `onNotification` may return a promise. What it throws or rejects with is
-logged, without the payload, and goes no further: `pg` calls it from its socket
-handler, where a throw would end the process.
+logged and goes no further: `pg` calls it from its socket handler, where a
+throw would end the process. Only the error's name is logged (`A pg "outbox"
+notification failed in onNotification: ZodError`), since a validation error's
+message often quotes the values it rejected, which anyone who can `NOTIFY` can
+write. To log more, catch inside `onNotification`.
 
 ### Payloads
 
@@ -110,9 +115,18 @@ Each payload is parsed as JSON by the listener, not by `pg-listen`. A payload
 that doesn't parse goes to `onBadPayload(raw, error)` instead of
 `onNotification`, and the connection is kept; by default it logs a warning with
 the payload's length but not its content, since anyone who can connect to the
-database can `NOTIFY`. A notification without a payload reaches
-`onNotification` as `undefined`. Pass `parse` to read something other than
-JSON; a throw from it goes to `onBadPayload` too.
+database can `NOTIFY`. Pass `parse` to read something other than JSON; a throw
+from it goes to `onBadPayload` too.
+
+`error` is a `NotificationPayloadError`: its message gives the payload's length,
+what the parser threw (`parseErrorName`, such as `SyntaxError`) and, when the
+parser said, the `position`, but never the payload, so it is safe to log.
+(`JSON.parse`'s own message quotes the payload, so it isn't kept, not even as
+`cause`.) The payload is only the `raw` argument.
+
+Postgres delivers `NOTIFY ch` and `NOTIFY ch, ''` alike, as an empty payload.
+Either reaches `onNotification` as `undefined`, and `parse` is never called for
+it.
 
 ### Knowing when it is listening
 
@@ -159,10 +173,10 @@ export class OutboxListener extends NotificationListener<OutboxEvent> {
 
 The constructor's third argument is optional:
 
-| Option   | Default                                                            | Does                                                                         |
-| -------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `logger` | Nest's `Logger` when `@nestjs/common` is installed, else `console` | Where to log; anything with `log`, `warn` and `error`. `false` logs nothing. |
-| `parse`  | `JSON.parse`                                                       | Turns a payload into what `onNotification` gets.                             |
+| Option   | Default                                                         | Does                                                                         |
+| -------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `logger` | Nest's `Logger` from the main entry; `console` from `/listener` | Where to log; anything with `log`, `warn` and `error`. `false` logs nothing. |
+| `parse`  | `JSON.parse`                                                    | Turns a payload into what `onNotification` gets.                             |
 
 Without Nest:
 
@@ -556,9 +570,15 @@ here:
 2. **Payloads that aren't JSON** used to be a connection error: `pg-listen`
    failed to parse them and the listener reconnected. Now they go to
    `onBadPayload`, which logs a warning, and the connection is kept.
-3. **What `onNotification` throws** (or rejects with) is now logged. Before,
-   a throw escaped into `pg`'s socket handler and a rejection was unhandled,
-   either of which could end the process.
+3. **A throwing `onNotification` no longer ends the process.** What it throws
+   (or rejects with) is now logged, by the error's name, and the next
+   notification is delivered as usual. Before, a throw escaped into `pg`'s
+   socket handler and a rejection was unhandled, either of which could end the
+   process. If you relied on that (a supervisor restarting the process, which
+   then re-read its state), the process now keeps running on a handler that
+   fails on every notification, and the only sign is an error log line for
+   each. Catch inside `onNotification` and decide there: re-read state, raise
+   an alert, or exit deliberately (`process.exit`).
 4. **A failed boot** (`onModuleInit` rejecting) now closes its connection and
    schedules no retry. Before, the half-made subscriber could keep
    reconnecting until `onModuleDestroy` was called.
@@ -567,11 +587,25 @@ here:
 6. **New members.** `NotificationListener` has new protected methods
    `onListening`, `onConnectionLost` and `onBadPayload`, and a getter
    `isListening`. A subclass that already has members with those names now
-   overrides them; rename yours if they mean something else. The class no
+   overrides them; rename yours if they mean something else. In particular, a
+   subclass that declares a property `isListening` (say `isListening = false`)
+   no longer compiles (TS2610: a property can't override an accessor), and in
+   JavaScript, or with `useDefineForClassFields`, the field hides the getter,
+   so `isListening` reports your value, never the listener's. Rename the
+   property, or drop it and read the listener's `isListening`. The class no
    longer declares `implements OnModuleInit, OnModuleDestroy`; Nest still
    calls both methods.
 7. **Peer dependencies.** `@nestjs/common` is now optional; the
-   `/listener` entry point doesn't need it.
+   `/listener` entry point doesn't need it. `pg-listen` is now `~1.7.0`
+   (was `^1.7.0`), since the reconnect handling relies on how 1.7 behaves
+   (pinned by `pg-listen-contract.spec.ts`); 1.7.0 is the current release.
+8. **Log lines.** A failing `onNotification` logs `A pg "<channel>"
+notification failed in onNotification: <error name>` (it was `... failed:
+<message>`), and a failing `onBadPayload` logs its error's name only.
+   Alerts matching the old text need updating.
+9. **`onBadPayload`'s `error`** is a `NotificationPayloadError`, not the
+   parser's own error; read `parseErrorName` and `position` instead of
+   `message`.
 
 ## Fanning out a stream across instances
 

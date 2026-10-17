@@ -2,9 +2,12 @@ import { Logger } from '@nestjs/common';
 import { EventEmitter } from 'events';
 import createPgSubscriber from 'pg-listen';
 import type { DataSource } from 'typeorm';
+// The main entry point's listener, which logs through Nest's Logger (spied on here).
+import { NotificationListener } from './nest-notification-listener';
 import {
-  NotificationListener,
+  NotificationListener as NestFreeNotificationListener,
   NotificationListenerConnection,
+  NotificationPayloadError,
 } from './notification-listener';
 
 jest.mock('pg-listen', () => ({ __esModule: true, default: jest.fn() }));
@@ -663,18 +666,32 @@ describe('NotificationListener', () => {
     });
 
     it('gives onBadPayload the raw payload and the error', async () => {
-      const seen: [string, string][] = [];
+      const seen: [string, NotificationPayloadError][] = [];
       class Strict extends RawListener {
-        protected override onBadPayload(rawPayload: string, error: Error) {
-          seen.push([rawPayload, error.name]);
+        protected override onBadPayload(
+          rawPayload: string,
+          error: NotificationPayloadError,
+        ) {
+          seen.push([rawPayload, error]);
         }
       }
       const listener = new Strict('events', dataSource);
       await listener.onModuleInit();
 
-      subscribers[0].notifications.emit('events', '{');
+      subscribers[0].notifications.emit('events', '{"token":"s3cr3t"');
 
-      expect(seen).toEqual([['{', 'SyntaxError']]);
+      expect(seen).toHaveLength(1);
+      const [rawPayload, error] = seen[0];
+      expect(rawPayload).toBe('{"token":"s3cr3t"');
+      expect(error).toBeInstanceOf(NotificationPayloadError);
+      expect(error.parseErrorName).toBe('SyntaxError');
+      // JSON.parse's own message quotes the payload; this one doesn't.
+      expect(error.message).not.toContain('s3cr3t');
+      expect(error.message).toMatch(
+        /^a pg "events" notification payload \(17 characters\) could not be parsed: SyntaxError/,
+      );
+      expect(JSON.stringify(error)).not.toContain('s3cr3t');
+      expect(error.cause).toBeUndefined();
       expect(listener.received).toEqual([]);
       expect(warnSpy).not.toHaveBeenCalled();
     });
@@ -691,8 +708,9 @@ describe('NotificationListener', () => {
       expect(() =>
         subscribers[0].notifications.emit('events', '{'),
       ).not.toThrow();
+      // By name only: the hook has the payload, so its message may quote it.
       expect(errorSpy).toHaveBeenCalledWith(
-        'onBadPayload failed for pg "events" notifications: bad hook',
+        'onBadPayload failed for pg "events" notifications: Error',
       );
     });
 
@@ -715,7 +733,7 @@ describe('NotificationListener', () => {
       const listener = await raw();
       listener.onNotificationImpl = (p: any) => {
         if (p.sync) throw new Error('sync failure');
-        return Promise.reject(new Error('async failure'));
+        return Promise.reject(new TypeError('async failure'));
       };
 
       expect(() =>
@@ -724,12 +742,14 @@ describe('NotificationListener', () => {
       subscribers[0].notifications.emit('events', '{"sync":false}');
       await flush();
 
+      // By name only: a validation error's message often quotes the payload.
       expect(errorSpy).toHaveBeenCalledWith(
-        'A pg "events" notification failed: sync failure',
+        'A pg "events" notification failed in onNotification: Error',
       );
       expect(errorSpy).toHaveBeenCalledWith(
-        'A pg "events" notification failed: async failure',
+        'A pg "events" notification failed in onNotification: TypeError',
       );
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('failure');
       expect(subscribers).toHaveLength(1);
     });
   });
@@ -852,6 +872,168 @@ describe('NotificationListener', () => {
       expect(logSpy).not.toHaveBeenCalled();
       expect(warnSpy).not.toHaveBeenCalled();
       expect(errorSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('retries and closing, together', () => {
+    function deferred() {
+      let resolve!: () => void;
+      let reject!: (error: Error) => void;
+      const promise = new Promise<void>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    it("doesn't subscribe again when closed while a retry is closing the old connection", async () => {
+      const listener = await started();
+      const slowClose = deferred();
+      subscribers[0].close.mockReturnValue(slowClose.promise);
+      // A database that never answers a connect: only closing the connection ends it.
+      jest.mocked(createPgSubscriber).mockImplementation(() => {
+        const subscriber = fakeSubscriber();
+        const hung = deferred();
+        subscriber.connect.mockReturnValue(hung.promise);
+        subscriber.close.mockImplementation(async () =>
+          hung.reject(new Error('Connection terminated')),
+        );
+        subscribers.push(subscriber);
+        return subscriber as any;
+      });
+
+      subscribers[0].events.emit('error', new Error('gone'));
+      jest.advanceTimersByTime(1_000);
+      await flush();
+      // The retry is waiting on the old connection's close.
+      expect(subscribers[0].close).toHaveBeenCalled();
+
+      let destroyed = false;
+      const destroying = listener.onModuleDestroy().then(() => {
+        destroyed = true;
+      });
+      await flush();
+      expect(destroyed).toBe(false);
+      slowClose.resolve();
+      await destroying;
+      jest.advanceTimersByTime(120_000);
+      await flush();
+
+      expect(subscribers).toHaveLength(1);
+      expect(listener.isListening).toBe(false);
+    });
+
+    it('waits for a retry whose connect hangs, and closes it', async () => {
+      const listener = await started();
+      jest.mocked(createPgSubscriber).mockImplementation(() => {
+        const subscriber = fakeSubscriber();
+        const hung = deferred();
+        subscriber.connect.mockReturnValue(hung.promise);
+        subscriber.close.mockImplementation(async () =>
+          hung.reject(new Error('Connection terminated')),
+        );
+        subscribers.push(subscriber);
+        return subscriber as any;
+      });
+
+      subscribers[0].events.emit('error', new Error('gone'));
+      jest.advanceTimersByTime(1_000);
+      await flush();
+      expect(subscribers).toHaveLength(2);
+
+      await listener.onModuleDestroy();
+
+      expect(subscribers[1].close).toHaveBeenCalled();
+      expect(subscribers[1].listenTo).not.toHaveBeenCalled();
+      jest.advanceTimersByTime(120_000);
+      await flush();
+      expect(subscribers).toHaveLength(2);
+    });
+
+    it('starts no second retry chain when a replaced subscribe completes late', async () => {
+      class Hooked extends TestListener {
+        events: string[] = [];
+        protected override onListening(e: { reconnected: boolean }) {
+          this.events.push(`listening:${e.reconnected}`);
+        }
+        protected override onConnectionLost() {
+          this.events.push('lost');
+        }
+      }
+      const listener = new Hooked('events', dataSource);
+      await listener.onModuleInit();
+
+      // The first retry's connect stays pending.
+      const pending = deferred();
+      jest.mocked(createPgSubscriber).mockImplementationOnce(() => {
+        const subscriber = fakeSubscriber();
+        subscriber.connect.mockReturnValue(pending.promise);
+        subscribers.push(subscriber);
+        return subscriber as any;
+      });
+
+      subscribers[0].events.emit('error', new Error('gone'));
+      jest.advanceTimersByTime(1_000); // retry 1: S2, connect pending
+      await flush();
+      expect(subscribers).toHaveLength(2);
+
+      // S2 errors while its connect is still pending: retry 2 replaces it.
+      subscribers[1].events.emit('error', new Error('S2 failed'));
+      jest.advanceTimersByTime(2_000); // retry 2: S3 listens
+      await flush();
+      expect(subscribers).toHaveLength(3);
+      expect(listener.isListening).toBe(true);
+
+      // S2's connect finally completes: its subscribe is abandoned, quietly.
+      pending.resolve();
+      await flush();
+      jest.advanceTimersByTime(120_000);
+      await flush();
+
+      expect(subscribers).toHaveLength(3);
+      expect(subscribers[2].close).not.toHaveBeenCalled();
+      expect(listener.events).toEqual([
+        'listening:false',
+        'lost',
+        'listening:true',
+      ]);
+      expect(errorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('could not re-establish'),
+      );
+      await listener.onModuleDestroy();
+    });
+  });
+
+  describe('the Nest-free class', () => {
+    it('logs to console by default', async () => {
+      const log = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => undefined);
+      class Plain extends NestFreeNotificationListener<unknown> {
+        onNotification() {
+          return undefined;
+        }
+      }
+
+      const listener = new Plain('events', dataSource);
+      await listener.onModuleInit();
+      await listener.onModuleDestroy();
+
+      expect(log).toHaveBeenCalledWith(
+        '[NotificationListener] Listening to pg "events" notifications',
+      );
+      expect(logSpy).not.toHaveBeenCalled();
+    });
+
+    it('is what the main entry point extends', () => {
+      class Nested extends NotificationListener<unknown> {
+        onNotification() {
+          return undefined;
+        }
+      }
+      expect(new Nested('events', dataSource)).toBeInstanceOf(
+        NestFreeNotificationListener,
+      );
     });
   });
 });

@@ -6,6 +6,7 @@ export {
   NotificationListenerListening,
   NotificationListenerLogger,
   NotificationListenerOptions,
+  NotificationPayloadError,
   PgClientConfig,
 } from './lib/notification-listener';
 export {
