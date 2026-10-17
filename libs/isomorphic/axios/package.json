@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/isomorphic-axios",
-  "version": "25.3.2",
+  "version": "25.4.0",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",

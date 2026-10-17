@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/isomorphic-jsonata",
-  "version": "25.3.2",
+  "version": "25.4.0",
   "license": "MIT",
   "type": "commonjs",
   "main": "./src/index.js",
@@ -26,7 +26,7 @@
     "tslib": "^2.3.0"
   },
   "peerDependencies": {
-    "@onivoro/isomorphic-common": "25.3.2"
+    "@onivoro/isomorphic-common": "25.4.0"
   },
   "files": [
     "**/*.js",
