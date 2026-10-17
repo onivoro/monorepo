@@ -70,6 +70,9 @@
       "@onivoro/server-mcp-oauth": ["libs/server/mcp-oauth/src/index.ts"],
       "@onivoro/server-open-ai": ["libs/server/open-ai/src/index.ts"],
       "@onivoro/server-pg-notify": ["libs/server/pg-notify/src/index.ts"],
+      "@onivoro/server-pg-notify/listener": [
+        "libs/server/pg-notify/src/listener.ts"
+      ],
       "@onivoro/server-pino": ["libs/server/pino/src/index.ts"],
       "@onivoro/server-process": ["libs/server/process/src/index.ts"],
       "@onivoro/server-resilience": ["libs/server/resilience/src/index.ts"],

@@ -16,12 +16,20 @@ npm install @onivoro/server-pg-notify pg-listen pg
 npm install typeorm   # only if you pass TypeORM DataSources
 ```
 
-Peer dependencies: `@nestjs/common` (10 or 11), `pg` (7.x or 8.x, as `pg-listen`
-requires), `pg-listen` (^1.7), and optionally `typeorm` (^0.3). The package
-loads `typeorm` only when Nest resolves `PgNotifyPublisher` as a plain class
-provider (to inject the `DataSource` by type), so without TypeORM nothing needs
-it installed. Its types are still referenced from the declarations, which
+Peer dependencies: `pg` (7.x or 8.x, as `pg-listen` requires), `pg-listen`
+(~1.7, the release the listener's reconnect handling is tested against), and optionally `@nestjs/common` (10 or 11) and `typeorm` (^0.3). The
+package loads `typeorm` only when Nest resolves `PgNotifyPublisher` as a plain
+class provider (to inject the `DataSource` by type), so without TypeORM nothing
+needs it installed. Its types are still referenced from the declarations, which
 compile without it under `skipLibCheck` (the Nest default).
+
+`@nestjs/common` is needed by the package's main entry point (the publisher, the
+trigger helpers, and a `NotificationListener` that logs through Nest's
+`Logger`). Without Nest, import from `@onivoro/server-pg-notify/listener`, which
+has `NotificationListener`, `buildNotifyQuery` and `notifyInTransaction`, and
+never loads Nest or TypeORM, even when they are installed: its
+`NotificationListener` logs to `console` unless given a `logger`. The main
+entry's `NotificationListener` is a subclass of that one.
 
 ## Listening
 
@@ -89,9 +97,106 @@ as connection settings.
 
 The subscription is opened in `onModuleInit` and closed in `onModuleDestroy`.
 A failure to connect at boot is not caught, so it fails application startup
-rather than leaving an app that looks healthy and receives nothing.
-`onNotification` may return a promise. The channel name is available to
-subclasses as `this.channel`.
+rather than leaving an app that looks healthy and receives nothing; it leaves
+no connection and no retry behind. `onModuleDestroy` stops every retry, and
+waits for (and closes) a connection still being made. The channel name is
+available to subclasses as `this.channel`.
+
+`onNotification` may return a promise. What it throws or rejects with is
+logged and goes no further: `pg` calls it from its socket handler, where a
+throw would end the process. Only the error's name is logged (`A pg "outbox"
+notification failed in onNotification: ZodError`), since a validation error's
+message often quotes the values it rejected, which anyone who can `NOTIFY` can
+write. To log more, catch inside `onNotification`.
+
+### Payloads
+
+Each payload is parsed as JSON by the listener, not by `pg-listen`. A payload
+that doesn't parse goes to `onBadPayload(raw, error)` instead of
+`onNotification`, and the connection is kept; by default it logs a warning with
+the payload's length but not its content, since anyone who can connect to the
+database can `NOTIFY`. Pass `parse` to read something other than JSON; a throw
+from it goes to `onBadPayload` too.
+
+`error` is a `NotificationPayloadError`: its message gives the payload's length
+and what the parser threw (`parseErrorName`, such as `SyntaxError`), but never
+the payload, so it is safe to log. Nothing is read from the parser's own
+message, which for `JSON.parse` quotes the payload, and it isn't kept, not even
+as `cause`. The payload is only the `raw` argument.
+
+Postgres delivers `NOTIFY ch` and `NOTIFY ch, ''` alike, as an empty payload.
+Either reaches `onNotification` as `undefined`, and `parse` is never called for
+it.
+
+### Knowing when it is listening
+
+```ts
+@Injectable()
+export class OutboxListener extends NotificationListener<OutboxEvent> {
+  constructor(
+    dataSource: DataSource,
+    private readonly outbox: OutboxReader,
+  ) {
+    super('outbox_events', dataSource);
+  }
+
+  onNotification(payload: OutboxEvent) {
+    // ...
+  }
+
+  // After every LISTEN that succeeds.
+  protected override async onListening({ reconnected }: { reconnected: boolean }) {
+    // Nothing sent while the connection was down was delivered: catch up.
+    if (reconnected) await this.outbox.replayUnseen();
+  }
+
+  // When the connection is lost, before any retry.
+  protected override onConnectionLost(error: Error) {
+    metrics.increment('outbox_listener_lost');
+  }
+
+  protected override onBadPayload(raw: string, error: Error) {
+    metrics.increment('outbox_listener_bad_payload');
+  }
+}
+```
+
+- `onListening({ reconnected })` runs after every `LISTEN` that succeeds: the
+  first with `reconnected: false`, and each after a lost connection with
+  `true`.
+- `onConnectionLost(error)` runs once per loss, before any retry.
+- `isListening` is `true` from each successful `LISTEN` until the next loss or
+  `onModuleDestroy`. While it is `false`, notifications are missed.
+- Any hook may be `async`. What a hook throws, or rejects with, is logged and
+  goes no further (the hooks run from `pg-listen`'s event handlers, where an
+  unhandled rejection would end the process). `onBadPayload`'s and
+  `onNotification`'s errors are logged by name only, since they may quote the
+  payload.
+
+### Options
+
+The constructor's third argument is optional:
+
+| Option   | Default                                                         | Does                                                                         |
+| -------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `logger` | Nest's `Logger` from the main entry; `console` from `/listener` | Where to log; anything with `log`, `warn` and `error`. `false` logs nothing. |
+| `parse`  | `JSON.parse`                                                    | Turns a payload into what `onNotification` gets.                             |
+
+Without Nest:
+
+```ts
+import { NotificationListener } from '@onivoro/server-pg-notify/listener';
+
+const listener = new (class extends NotificationListener<OutboxEvent> {
+  onNotification(payload: OutboxEvent) {
+    // ...
+  }
+})('outbox_events', process.env.DATABASE_URL!, { logger: myLogger });
+
+await listener.onModuleInit(); // resolves once the LISTEN is in place
+// ...
+await listener.onModuleDestroy();
+```
 
 ### Why this is not twenty lines
 
@@ -102,22 +207,26 @@ becomes a crash loop. This listener handles three things, and the third is the
 one that is easy to miss:
 
 1. **Handle the error**, which stops the crash.
-2. **Raise the retry window** past `pg-listen`'s 3 second default. Most things
-   that interrupt a database connection — a failover, a deploy, a tunnel
-   dropping — last longer than that, so the ordinary case was reaching the
-   give-up path rather than reconnecting through it.
-3. **Re-initialise afterwards**, because a process that no longer crashes but is
-   silently deaf is a worse trade: a crash at least restarts into a working
-   listener.
+2. **Own the retries.** `pg-listen`'s own reconnect loop can't be stopped once
+   it starts (it never checks whether it was closed), so a listener closed
+   mid-reconnect would go on connecting. The listener gives `pg-listen`
+   `retryLimit: 1`, so it makes no attempt of its own and reports a lost
+   connection at once, and does every retry itself.
+3. **Re-initialise after every loss**, because a process that no longer crashes
+   but is silently deaf is a worse trade: a crash at least restarts into a
+   working listener.
 
-Concretely: `pg-listen` is given a 30 second `retryTimeout` (in its options
-argument; 25.0.2 and earlier put it in the connection settings, where
-`pg-listen` never read it, so the 3 second default stayed in force). When it
-still gives up, the listener tears the subscriber down and builds a new one
-after 1s, then 2s, 4s, and so on, capped at 30s, resetting after a successful
-subscribe. Reconnection is unbounded with capped backoff. Bounded attempts end
-in a process that is running and permanently deaf, which is the failure nobody
-notices.
+Concretely: on a lost connection the listener tears the subscriber down and
+builds a new one after 1s, then 2s, 4s, and so on, capped at 30s, resetting
+after a successful subscribe. Reconnection is unbounded with capped backoff.
+Bounded attempts end in a process that is running and permanently deaf, which
+is the failure nobody notices. Closing the listener stops it.
+
+Setting any of `pg-listen`'s retry options (`retryTimeout`, `retryInterval`,
+`retryLimit`) hands reconnecting back to `pg-listen`, as before: its window is
+then 30 seconds unless you set `retryTimeout`, the listener reports its
+reconnects through `onConnectionLost` and `onListening`, closes any connection
+it makes after the listener was closed, and re-initialises when it gives up.
 
 ## Publishing
 
@@ -454,6 +563,61 @@ here:
    `QueryRunner` or `DataSource` still fits.
 9. **Peer dependencies.** `typeorm` is now optional, and `pg` (7.x or 8.x) is
    listed, as `pg-listen` already required it.
+
+## Behaviour changes since 25.3.2
+
+1. **Retries.** By default `pg-listen` now gets `retryLimit: 1` instead of a
+   30 second `retryTimeout`, and the listener does every retry: the first
+   after 1 second (`pg-listen` tried at once, then every 500ms), then backing
+   off to 30 seconds. Set one of `pg-listen`'s retry options to keep its
+   loop; see "Why this is not twenty lines".
+2. **Payloads that aren't JSON** used to be a connection error: `pg-listen`
+   failed to parse them and the listener reconnected. Now they go to
+   `onBadPayload`, which logs a warning, and the connection is kept.
+3. **A throwing `onNotification` no longer ends the process.** What it throws
+   (or rejects with) is now logged, by the error's name, and the next
+   notification is delivered as usual. Before, a throw escaped into `pg`'s
+   socket handler and a rejection was unhandled, either of which could end the
+   process. If you relied on that (a supervisor restarting the process, which
+   then re-read its state), the process now keeps running on a handler that
+   fails on every notification, and the only sign is an error log line for
+   each. Catch inside `onNotification` and decide there: re-read state, raise
+   an alert, or exit deliberately (`process.exit`).
+4. **A failed boot** (`onModuleInit` rejecting) now closes its connection and
+   schedules no retry. Before, the half-made subscriber could keep
+   reconnecting until `onModuleDestroy` was called.
+5. **`onModuleDestroy`** now also waits for a subscribe in progress and closes
+   its connection.
+6. **New members.** `NotificationListener` has new protected methods
+   `onListening`, `onConnectionLost` and `onBadPayload`, and a getter
+   `isListening`. A subclass that already has members with those names now
+   overrides them; rename yours if they mean something else. In particular, a
+   subclass that declares a property `isListening` (say `isListening = false`)
+   no longer compiles (TS2610: a property can't override an accessor), and in
+   JavaScript, or with `useDefineForClassFields`, the field hides the getter,
+   so `isListening` reports your value, never the listener's. Rename the
+   property, or drop it and read the listener's `isListening`. The class no
+   longer declares `implements OnModuleInit, OnModuleDestroy`; Nest still
+   calls both methods.
+7. **Peer dependencies.** `@nestjs/common` is now optional; the
+   `/listener` entry point doesn't need it. `pg-listen` is now `~1.7.0`
+   (was `^1.7.0`), since the reconnect handling relies on how 1.7 behaves
+   (pinned by `pg-listen-contract.spec.ts`); 1.7.0 is the current release.
+8. **Log lines.** A failing `onNotification` logs `A pg "<channel>"
+notification failed in onNotification: <error name>` (it was `... failed:
+<message>`), and a failing `onBadPayload` logs its error's name only.
+   Alerts matching the old text need updating.
+9. **`onBadPayload`'s `error`** is a `NotificationPayloadError`, not the
+   parser's own error; read `parseErrorName` instead of `message`.
+10. **Deep imports.** `NotificationListener` from
+    `@onivoro/server-pg-notify/src/lib/notification-listener` is now the
+    Nest-free base class, which logs to `console` by default (as
+    `@onivoro/server-pg-notify/listener`'s does). The one that logs through
+    Nest's `Logger` by default is the main entry's `NotificationListener`
+    (from `@onivoro/server-pg-notify`, defined in
+    `src/lib/nest-notification-listener`). If you deep-imported the class and
+    want Nest's logging, import it from the package root, or pass
+    `{ logger: new Logger('NotificationListener') }`.
 
 ## Fanning out a stream across instances
 
