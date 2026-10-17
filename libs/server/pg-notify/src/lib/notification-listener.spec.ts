@@ -1036,4 +1036,75 @@ describe('NotificationListener', () => {
       );
     });
   });
+
+  describe('async hooks that reject', () => {
+    let unhandled: unknown[];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+
+    beforeEach(() => {
+      unhandled = [];
+      process.on('unhandledRejection', onUnhandled);
+    });
+
+    afterEach(() => {
+      process.off('unhandledRejection', onUnhandled);
+    });
+
+    /** Lets a rejection that nothing handles reach `unhandledRejection`. */
+    const settled = async () => {
+      jest.useRealTimers();
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+
+    class AsyncHooks extends NotificationListener<unknown> {
+      protected override async onListening() {
+        throw new Error('listening hook');
+      }
+
+      protected override async onConnectionLost() {
+        throw new Error('lost hook');
+      }
+
+      protected override async onBadPayload() {
+        throw new Error('bad payload hook, with the payload: secret');
+      }
+
+      async onNotification() {
+        throw new TypeError('notification hook');
+      }
+    }
+
+    it('logs each rejection, and leaves none unhandled', async () => {
+      const listener = new AsyncHooks('events', dataSource);
+      await listener.onModuleInit();
+
+      subscribers[0].notifications.emit('events', 'secret');
+      subscribers[0].notifications.emit('events', '{}');
+      subscribers[0].events.emit('error', new Error('gone'));
+      jest.advanceTimersByTime(1_000);
+      await flush();
+      await settled();
+
+      expect(unhandled).toEqual([]);
+      expect(errorSpy).toHaveBeenCalledWith(
+        'onListening failed for pg "events" notifications: listening hook',
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        'onConnectionLost failed for pg "events" notifications: lost hook',
+      );
+      // By name only: these two may quote the payload.
+      expect(errorSpy).toHaveBeenCalledWith(
+        'onBadPayload failed for pg "events" notifications: Error',
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        'A pg "events" notification failed in onNotification: TypeError',
+      );
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret');
+      // The retry still went ahead, and the listener is listening again.
+      expect(subscribers).toHaveLength(2);
+      expect(listener.isListening).toBe(true);
+      await listener.onModuleDestroy();
+    });
+  });
 });

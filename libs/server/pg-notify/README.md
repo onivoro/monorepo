@@ -167,7 +167,11 @@ export class OutboxListener extends NotificationListener<OutboxEvent> {
 - `onConnectionLost(error)` runs once per loss, before any retry.
 - `isListening` is `true` from each successful `LISTEN` until the next loss or
   `onModuleDestroy`. While it is `false`, notifications are missed.
-- What the hooks throw (or `onListening` rejects with) is logged.
+- Any hook may be `async`. What a hook throws, or rejects with, is logged and
+  goes no further (the hooks run from `pg-listen`'s event handlers, where an
+  unhandled rejection would end the process). `onBadPayload`'s and
+  `onNotification`'s errors are logged by name only, since they may quote the
+  payload.
 
 ### Options
 

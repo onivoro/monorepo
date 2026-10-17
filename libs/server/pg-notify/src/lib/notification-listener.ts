@@ -262,9 +262,9 @@ export abstract class NotificationListener<TNotification> {
   /**
    * Called when the connection is lost, before any retry. `isListening` is
    * already false. Notifications are missed until the next `onListening`.
-   * What it throws is logged.
+   * It may be async. What it throws or rejects with is logged.
    */
-  protected onConnectionLost(_error: Error): void {
+  protected onConnectionLost(_error: Error): void | Promise<void> {
     return undefined;
   }
 
@@ -276,8 +276,14 @@ export abstract class NotificationListener<TNotification> {
    * `error` is a `NotificationPayloadError`, whose message says the payload's
    * length and where parsing failed but never quotes it, so it is safe to log.
    * The payload is `raw`; log that only if you trust every writer.
+   *
+   * It may be async. What it throws or rejects with is logged by its name
+   * only, since it has the payload.
    */
-  protected onBadPayload(raw: string, _error: NotificationPayloadError): void {
+  protected onBadPayload(
+    raw: string,
+    _error: NotificationPayloadError,
+  ): void | Promise<void> {
     this.logger?.warn(
       `Ignored a pg "${this.channel}" notification whose payload (${raw.length} characters) could not be parsed`,
     );
@@ -348,16 +354,10 @@ export abstract class NotificationListener<TNotification> {
         : `Listening to pg "${this.channel}" notifications`,
     );
 
-    try {
-      const result = this.onListening({ reconnected });
-      if (isPromiseLike(result)) {
-        result.then(undefined, (error: unknown) =>
-          this.#logHookError('onListening', error),
-        );
-      }
-    } catch (error) {
-      this.#logHookError('onListening', error);
-    }
+    this.#runHook(
+      () => this.onListening({ reconnected }),
+      (error) => this.#logHookError('onListening', error),
+    );
   }
 
   /**
@@ -391,11 +391,10 @@ export abstract class NotificationListener<TNotification> {
   #lost(error: Error) {
     if (!this.#listening) return;
     this.#listening = false;
-    try {
-      this.onConnectionLost(error);
-    } catch (hookError) {
-      this.#logHookError('onConnectionLost', hookError);
-    }
+    this.#runHook(
+      () => this.onConnectionLost(error),
+      (hookError) => this.#logHookError('onConnectionLost', hookError),
+    );
   }
 
   /**
@@ -495,33 +494,28 @@ export abstract class NotificationListener<TNotification> {
       try {
         payload = this.#parse(raw);
       } catch (error) {
-        try {
-          this.onBadPayload(
-            raw,
-            new NotificationPayloadError(this.channel, raw, error),
-          );
-        } catch (hookError) {
+        this.#runHook(
+          () =>
+            this.onBadPayload(
+              raw,
+              new NotificationPayloadError(this.channel, raw, error),
+            ),
           // It has the payload, so its message may quote it.
-          this.logger?.error(
-            `onBadPayload failed for pg "${this.channel}" notifications: ${errorName(hookError)}`,
-          );
-        }
+          (hookError) =>
+            this.logger?.error(
+              `onBadPayload failed for pg "${this.channel}" notifications: ${errorName(hookError)}`,
+            ),
+        );
         return;
       }
     } else {
       payload = raw as TNotification;
     }
 
-    try {
-      const result = this.onNotification(payload);
-      if (isPromiseLike(result)) {
-        result.then(undefined, (error: unknown) =>
-          this.#logNotificationError(error),
-        );
-      }
-    } catch (error) {
-      this.#logNotificationError(error);
-    }
+    this.#runHook(
+      () => this.onNotification(payload),
+      (error) => this.#logNotificationError(error),
+    );
   }
 
   /**
@@ -533,6 +527,27 @@ export abstract class NotificationListener<TNotification> {
     this.logger?.error(
       `A pg "${this.channel}" notification failed in onNotification: ${errorName(error)}`,
     );
+  }
+
+  /**
+   * Runs a hook so that nothing it throws, or rejects with if it is async,
+   * escapes: pg-listen calls these from event handlers, where a throw or an
+   * unhandled rejection would end the process.
+   */
+  #runHook(hook: () => unknown, onError: (error: unknown) => void) {
+    const report = (error: unknown) => {
+      try {
+        onError(error);
+      } catch {
+        // A logger that throws can't be helped here.
+      }
+    };
+    try {
+      const result = hook();
+      if (isPromiseLike(result)) result.then(undefined, report);
+    } catch (error) {
+      report(error);
+    }
   }
 
   #logHookError(hook: string, error: unknown) {
