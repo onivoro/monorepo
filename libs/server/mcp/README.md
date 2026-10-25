@@ -850,7 +850,7 @@ Resources and prompts accept `icons` in their metadata object:
 
 ### Extension metadata (`_meta`)
 
-Tools and resources can carry `_meta`, advertised as is in `tools/list` and `resources/list`. Extensions use it to describe things the core spec does not — for example MCP Apps, which links a tool to an interactive HTML view served as a `ui://` resource:
+Tools, resources and prompts can carry `_meta`, advertised as is in `tools/list`, `resources/list` and `prompts/list`. Extensions use it to describe things the core spec does not — for example MCP Apps, which links a tool to an interactive HTML view served as a `ui://` resource:
 
 ```typescript
 @McpTool({
@@ -867,11 +867,16 @@ async show() { /* … */ }
   _meta: { ui: { prefersBorder: true } },
 })
 async view() {
+  const html = '<!doctype html><html>…</html>'; // the view's page
   return { contents: [{ uri: 'ui://dashboard/view.html', mimeType: 'text/html;profile=mcp-app', text: html }] };
 }
 ```
 
 A read result's content items can also carry their own `_meta`.
+
+A template resource's `_meta` is listed with the template in `resources/templates/list`, and copied onto each resource its `listStrategy` returns in `resources/list`. A listed resource that has its own `_meta` keeps only that: it replaces the template's whole `_meta` rather than merging with it.
+
+Tool visibility rules (`toolVisibility`, `toolFilter`) hide a tool and its `_meta`, but resources have no per-caller visibility: the `ui://` view a hidden tool names is still listed and readable by every caller. Keep anything a caller must not see out of a view's HTML.
 
 ### Resource annotations
 
@@ -2171,7 +2176,7 @@ McpToolAnnotations; // { readOnlyHint?, destructiveHint?, idempotentHint?, openW
 McpIcon; // { src: string, mimeType?, sizes?: string[], theme?: 'light' | 'dark' } — icon for tools/resources/prompts
 McpResourceMetadata; // { name, uri, title?, description?, mimeType?, size?, icons?, annotations?, _meta?, isTemplate?, listStrategy?, completeStrategy? }
 McpResourceAnnotations; // { audience?, priority?, lastModified? } — annotations for resources
-McpPromptMetadata; // { name, title?, description?, argsSchema?, icons?, completeStrategy? }
+McpPromptMetadata; // { name, title?, description?, argsSchema?, icons?, _meta?, completeStrategy? }
 
 // Provider interfaces
 McpResourceListStrategy; // Interface — list() for resource template list callbacks

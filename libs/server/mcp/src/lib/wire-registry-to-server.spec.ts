@@ -419,6 +419,15 @@ describe('wireRegistryToServer', () => {
     expect(config._meta).toEqual(_meta);
   });
 
+  it('should omit resource _meta when not present', () => {
+    registry.registerResource({ name: 'plain', uri: 'app://plain' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterResource.mock.calls[0][2];
+    expect(config).not.toHaveProperty('_meta');
+  });
+
   it('should register template resources with ResourceTemplate and list: undefined', () => {
     registry.registerResource(
       { name: 'item', uri: 'item://{id}', isTemplate: true },
@@ -529,6 +538,21 @@ describe('wireRegistryToServer', () => {
 
     const config = mockRegisterPrompt.mock.calls[0][1];
     expect(config.title).toBe('Summarize Item');
+  });
+
+  it('should pass prompt _meta to the server when present, and omit it when not', () => {
+    registry.registerPrompt(
+      { name: 'with-meta', description: 'd', _meta: { 'acme/kind': 'report' } },
+      jest.fn(),
+    );
+    registry.registerPrompt({ name: 'plain', description: 'd' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    expect(mockRegisterPrompt.mock.calls[0][1]._meta).toEqual({
+      'acme/kind': 'report',
+    });
+    expect(mockRegisterPrompt.mock.calls[1][1]).not.toHaveProperty('_meta');
   });
 
   it('should register prompts with correct args', () => {

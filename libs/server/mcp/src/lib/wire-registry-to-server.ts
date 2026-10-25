@@ -363,6 +363,7 @@ function wirePromptToServer(
       ...(argsSchema && { argsSchema: argsSchema as any }),
       ...(metadata.title && { title: metadata.title }),
       ...(metadata.icons && { icons: metadata.icons }),
+      ...(metadata._meta && { _meta: metadata._meta }),
     },
     // The SDK calls `(args, ctx)` for a prompt with arguments and `(ctx)` for one without.
     (async (...sdkArgs: any[]) => {

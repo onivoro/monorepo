@@ -10,6 +10,8 @@ export interface McpPromptMetadata {
   argsSchema?: Record<string, z.ZodTypeAny>;
   /** Icons for client UI rendering (spec 2025-11-25+). */
   icons?: McpIcon[];
+  /** Extension metadata advertised with the prompt in `prompts/list`. */
+  _meta?: Record<string, unknown>;
   /**
    * Injectable strategy for autocompletion of prompt arguments.
    * Must implement `McpCompletionStrategy` and be decorated with `@Injectable()`.

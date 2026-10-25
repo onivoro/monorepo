@@ -323,6 +323,46 @@ describe.each([
       expect(seen.signal).toBeInstanceOf(AbortSignal);
     });
 
+    it("lists a template's _meta, and lets a listed resource's own _meta replace it", async () => {
+      class ItemList {
+        list() {
+          return {
+            resources: [
+              { uri: 'app://items/1', name: 'Item 1' },
+              { uri: 'app://items/2', name: 'Item 2', _meta: { own: true } },
+            ],
+          };
+        }
+      }
+      registry.setProviderResolver(() => new ItemList());
+      registry.registerResource(
+        {
+          name: 'item',
+          uri: 'app://items/{id}',
+          isTemplate: true,
+          listStrategy: ItemList as any,
+          _meta: { shared: true },
+        },
+        async () => 'item',
+      );
+      registry.registerPrompt(
+        { name: 'report', _meta: { 'acme/kind': 'report' } },
+        async () => 'prompt',
+      );
+
+      const { client } = await connect(registry);
+      const { resourceTemplates } = await client.listResourceTemplates();
+      const { resources } = await client.listResources();
+      const { prompts } = await client.listPrompts();
+
+      expect(resourceTemplates[0]._meta).toEqual({ shared: true });
+      expect(resources.map((r) => r._meta)).toEqual([
+        { shared: true },
+        { own: true },
+      ]);
+      expect(prompts[0]._meta).toEqual({ 'acme/kind': 'report' });
+    });
+
     it("passes resource and prompt handlers the library context, not the SDK's", async () => {
       const seen: Record<string, any> = {};
       registry.registerResource(
