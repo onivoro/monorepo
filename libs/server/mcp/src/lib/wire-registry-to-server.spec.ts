@@ -170,6 +170,28 @@ describe('wireRegistryToServer', () => {
     expect(config.outputSchema).toBe(outputSchema);
   });
 
+  it('should pass tool _meta to the server when present', () => {
+    const _meta = { ui: { resourceUri: 'ui://app/view.html' } };
+    registry.registerTool(
+      { name: 'app-tool', description: 'Has a view', _meta },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config._meta).toEqual(_meta);
+  });
+
+  it('should omit tool _meta when not present', () => {
+    registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config).not.toHaveProperty('_meta');
+  });
+
   it('should omit outputSchema when not present', () => {
     registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
 
@@ -377,6 +399,24 @@ describe('wireRegistryToServer', () => {
     const config = mockRegisterResource.mock.calls[0][2];
     expect(config.title).toBe('Database Dump');
     expect(config.size).toBe(1048576);
+  });
+
+  it('should pass resource _meta to the server when present', () => {
+    const _meta = { ui: { prefersBorder: true } };
+    registry.registerResource(
+      {
+        name: 'view',
+        uri: 'ui://app/view.html',
+        mimeType: 'text/html;profile=mcp-app',
+        _meta,
+      },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterResource.mock.calls[0][2];
+    expect(config._meta).toEqual(_meta);
   });
 
   it('should register template resources with ResourceTemplate and list: undefined', () => {

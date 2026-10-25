@@ -848,6 +848,31 @@ Resources and prompts accept `icons` in their metadata object:
 })
 ```
 
+### Extension metadata (`_meta`)
+
+Tools and resources can carry `_meta`, advertised as is in `tools/list` and `resources/list`. Extensions use it to describe things the core spec does not — for example MCP Apps, which links a tool to an interactive HTML view served as a `ui://` resource:
+
+```typescript
+@McpTool({
+  name: 'show-dashboard',
+  description: 'Shows the dashboard',
+  _meta: { ui: { resourceUri: 'ui://dashboard/view.html' } },
+})
+async show() { /* … */ }
+
+@McpResource({
+  name: 'dashboard-view',
+  uri: 'ui://dashboard/view.html',
+  mimeType: 'text/html;profile=mcp-app',
+  _meta: { ui: { prefersBorder: true } },
+})
+async view() {
+  return { contents: [{ uri: 'ui://dashboard/view.html', mimeType: 'text/html;profile=mcp-app', text: html }] };
+}
+```
+
+A read result's content items can also carry their own `_meta`.
+
 ### Resource annotations
 
 Resources can declare audience targeting, priority, and last modification time:
@@ -2141,10 +2166,10 @@ McpServerMetadata; // { name, version, description?, instructions? }
 McpServerBaseConfig; // { metadata, serverOptions?, capabilities? } — what McpModuleConfig and McpStdioConfig share
 McpExtraCapabilities; // ServerCapabilities without McpModuleCapabilityKey — the `capabilities` option's type
 McpModuleCapabilityKey; // 'logging' | 'tools' | 'resources' | 'prompts' — capability keys the modules build
-McpToolMetadata; // { name, description, title?, schema?, outputSchema?, aliases?, annotations?, icons? }
+McpToolMetadata; // { name, description, title?, schema?, outputSchema?, aliases?, annotations?, icons?, _meta? }
 McpToolAnnotations; // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
 McpIcon; // { src: string, mimeType?, sizes?: string[], theme?: 'light' | 'dark' } — icon for tools/resources/prompts
-McpResourceMetadata; // { name, uri, title?, description?, mimeType?, size?, icons?, annotations?, isTemplate?, listStrategy?, completeStrategy? }
+McpResourceMetadata; // { name, uri, title?, description?, mimeType?, size?, icons?, annotations?, _meta?, isTemplate?, listStrategy?, completeStrategy? }
 McpResourceAnnotations; // { audience?, priority?, lastModified? } — annotations for resources
 McpPromptMetadata; // { name, title?, description?, argsSchema?, icons?, completeStrategy? }
 

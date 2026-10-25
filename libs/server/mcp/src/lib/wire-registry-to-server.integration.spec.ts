@@ -169,6 +169,51 @@ describe.each([
       expect(result.structuredContent).toEqual({ count: 3 });
     });
 
+    it('advertises tool and resource _meta, as MCP Apps links a tool to its view', async () => {
+      const uri = 'ui://app/view.html';
+      registry.registerTool(
+        {
+          name: 'show',
+          description: 'd',
+          _meta: { ui: { resourceUri: uri } },
+        },
+        async () => 'shown',
+      );
+      registry.registerResource(
+        {
+          name: 'view',
+          uri,
+          mimeType: 'text/html;profile=mcp-app',
+          _meta: { ui: { prefersBorder: true } },
+        },
+        async () => ({
+          contents: [
+            {
+              uri,
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>view</p>',
+              _meta: { ui: { csp: { resourceDomains: [] } } },
+            },
+          ],
+        }),
+      );
+
+      const { client } = await connect(registry);
+      const { tools } = await client.listTools();
+      const { resources } = await client.listResources();
+      const read = await client.readResource({ uri });
+
+      expect(tools.find((tool) => tool.name === 'show')?._meta).toEqual({
+        ui: { resourceUri: uri },
+      });
+      expect(resources.find((r) => r.uri === uri)?._meta).toEqual({
+        ui: { prefersBorder: true },
+      });
+      expect(read.contents[0]._meta).toEqual({
+        ui: { csp: { resourceDomains: [] } },
+      });
+    });
+
     it('shows the client messages written for it, and hides others when exposeErrorMessages is off', async () => {
       registry.setExposeErrorMessages(false);
       registry.registerTool({ name: 'safe', description: 'd' }, async () => {

@@ -16,6 +16,12 @@ export interface McpResourceMetadata {
   icons?: McpIcon[];
   /** Resource-level annotations (audience, priority, lastModified). */
   annotations?: McpResourceAnnotations;
+  /**
+   * Extension metadata advertised with the resource in `resources/list`, e.g.
+   * MCP Apps' `{ ui: { csp, prefersBorder } }`. A content item's own `_meta`
+   * in the read result takes precedence where an extension says so.
+   */
+  _meta?: Record<string, unknown>;
   isTemplate?: boolean;
   /**
    * Injectable strategy that lists all resources matching this template. Only used when isTemplate is true.

@@ -202,6 +202,7 @@ function wireToolToServer(
       ...(metadata.title && { title: metadata.title }),
       ...(metadata.annotations && { annotations: metadata.annotations }),
       ...(metadata.icons && { icons: metadata.icons }),
+      ...(metadata._meta && { _meta: metadata._meta }),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (params: any, ctx: ServerContext) => {
@@ -254,6 +255,7 @@ function wireResourceToServer(
   if (metadata.icons) resourceConfig['icons'] = metadata.icons;
   if (metadata.annotations)
     resourceConfig['annotations'] = metadata.annotations;
+  if (metadata._meta) resourceConfig['_meta'] = metadata._meta;
 
   if (metadata.isTemplate) {
     let listCallback: ((...args: any[]) => any) | undefined;
