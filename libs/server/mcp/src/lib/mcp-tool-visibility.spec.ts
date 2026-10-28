@@ -365,6 +365,73 @@ describe('wireRegistryToServer with visibility rules', () => {
     );
   });
 
+  it("checks a view registered on the server outside the registry, when a registry tool names it", async () => {
+    const registry = new McpToolRegistry();
+    registry.setGuardResolver(() => new McpScopeGuard());
+    registry.setToolVisibility({ toolVisibility: 'authorized' });
+    registry.setAuthStrategy({ resolveAuth });
+    registry.registerTool(
+      {
+        name: 'admin',
+        description: 'a',
+        _meta: { ui: { resourceUri: 'ui://admin/view.html' } },
+      },
+      async () => 'a',
+      [{ guardClass: McpScopeGuard, config: { scopes: ['admin'] } }],
+    );
+    const server = new McpServer(
+      { name: 's', version: '1' },
+      { capabilities: { tools: {}, resources: {} } },
+    );
+    server.registerResource(
+      'admin-view',
+      'ui://admin/view.html',
+      {},
+      async (uri: URL) => ({ contents: [{ uri: uri.href, text: 'secret' }] }),
+    );
+    wireRegistryToServer(registry, server);
+    const client = new Client(
+      { name: 'c', version: '1' },
+      { versionNegotiation: { mode: 'legacy' } },
+    );
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport),
+    ]);
+
+    expect((await client.listResources()).resources).toEqual([]);
+    await expect(
+      client.readResource({ uri: 'ui://admin/view.html' }),
+    ).rejects.toThrow(/not found/i);
+
+    scopes = ['admin'];
+    const read: any = await client.readResource({
+      uri: 'ui://admin/view.html',
+    });
+    expect(read.contents[0].text).toBe('secret');
+  });
+
+  it('removes a resource and throws when the SDK installs no resource handlers with it', () => {
+    const registry = new McpToolRegistry();
+    registry.setToolVisibility({ toolVisibility: 'authorized' });
+    registry.registerResource(
+      { name: 'view', uri: 'ui://app/view.html' },
+      async () => 'view',
+    );
+    const server = new McpServer({ name: 's', version: '1' });
+    const hooks = server.server as any;
+    const sdkHandler = hooks._getRequestHandler.bind(hooks);
+    hooks._getRequestHandler = (method: string) =>
+      method.startsWith('resources/') ? undefined : sdkHandler(method);
+
+    expect(() => wireRegistryToServer(registry, server)).toThrow(
+      /installed no resource handlers/,
+    );
+    expect(Object.keys((server as any)._registeredResources)).toEqual([]);
+  });
+
   it('checks a tool registered later on a server wired with no tools and no tools capability', async () => {
     const registry = new McpToolRegistry();
     registry.setGuardResolver(() => new McpScopeGuard());

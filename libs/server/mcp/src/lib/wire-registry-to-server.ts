@@ -298,10 +298,10 @@ function wireResourceToServer(
   server: McpServer,
   resourceName: string,
   wiring: ServerWiring,
-): void {
+): { remove(): void } | undefined {
   const entries = registry.getResources();
   const entry = entries.find((e) => e.metadata.name === resourceName);
-  if (!entry) return;
+  if (!entry) return undefined;
   const { metadata, handler } = entry;
 
   const resourceConfig: Record<string, unknown> = {};
@@ -341,7 +341,7 @@ function wireResourceToServer(
       });
     }
 
-    server.registerResource(
+    return server.registerResource(
       metadata.name,
       new ResourceTemplate(metadata.uri, {
         list: listCallback,
@@ -355,19 +355,19 @@ function wireResourceToServer(
           metadata.mimeType,
         )) as any,
     );
-  } else {
-    server.registerResource(
-      metadata.name,
-      metadata.uri,
-      resourceConfig,
-      (async (uri: URL, ctx: ServerContext) =>
-        wrapResourceResult(
-          await handler(uri, handlerContext(ctx, wiring.era)),
-          uri.href,
-          metadata.mimeType,
-        )) as any,
-    );
   }
+
+  return server.registerResource(
+    metadata.name,
+    metadata.uri,
+    resourceConfig,
+    (async (uri: URL, ctx: ServerContext) =>
+      wrapResourceResult(
+        await handler(uri, handlerContext(ctx, wiring.era)),
+        uri.href,
+        metadata.mimeType,
+      )) as any,
+  );
 }
 
 /**
@@ -490,13 +490,76 @@ function installCheck(
   }
 }
 
+/**
+ * A resource URI as the SDK keys its resources: `new URL(uri).toString()`, which lowercases
+ * the scheme and resolves `.` and `..` segments. Comparing raw strings would let
+ * `UI://admin/view.html` or `ui://admin/./view.html` past a check on `ui://admin/view.html`
+ * and still read it. A URI that doesn't parse is kept as given.
+ */
+function canonicalUri(uri: string): string {
+  try {
+    return new URL(uri).toString();
+  } catch {
+    return uri;
+  }
+}
+
 /** The MCP Apps view a tool names: `_meta.ui.resourceUri`, or the older `_meta['ui/resourceUri']`. */
 function viewUriOf(
   meta: Record<string, unknown> | undefined,
 ): string | undefined {
   const ui = meta?.['ui'] as { resourceUri?: unknown } | undefined;
   const uri = ui?.resourceUri ?? meta?.['ui/resourceUri'];
-  return typeof uri === 'string' ? uri : undefined;
+  return typeof uri === 'string' ? canonicalUri(uri) : undefined;
+}
+
+/** The registry tools that name each view, by canonical URI, in one pass over the tools. */
+function namingToolsByView(registry: McpToolRegistry): Map<string, string[]> {
+  const byView = new Map<string, string[]>();
+  for (const { metadata } of registry.getTools()) {
+    const uri = viewUriOf(metadata._meta);
+    if (uri) byView.set(uri, [...(byView.get(uri) ?? []), metadata.name]);
+  }
+  return byView;
+}
+
+/**
+ * The tool visibility of one request, from its own auth. The auth is a copy, so auth from a
+ * transport is never trusted as already resolved (see markMcpAuthInfoResolved).
+ */
+function visibilityFor(
+  registry: McpToolRegistry,
+  ctx: ServerContext | undefined,
+) {
+  const authInfo = ctx?.http?.authInfo;
+  return registry.resolveToolVisibility(authInfo && { ...(authInfo as any) });
+}
+
+/** `result` with only the items of its `key` array that `keep` says yes to. */
+async function filterListResult<T>(
+  result: any,
+  key: string,
+  keep: (item: T) => boolean | Promise<boolean>,
+): Promise<any> {
+  const items = result[key] as T[];
+  const decisions = await Promise.all(items.map((item) => keep(item)));
+  return { ...result, [key]: items.filter((_, i) => decisions[i]) };
+}
+
+/**
+ * Whether a request may see `uri`: yes when no tool names it as a view, or when one that does
+ * is visible to the request. Visibility, not whether the tool is enabled, decides: a view named
+ * only by a visible but disabled tool stays readable.
+ */
+async function canSeeView(
+  uri: string,
+  byView: ReadonlyMap<string, string[]>,
+  isVisible: ((name: string) => Promise<boolean>) | undefined,
+): Promise<boolean> {
+  const tools = byView.get(canonicalUri(uri));
+  if (!tools?.length || !isVisible) return true;
+  const decisions = await Promise.all(tools.map((name) => isVisible(name)));
+  return decisions.some(Boolean);
 }
 
 /**
@@ -504,13 +567,15 @@ function viewUriOf(
  * resource that registry tools name as their MCP Apps view (`_meta.ui.resourceUri`) is seen
  * only by a request that may see at least one of those tools:
  *
- * - `resources/list` is the SDK's answer, without the views the request may not see.
- * - `resources/read` of such a view fails as for a resource that doesn't exist.
+ * - `resources/list` is the SDK's answer, without the views the request may not see. That
+ *   includes the resources template `listStrategy`s return.
+ * - `resources/read` of such a view fails as for a resource that doesn't exist, however its
+ *   URI is spelled (compared as the SDK looks it up, `canonicalUri`).
  *
  * Returns whether the checks are in place: the SDK installs its resource handlers with the
- * server's first resource. A resource no tool names is left alone, as are resource
- * templates. Decided per request from
- * the same visibility the tools use (`McpToolRegistry.resolveToolVisibility`).
+ * server's first resource. A resource no tool names is left alone, and so is
+ * `resources/templates/list`. Decided per request from the same visibility the tools use
+ * (`McpToolRegistry.resolveToolVisibility`).
  */
 function enforceViewVisibility(
   registry: McpToolRegistry,
@@ -521,53 +586,29 @@ function enforceViewVisibility(
   const sdkRead = hooks._getRequestHandler('resources/read');
   if (!sdkList || !sdkRead) return false;
 
-  // The tools that name each view, read at request time so later registrations count.
-  const namingTools = (uri: string) =>
-    registry
-      .getTools()
-      .filter(({ metadata }) => viewUriOf(metadata._meta) === uri)
-      .map(({ metadata }) => metadata.name);
-
-  // Whether a request may see `uri`: yes when no tool names it, or one that does is visible.
-  const canSee = async (
-    uri: string,
-    isVisible: ((name: string) => Promise<boolean>) | undefined,
-  ) => {
-    const tools = namingTools(uri);
-    if (!tools.length || !isVisible) return true;
-    const decisions = await Promise.all(tools.map((name) => isVisible(name)));
-    return decisions.some(Boolean);
-  };
-
-  const visibilityFor = (ctx: ServerContext | undefined) => {
-    const authInfo = ctx?.http?.authInfo;
-    return registry.resolveToolVisibility(authInfo && { ...(authInfo as any) });
-  };
-
   installCheck(server, 'resources/list', async (request, ctx) => {
     const [isVisible, result] = await Promise.all([
-      visibilityFor(ctx),
+      visibilityFor(registry, ctx),
       sdkList(request, ctx),
     ]);
     if (!isVisible) return result;
-    const decisions = await Promise.all(
-      (result.resources as Array<{ uri: string }>).map((resource) =>
-        canSee(resource.uri, isVisible),
-      ),
+    // Read at request time, so tools registered later count.
+    const byView = namingToolsByView(registry);
+    return filterListResult<{ uri: string }>(result, 'resources', (resource) =>
+      canSeeView(resource.uri, byView, isVisible),
     );
-    return {
-      ...result,
-      resources: result.resources.filter(
-        (_: unknown, i: number) => decisions[i],
-      ),
-    };
   });
 
   installCheck(server, 'resources/read', async (request, ctx) => {
     const uri = request.params?.uri;
-    if (typeof uri === 'string' && namingTools(uri).length) {
-      const isVisible = await visibilityFor(ctx);
-      if (!(await canSee(uri, isVisible))) throw new ResourceNotFoundError(uri);
+    if (typeof uri === 'string') {
+      const byView = namingToolsByView(registry);
+      if (
+        byView.has(canonicalUri(uri)) &&
+        !(await canSeeView(uri, byView, await visibilityFor(registry, ctx)))
+      ) {
+        throw new ResourceNotFoundError(uri);
+      }
     }
     return sdkRead(request, ctx);
   });
@@ -610,39 +651,23 @@ function enforceToolVisibility(
     );
   }
 
-  // Resolved once per request; the auth is a copy, so auth from a transport is never
-  // trusted as already resolved (see markMcpAuthInfoResolved).
-  const visibilityFor = (ctx: ServerContext | undefined) => {
-    const authInfo = ctx?.http?.authInfo;
-    return registry.resolveToolVisibility(authInfo && { ...(authInfo as any) });
-  };
-
-  const install = (
-    method: 'tools/list' | 'tools/call',
-    handler: (request: any, ctx: ServerContext) => Promise<any>,
-  ) => installCheck(server, method, handler);
-
-  install('tools/list', async (request, ctx) => {
+  installCheck(server, 'tools/list', async (request, ctx) => {
     const [isVisible, result] = await Promise.all([
-      visibilityFor(ctx),
+      visibilityFor(registry, ctx),
       sdkList(request, ctx),
     ]);
     if (!isVisible) return result;
-    const decisions = await Promise.all(
-      (result.tools as Array<{ name: string }>).map(
-        (tool) => !ownTools.has(tool.name) || isVisible(tool.name),
-      ),
+    return filterListResult<{ name: string }>(
+      result,
+      'tools',
+      (tool) => !ownTools.has(tool.name) || isVisible(tool.name),
     );
-    return {
-      ...result,
-      tools: result.tools.filter((_: unknown, i: number) => decisions[i]),
-    };
   });
 
-  install('tools/call', async (request, ctx) => {
+  installCheck(server, 'tools/call', async (request, ctx) => {
     const name = request.params?.name;
     if (ownTools.has(name)) {
-      const isVisible = await visibilityFor(ctx);
+      const isVisible = await visibilityFor(registry, ctx);
       if (isVisible && !(await isVisible(name))) {
         throw new ProtocolError(
           ProtocolErrorCode.InvalidParams,
@@ -734,13 +759,22 @@ export function wireRegistryToServer(
     wireTool(metadata.name);
   }
 
-  // With visibility rules, a tool's MCP Apps view is as visible as the tools that name it
-  // (enforced once the server has a resource, and so the SDK's resource handlers).
-  let enforcingViews = false;
+  // With visibility rules, a tool's MCP Apps view is as visible as the tools that name it,
+  // enforced once the server has the SDK's resource handlers: now, if resources were
+  // registered on it outside the registry, or else with its first registry resource.
+  let enforcingViews =
+    enforcesVisibility && enforceViewVisibility(registry, server);
   const wireResource = (name: string) => {
-    wireResourceToServer(registry, server, name, wiring);
-    if (!enforcesVisibility || enforcingViews) return;
-    enforcingViews = enforceViewVisibility(registry, server);
+    const registered = wireResourceToServer(registry, server, name, wiring);
+    if (!enforcesVisibility || enforcingViews || !registered) return;
+    // Fail closed, as for tools: a resource the checks can't cover isn't served.
+    if (!enforceViewVisibility(registry, server)) {
+      registered.remove();
+      throw new Error(
+        "Tool visibility rules are set, but the MCP SDK installed no resource handlers with this server's first resource, so its views can't be checked.",
+      );
+    }
+    enforcingViews = true;
   };
 
   for (const { metadata } of registry.getResources()) {
@@ -772,9 +806,20 @@ export function wireRegistryToServer(
     // updates only go to clients that subscribed).
     const subscribedUris = new Set<string>();
 
-    server.server.setRequestHandler('resources/subscribe', (request, ctx) => {
+    server.server.setRequestHandler('resources/subscribe', async (request, ctx) => {
       const uri = request.params.uri;
       const sessionId = ctx?.sessionId;
+      // A view the caller may not see can't be subscribed to either: its updates would
+      // reveal that it exists and when it changes.
+      if (uri && enforcesVisibility) {
+        const byView = namingToolsByView(registry);
+        if (
+          byView.has(canonicalUri(uri)) &&
+          !(await canSeeView(uri, byView, await visibilityFor(registry, ctx)))
+        ) {
+          throw new ResourceNotFoundError(uri);
+        }
+      }
       if (uri) subscribedUris.add(uri);
       if (uri && sessionId) {
         registry.subscribeResource(uri, sessionId);

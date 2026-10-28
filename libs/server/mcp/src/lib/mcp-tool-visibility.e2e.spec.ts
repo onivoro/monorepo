@@ -221,6 +221,33 @@ describe('Per-caller tool visibility over HTTP', () => {
           await client.close();
         });
 
+        it("refuses the admin tool's view to an agent token however its URI is spelled", async () => {
+          const client = await connect(url, mode, 'agent-token');
+          for (const uri of [
+            'UI://admin/view.html',
+            'ui://admin/./view.html',
+            'ui://admin/x/../view.html',
+          ]) {
+            await expect(client.readResource({ uri })).rejects.toThrow(
+              /not found/i,
+            );
+          }
+          await client.close();
+        });
+
+        it("refuses a subscription to the admin tool's view from an agent token", async () => {
+          // resources/subscribe is the 2025-era mechanism, on a stateful server.
+          if (mode !== 'legacy' || !config.session) return;
+          const client = await connect(url, mode, 'agent-token');
+          await expect(
+            client.subscribeResource({ uri: 'ui://admin/view.html' }),
+          ).rejects.toThrow(/not found/i);
+          await expect(
+            client.subscribeResource({ uri: 'ui://public/view.html' }),
+          ).resolves.toBeDefined();
+          await client.close();
+        });
+
         it("lists and serves the admin tool's view to an admin token", async () => {
           const client = await connect(url, mode, 'admin-token');
           expect(await resourceUris(client)).toEqual([
