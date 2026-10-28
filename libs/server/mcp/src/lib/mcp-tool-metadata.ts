@@ -14,4 +14,9 @@ export interface McpToolMetadata {
   annotations?: McpToolAnnotations;
   /** Icons for client UI rendering (spec 2025-11-25+). */
   icons?: McpIcon[];
+  /**
+   * Extension metadata advertised with the tool in `tools/list`, e.g. MCP Apps'
+   * `{ ui: { resourceUri: 'ui://…' } }` linking the tool to an interactive view.
+   */
+  _meta?: Record<string, unknown>;
 }

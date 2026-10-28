@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { McpToolRegistry } from './mcp-tool-registry';
 import { buildCapabilities } from './build-capabilities';
 import { wireRegistryToServer } from './wire-registry-to-server';
@@ -168,6 +169,28 @@ describe('wireRegistryToServer', () => {
 
     const config = mockRegisterTool.mock.calls[0][1];
     expect(config.outputSchema).toBe(outputSchema);
+  });
+
+  it('should pass tool _meta to the server when present', () => {
+    const _meta = { ui: { resourceUri: 'ui://app/view.html' } };
+    registry.registerTool(
+      { name: 'app-tool', description: 'Has a view', _meta },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config._meta).toEqual(_meta);
+  });
+
+  it('should omit tool _meta when not present', () => {
+    registry.registerTool({ name: 'tool', description: 'd' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterTool.mock.calls[0][1];
+    expect(config).not.toHaveProperty('_meta');
   });
 
   it('should omit outputSchema when not present', () => {
@@ -379,6 +402,33 @@ describe('wireRegistryToServer', () => {
     expect(config.size).toBe(1048576);
   });
 
+  it('should pass resource _meta to the server when present', () => {
+    const _meta = { ui: { prefersBorder: true } };
+    registry.registerResource(
+      {
+        name: 'view',
+        uri: 'ui://app/view.html',
+        mimeType: 'text/html;profile=mcp-app',
+        _meta,
+      },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterResource.mock.calls[0][2];
+    expect(config._meta).toEqual(_meta);
+  });
+
+  it('should omit resource _meta when not present', () => {
+    registry.registerResource({ name: 'plain', uri: 'app://plain' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    const config = mockRegisterResource.mock.calls[0][2];
+    expect(config).not.toHaveProperty('_meta');
+  });
+
   it('should register template resources with ResourceTemplate and list: undefined', () => {
     registry.registerResource(
       { name: 'item', uri: 'item://{id}', isTemplate: true },
@@ -392,6 +442,70 @@ describe('wireRegistryToServer', () => {
     expect(mockRegisterResource.mock.calls[0][1]).toEqual({
       uri: 'item://{id}',
     });
+  });
+
+  it("should give each listed resource without _meta its own copy of the template's", async () => {
+    const { ResourceTemplate } = require('@modelcontextprotocol/server');
+    class TestListProvider {
+      list = async () => ({
+        resources: [
+          { uri: 'item://1', name: 'Item 1' },
+          { uri: 'item://2', name: 'Item 2', _meta: undefined },
+          { uri: 'item://3', name: 'Item 3', _meta: { own: true } },
+        ],
+      });
+    }
+    registry.setProviderResolver(() => new TestListProvider());
+    registry.registerResource(
+      {
+        name: 'item',
+        uri: 'item://{id}',
+        isTemplate: true,
+        listStrategy: TestListProvider as any,
+        _meta: { shared: { nested: true } },
+      },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+    const listed = await ResourceTemplate.mock.calls[0][1].list();
+
+    expect(listed.resources.map((r: any) => r._meta)).toEqual([
+      { shared: { nested: true } },
+      { shared: { nested: true } },
+      { own: true },
+    ]);
+    // Copies, so changing one resource's _meta changes no other.
+    expect(listed.resources[0]._meta).not.toBe(listed.resources[1]._meta);
+    expect(listed.resources[0]._meta.shared).not.toBe(
+      listed.resources[1]._meta.shared,
+    );
+  });
+
+  it('should warn once about _meta keys under a reserved prefix, and still pass them', () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    registry.registerTool(
+      {
+        name: 'reserved-meta',
+        description: 'd',
+        _meta: { 'io.modelcontextprotocol/related': 1, 'acme.com/x': 2 },
+      },
+      jest.fn(),
+    );
+
+    wireRegistryToServer(registry, createMockServer());
+    wireRegistryToServer(registry, createMockServer());
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('io.modelcontextprotocol/related');
+    expect(warn.mock.calls[0][0]).not.toContain('acme.com/x');
+    expect(mockRegisterTool.mock.calls[0][1]._meta).toEqual({
+      'io.modelcontextprotocol/related': 1,
+      'acme.com/x': 2,
+    });
+    warn.mockRestore();
   });
 
   it('should resolve listStrategy and pass list callback to ResourceTemplate', () => {
@@ -489,6 +603,21 @@ describe('wireRegistryToServer', () => {
 
     const config = mockRegisterPrompt.mock.calls[0][1];
     expect(config.title).toBe('Summarize Item');
+  });
+
+  it('should pass prompt _meta to the server when present, and omit it when not', () => {
+    registry.registerPrompt(
+      { name: 'with-meta', description: 'd', _meta: { 'acme/kind': 'report' } },
+      jest.fn(),
+    );
+    registry.registerPrompt({ name: 'plain', description: 'd' }, jest.fn());
+
+    wireRegistryToServer(registry, createMockServer());
+
+    expect(mockRegisterPrompt.mock.calls[0][1]._meta).toEqual({
+      'acme/kind': 'report',
+    });
+    expect(mockRegisterPrompt.mock.calls[1][1]).not.toHaveProperty('_meta');
   });
 
   it('should register prompts with correct args', () => {

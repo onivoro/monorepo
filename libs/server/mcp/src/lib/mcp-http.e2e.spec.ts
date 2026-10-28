@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { McpHttpModule } from './mcp-http.module';
 import { McpTool } from './mcp-tool.decorator';
 import { McpResource } from './mcp-resource.decorator';
+import { McpPrompt } from './mcp-prompt.decorator';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpToolContext } from './mcp-tool-context';
 import type { McpModuleConfig } from './mcp-module-config';
@@ -62,6 +63,30 @@ class E2eToolService {
   @McpResource({ name: 'config', uri: 'app://config' })
   async config() {
     return 'v1';
+  }
+
+  @McpTool({
+    name: 'show',
+    description: 'Has a view',
+    _meta: { ui: { resourceUri: 'ui://e2e/view.html' } },
+  })
+  async show() {
+    return 'shown';
+  }
+
+  @McpResource({
+    name: 'view',
+    uri: 'ui://e2e/view.html',
+    mimeType: 'text/html;profile=mcp-app',
+    _meta: { ui: { prefersBorder: true } },
+  })
+  async view() {
+    return '<p>view</p>';
+  }
+
+  @McpPrompt({ name: 'report', _meta: { 'acme.com/kind': 'report' } })
+  async report() {
+    return 'report';
   }
 }
 
@@ -142,6 +167,7 @@ describe('McpHttpModule end to end with the MCP SDK client', () => {
         const tools = await client.listTools();
         expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
           'deploy',
+          'show',
           'whoami',
           'work',
         ]);
@@ -153,6 +179,28 @@ describe('McpHttpModule end to end with the MCP SDK client', () => {
 
         await client.close();
       });
+
+      it.each(['auto', 'legacy'] as const)(
+        'advertises tool, resource and prompt _meta (%s client)',
+        async (mode) => {
+          const { client } = await connect(url, mode);
+
+          const { tools } = await client.listTools();
+          const { resources } = await client.listResources();
+          const { prompts } = await client.listPrompts();
+
+          expect(tools.find((tool) => tool.name === 'show')?._meta).toEqual({
+            ui: { resourceUri: 'ui://e2e/view.html' },
+          });
+          expect(
+            resources.find((r) => r.uri === 'ui://e2e/view.html')?._meta,
+          ).toEqual({ ui: { prefersBorder: true } });
+          expect(prompts.find((p) => p.name === 'report')?._meta).toEqual({
+            'acme.com/kind': 'report',
+          });
+          await client.close();
+        },
+      );
 
       it('serves a 2025-era client', async () => {
         const { client, transport } = await connect(url, 'legacy');

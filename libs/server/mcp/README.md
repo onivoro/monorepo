@@ -848,6 +848,40 @@ Resources and prompts accept `icons` in their metadata object:
 })
 ```
 
+### Extension metadata (`_meta`)
+
+Tools, resources and prompts can carry `_meta`, advertised as is in `tools/list`, `resources/list` and `prompts/list`. Extensions use it to describe things the core spec does not — for example MCP Apps, which links a tool to an interactive HTML view served as a `ui://` resource:
+
+```typescript
+@McpTool({
+  name: 'show-dashboard',
+  description: 'Shows the dashboard',
+  _meta: { ui: { resourceUri: 'ui://dashboard/view.html' } },
+})
+async show() { /* … */ }
+
+@McpResource({
+  name: 'dashboard-view',
+  uri: 'ui://dashboard/view.html',
+  mimeType: 'text/html;profile=mcp-app',
+  _meta: { ui: { prefersBorder: true } },
+})
+async view() {
+  const html = '<!doctype html><html>…</html>'; // the view's page
+  return { contents: [{ uri: 'ui://dashboard/view.html', mimeType: 'text/html;profile=mcp-app', text: html }] };
+}
+```
+
+A read result's content items can also carry their own `_meta`.
+
+A template resource's `_meta` is listed with the template in `resources/templates/list`, and each resource its `listStrategy` returns gets its own copy in `resources/list`. A listed resource that has its own `_meta` keeps only that: it replaces the template's whole `_meta` rather than merging with it. A resource whose `_meta` is `undefined` counts as having none, so it gets the template's.
+
+Keys under a prefix the MCP spec reserves (one with a `modelcontextprotocol` or `mcp` label, such as `io.modelcontextprotocol/`) are advertised as given, with a warning at registration: the SDK may set the same keys.
+
+`_meta` is advertised, not enforced. An MCP Apps tool marked `_meta: { ui: { visibility: ['app'] } }` is hidden from the model only by hosts that read that field; this library's own `tools/list` still lists it, and any caller can call it. To keep a tool from callers, use `toolFilter` (see [Per-caller tool visibility](#per-caller-tool-visibility)).
+
+Tool visibility rules (`toolVisibility`, `toolFilter`) hide a tool and its `_meta`, but resources have no per-caller visibility: the `ui://` view a hidden tool names is still listed and readable by every caller. Keep anything a caller must not see out of a view's HTML.
+
 ### Resource annotations
 
 Resources can declare audience targeting, priority, and last modification time:
@@ -2141,12 +2175,12 @@ McpServerMetadata; // { name, version, description?, instructions? }
 McpServerBaseConfig; // { metadata, serverOptions?, capabilities? } — what McpModuleConfig and McpStdioConfig share
 McpExtraCapabilities; // ServerCapabilities without McpModuleCapabilityKey — the `capabilities` option's type
 McpModuleCapabilityKey; // 'logging' | 'tools' | 'resources' | 'prompts' — capability keys the modules build
-McpToolMetadata; // { name, description, title?, schema?, outputSchema?, aliases?, annotations?, icons? }
+McpToolMetadata; // { name, description, title?, schema?, outputSchema?, aliases?, annotations?, icons?, _meta? }
 McpToolAnnotations; // { readOnlyHint?, destructiveHint?, idempotentHint?, openWorldHint? }
 McpIcon; // { src: string, mimeType?, sizes?: string[], theme?: 'light' | 'dark' } — icon for tools/resources/prompts
-McpResourceMetadata; // { name, uri, title?, description?, mimeType?, size?, icons?, annotations?, isTemplate?, listStrategy?, completeStrategy? }
+McpResourceMetadata; // { name, uri, title?, description?, mimeType?, size?, icons?, annotations?, _meta?, isTemplate?, listStrategy?, completeStrategy? }
 McpResourceAnnotations; // { audience?, priority?, lastModified? } — annotations for resources
-McpPromptMetadata; // { name, title?, description?, argsSchema?, icons?, completeStrategy? }
+McpPromptMetadata; // { name, title?, description?, argsSchema?, icons?, _meta?, completeStrategy? }
 
 // Provider interfaces
 McpResourceListStrategy; // Interface — list() for resource template list callbacks

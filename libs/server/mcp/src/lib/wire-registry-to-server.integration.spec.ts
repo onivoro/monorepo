@@ -169,6 +169,51 @@ describe.each([
       expect(result.structuredContent).toEqual({ count: 3 });
     });
 
+    it('advertises tool and resource _meta, as MCP Apps links a tool to its view', async () => {
+      const uri = 'ui://app/view.html';
+      registry.registerTool(
+        {
+          name: 'show',
+          description: 'd',
+          _meta: { ui: { resourceUri: uri } },
+        },
+        async () => 'shown',
+      );
+      registry.registerResource(
+        {
+          name: 'view',
+          uri,
+          mimeType: 'text/html;profile=mcp-app',
+          _meta: { ui: { prefersBorder: true } },
+        },
+        async () => ({
+          contents: [
+            {
+              uri,
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>view</p>',
+              _meta: { ui: { csp: { resourceDomains: [] } } },
+            },
+          ],
+        }),
+      );
+
+      const { client } = await connect(registry);
+      const { tools } = await client.listTools();
+      const { resources } = await client.listResources();
+      const read = await client.readResource({ uri });
+
+      expect(tools.find((tool) => tool.name === 'show')?._meta).toEqual({
+        ui: { resourceUri: uri },
+      });
+      expect(resources.find((r) => r.uri === uri)?._meta).toEqual({
+        ui: { prefersBorder: true },
+      });
+      expect(read.contents[0]._meta).toEqual({
+        ui: { csp: { resourceDomains: [] } },
+      });
+    });
+
     it('shows the client messages written for it, and hides others when exposeErrorMessages is off', async () => {
       registry.setExposeErrorMessages(false);
       registry.registerTool({ name: 'safe', description: 'd' }, async () => {
@@ -276,6 +321,46 @@ describe.each([
 
       expect(seen.params).toEqual({ anything: 1 });
       expect(seen.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it("lists a template's _meta, and lets a listed resource's own _meta replace it", async () => {
+      class ItemList {
+        list() {
+          return {
+            resources: [
+              { uri: 'app://items/1', name: 'Item 1' },
+              { uri: 'app://items/2', name: 'Item 2', _meta: { own: true } },
+            ],
+          };
+        }
+      }
+      registry.setProviderResolver(() => new ItemList());
+      registry.registerResource(
+        {
+          name: 'item',
+          uri: 'app://items/{id}',
+          isTemplate: true,
+          listStrategy: ItemList as any,
+          _meta: { shared: true },
+        },
+        async () => 'item',
+      );
+      registry.registerPrompt(
+        { name: 'report', _meta: { 'acme/kind': 'report' } },
+        async () => 'prompt',
+      );
+
+      const { client } = await connect(registry);
+      const { resourceTemplates } = await client.listResourceTemplates();
+      const { resources } = await client.listResources();
+      const { prompts } = await client.listPrompts();
+
+      expect(resourceTemplates[0]._meta).toEqual({ shared: true });
+      expect(resources.map((r) => r._meta)).toEqual([
+        { shared: true },
+        { own: true },
+      ]);
+      expect(prompts[0]._meta).toEqual({ 'acme/kind': 'report' });
     });
 
     it("passes resource and prompt handlers the library context, not the SDK's", async () => {

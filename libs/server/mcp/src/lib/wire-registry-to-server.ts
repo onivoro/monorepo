@@ -10,6 +10,7 @@ import type {
   RegisteredTool,
   ServerContext,
 } from '@modelcontextprotocol/server';
+import { Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { McpToolRegistry } from './mcp-tool-registry';
 import type { McpLogLevel } from './mcp-log-level';
@@ -18,6 +19,61 @@ import type { McpProtocolEra } from './mcp-protocol-era';
 import type { McpHandlerContext } from './mcp-handler-context';
 import { wrapResourceResult } from './wrap-resource-result';
 import { wrapPromptResult } from './wrap-prompt-result';
+
+/**
+ * A `_meta` key under a prefix the MCP spec reserves: a dotted prefix with a
+ * `modelcontextprotocol` or `mcp` label, such as `io.modelcontextprotocol/`.
+ */
+const RESERVED_META_KEY =
+  /^(?:[a-z0-9-]+\.)*(?:modelcontextprotocol|mcp)(?:\.[a-z0-9-]+)*\//i;
+
+const metaWarned = new Set<string>();
+
+/**
+ * Warns, once per registration, about `_meta` keys under a reserved prefix:
+ * the SDK and the spec set those themselves, so a server's own can clash.
+ * They are still advertised as given.
+ */
+function warnReservedMetaKeys(
+  kind: 'tool' | 'resource' | 'prompt',
+  name: string,
+  meta: Record<string, unknown> | undefined,
+): void {
+  const reserved = Object.keys(meta ?? {}).filter((key) =>
+    RESERVED_META_KEY.test(key),
+  );
+  const id = `${kind}:${name}`;
+  if (!reserved.length || metaWarned.has(id)) return;
+  metaWarned.add(id);
+  new Logger('McpToolRegistry').warn(
+    `The ${kind} "${name}" sets _meta keys under a prefix the MCP spec reserves (${reserved.join(', ')}); the SDK may set the same keys.`,
+  );
+}
+
+/**
+ * The resources a template's `listStrategy` returned, each with its own
+ * `_meta` or, when it has none, its own copy of the template's. The SDK
+ * spreads a listed resource over the template's metadata, so a resource
+ * carrying `_meta: undefined` would otherwise wipe the template's, and every
+ * resource without one would share the template's object.
+ */
+function withTemplateMeta(
+  listed: unknown,
+  templateMeta: Record<string, unknown> | undefined,
+): unknown {
+  const resources = (listed as { resources?: unknown })?.resources;
+  if (!Array.isArray(resources)) return listed;
+  return {
+    ...(listed as object),
+    resources: resources.map((resource: Record<string, unknown>) => {
+      if (resource?._meta !== undefined) return resource;
+      const { _meta: _unset, ...rest } = resource ?? {};
+      return templateMeta
+        ? { ...rest, _meta: structuredClone(templateMeta) }
+        : rest;
+    }),
+  };
+}
 
 /** The input schema of a tool that declares none: any object, passed through as is. */
 const ANY_INPUT_SCHEMA = z.looseObject({});
@@ -191,6 +247,7 @@ function wireToolToServer(
   if (!entry) return;
   const { metadata } = entry;
 
+  warnReservedMetaKeys('tool', metadata.name, metadata._meta);
   const registered = server.registerTool(
     metadata.name,
     {
@@ -202,6 +259,7 @@ function wireToolToServer(
       ...(metadata.title && { title: metadata.title }),
       ...(metadata.annotations && { annotations: metadata.annotations }),
       ...(metadata.icons && { icons: metadata.icons }),
+      ...(metadata._meta && { _meta: metadata._meta }),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (params: any, ctx: ServerContext) => {
@@ -254,12 +312,15 @@ function wireResourceToServer(
   if (metadata.icons) resourceConfig['icons'] = metadata.icons;
   if (metadata.annotations)
     resourceConfig['annotations'] = metadata.annotations;
+  if (metadata._meta) resourceConfig['_meta'] = metadata._meta;
+  warnReservedMetaKeys('resource', metadata.name, metadata._meta);
 
   if (metadata.isTemplate) {
     let listCallback: ((...args: any[]) => any) | undefined;
     if (metadata.listStrategy) {
       const provider = registry.resolveProvider(metadata.listStrategy);
-      listCallback = () => provider.list();
+      listCallback = async () =>
+        withTemplateMeta(await provider.list(), metadata._meta);
     }
 
     let completeCallbacks:
@@ -354,6 +415,7 @@ function wirePromptToServer(
   const { metadata, handler } = entry;
   const argsSchema = promptArgsSchema(registry, metadata);
 
+  warnReservedMetaKeys('prompt', metadata.name, metadata._meta);
   server.registerPrompt(
     metadata.name,
     {
@@ -361,6 +423,7 @@ function wirePromptToServer(
       ...(argsSchema && { argsSchema: argsSchema as any }),
       ...(metadata.title && { title: metadata.title }),
       ...(metadata.icons && { icons: metadata.icons }),
+      ...(metadata._meta && { _meta: metadata._meta }),
     },
     // The SDK calls `(args, ctx)` for a prompt with arguments and `(ctx)` for one without.
     (async (...sdkArgs: any[]) => {
