@@ -874,7 +874,11 @@ async view() {
 
 A read result's content items can also carry their own `_meta`.
 
-A template resource's `_meta` is listed with the template in `resources/templates/list`, and copied onto each resource its `listStrategy` returns in `resources/list`. A listed resource that has its own `_meta` keeps only that: it replaces the template's whole `_meta` rather than merging with it.
+A template resource's `_meta` is listed with the template in `resources/templates/list`, and each resource its `listStrategy` returns gets its own copy in `resources/list`. A listed resource that has its own `_meta` keeps only that: it replaces the template's whole `_meta` rather than merging with it. A resource whose `_meta` is `undefined` counts as having none, so it gets the template's.
+
+Keys under a prefix the MCP spec reserves (one with a `modelcontextprotocol` or `mcp` label, such as `io.modelcontextprotocol/`) are advertised as given, with a warning at registration: the SDK may set the same keys.
+
+`_meta` is advertised, not enforced. An MCP Apps tool marked `_meta: { ui: { visibility: ['app'] } }` is hidden from the model only by hosts that read that field; this library's own `tools/list` still lists it, and any caller can call it. To keep a tool from callers, use `toolFilter` (see [Per-caller tool visibility](#per-caller-tool-visibility)).
 
 Tool visibility rules (`toolVisibility`, `toolFilter`) hide a tool and its `_meta`, but resources have no per-caller visibility: the `ui://` view a hidden tool names is still listed and readable by every caller. Keep anything a caller must not see out of a view's HTML.
 
