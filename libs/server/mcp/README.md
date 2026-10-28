@@ -880,7 +880,9 @@ Keys under a prefix the MCP spec reserves (one with a `modelcontextprotocol` or 
 
 `_meta` is advertised, not enforced. An MCP Apps tool marked `_meta: { ui: { visibility: ['app'] } }` is hidden from the model only by hosts that read that field; this library's own `tools/list` still lists it, and any caller can call it. To keep a tool from callers, use `toolFilter` (see [Per-caller tool visibility](#per-caller-tool-visibility)).
 
-Tool visibility rules (`toolVisibility`, `toolFilter`) hide a tool and its `_meta`, but resources have no per-caller visibility: the `ui://` view a hidden tool names is still listed and readable by every caller. Keep anything a caller must not see out of a view's HTML.
+With tool visibility rules (`toolVisibility`, `toolFilter`), a resource that tools name as their MCP Apps view (`_meta.ui.resourceUri`, or the older `_meta['ui/resourceUri']`) is as visible as those tools. For a caller who may see none of them, `resources/list` leaves it out, `resources/read` refuses it as an unknown resource, and a 2025-era `resources/subscribe` to it is refused the same way. URIs are compared as the SDK looks them up (`new URL(uri).toString()`), so `UI://…` or `…/./…` spellings are caught too. This also covers views registered on the server outside the registry, and the concrete URIs a template's `listStrategy` returns.
+
+A resource no tool names, and the entries in `resources/templates/list`, are visible to every caller, so keep anything a caller must not see out of those. Visibility, not whether a tool is enabled, decides: a view named only by a visible but disabled tool stays readable. A 2026-07-28 client's `subscriptions/listen` stream is served by the SDK and isn't filtered, so a caller listening for a hidden view's URI learns when it changes (not its content).
 
 ### Resource annotations
 
