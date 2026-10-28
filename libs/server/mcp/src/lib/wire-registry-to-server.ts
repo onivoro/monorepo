@@ -4,6 +4,7 @@ import {
   McpServer,
   ProtocolError,
   ProtocolErrorCode,
+  ResourceNotFoundError,
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
 import type {
@@ -468,6 +469,112 @@ function assertCanEnforceToolVisibility(server: McpServer): ServerHandlerHooks {
 }
 
 /**
+ * Stores `handler` as the server's handler for `method`. `setRequestHandler` stores what the
+ * server's `_wrapHandler` returns; for this one call that is the check itself, not the
+ * validating, wrapping layers it would add around it. Any `_wrapHandler` of the instance's
+ * own is put back afterwards.
+ */
+function installCheck(
+  server: McpServer,
+  method: 'tools/list' | 'tools/call' | 'resources/list' | 'resources/read',
+  handler: (request: any, ctx: ServerContext) => Promise<any>,
+): void {
+  const target = server.server as any;
+  const own = Object.getOwnPropertyDescriptor(target, '_wrapHandler');
+  target._wrapHandler = () => handler;
+  try {
+    server.server.setRequestHandler(method, handler as any);
+  } finally {
+    if (own) Object.defineProperty(target, '_wrapHandler', own);
+    else delete target._wrapHandler;
+  }
+}
+
+/** The MCP Apps view a tool names: `_meta.ui.resourceUri`, or the older `_meta['ui/resourceUri']`. */
+function viewUriOf(
+  meta: Record<string, unknown> | undefined,
+): string | undefined {
+  const ui = meta?.['ui'] as { resourceUri?: unknown } | undefined;
+  const uri = ui?.resourceUri ?? meta?.['ui/resourceUri'];
+  return typeof uri === 'string' ? uri : undefined;
+}
+
+/**
+ * Puts a check in front of the SDK's own `resources/list` and `resources/read` handlers, so a
+ * resource that registry tools name as their MCP Apps view (`_meta.ui.resourceUri`) is seen
+ * only by a request that may see at least one of those tools:
+ *
+ * - `resources/list` is the SDK's answer, without the views the request may not see.
+ * - `resources/read` of such a view fails as for a resource that doesn't exist.
+ *
+ * Returns whether the checks are in place: the SDK installs its resource handlers with the
+ * server's first resource. A resource no tool names is left alone, as are resource
+ * templates. Decided per request from
+ * the same visibility the tools use (`McpToolRegistry.resolveToolVisibility`).
+ */
+function enforceViewVisibility(
+  registry: McpToolRegistry,
+  server: McpServer,
+): boolean {
+  const hooks = assertCanEnforceToolVisibility(server);
+  const sdkList = hooks._getRequestHandler('resources/list');
+  const sdkRead = hooks._getRequestHandler('resources/read');
+  if (!sdkList || !sdkRead) return false;
+
+  // The tools that name each view, read at request time so later registrations count.
+  const namingTools = (uri: string) =>
+    registry
+      .getTools()
+      .filter(({ metadata }) => viewUriOf(metadata._meta) === uri)
+      .map(({ metadata }) => metadata.name);
+
+  // Whether a request may see `uri`: yes when no tool names it, or one that does is visible.
+  const canSee = async (
+    uri: string,
+    isVisible: ((name: string) => Promise<boolean>) | undefined,
+  ) => {
+    const tools = namingTools(uri);
+    if (!tools.length || !isVisible) return true;
+    const decisions = await Promise.all(tools.map((name) => isVisible(name)));
+    return decisions.some(Boolean);
+  };
+
+  const visibilityFor = (ctx: ServerContext | undefined) => {
+    const authInfo = ctx?.http?.authInfo;
+    return registry.resolveToolVisibility(authInfo && { ...(authInfo as any) });
+  };
+
+  installCheck(server, 'resources/list', async (request, ctx) => {
+    const [isVisible, result] = await Promise.all([
+      visibilityFor(ctx),
+      sdkList(request, ctx),
+    ]);
+    if (!isVisible) return result;
+    const decisions = await Promise.all(
+      (result.resources as Array<{ uri: string }>).map((resource) =>
+        canSee(resource.uri, isVisible),
+      ),
+    );
+    return {
+      ...result,
+      resources: result.resources.filter(
+        (_: unknown, i: number) => decisions[i],
+      ),
+    };
+  });
+
+  installCheck(server, 'resources/read', async (request, ctx) => {
+    const uri = request.params?.uri;
+    if (typeof uri === 'string' && namingTools(uri).length) {
+      const isVisible = await visibilityFor(ctx);
+      if (!(await canSee(uri, isVisible))) throw new ResourceNotFoundError(uri);
+    }
+    return sdkRead(request, ctx);
+  });
+  return true;
+}
+
+/**
  * Puts a check in front of the SDK's own `tools/list` and `tools/call` handlers on `server`,
  * so each request sees only the registry tools it may see (`McpToolRegistry.setToolVisibility`),
  * decided from that request's own auth:
@@ -510,23 +617,10 @@ function enforceToolVisibility(
     return registry.resolveToolVisibility(authInfo && { ...(authInfo as any) });
   };
 
-  // `setRequestHandler` stores what the server's `_wrapHandler` returns; for this one call
-  // that is the check itself, not the validating, wrapping layers it would add around it.
-  // Any `_wrapHandler` of the instance's own is put back afterwards.
   const install = (
     method: 'tools/list' | 'tools/call',
     handler: (request: any, ctx: ServerContext) => Promise<any>,
-  ) => {
-    const target = server.server as any;
-    const own = Object.getOwnPropertyDescriptor(target, '_wrapHandler');
-    target._wrapHandler = () => handler;
-    try {
-      server.server.setRequestHandler(method, handler as any);
-    } finally {
-      if (own) Object.defineProperty(target, '_wrapHandler', own);
-      else delete target._wrapHandler;
-    }
-  };
+  ) => installCheck(server, method, handler);
 
   install('tools/list', async (request, ctx) => {
     const [isVisible, result] = await Promise.all([
@@ -640,8 +734,17 @@ export function wireRegistryToServer(
     wireTool(metadata.name);
   }
 
+  // With visibility rules, a tool's MCP Apps view is as visible as the tools that name it
+  // (enforced once the server has a resource, and so the SDK's resource handlers).
+  let enforcingViews = false;
+  const wireResource = (name: string) => {
+    wireResourceToServer(registry, server, name, wiring);
+    if (!enforcesVisibility || enforcingViews) return;
+    enforcingViews = enforceViewVisibility(registry, server);
+  };
+
   for (const { metadata } of registry.getResources()) {
-    wireResourceToServer(registry, server, metadata.name, wiring);
+    wireResource(metadata.name);
   }
 
   for (const { metadata } of registry.getPrompts()) {
@@ -729,7 +832,7 @@ export function wireRegistryToServer(
           wireTool(name);
           break;
         case 'resource':
-          wireResourceToServer(registry, server, name, wiring);
+          wireResource(name);
           break;
         case 'prompt':
           wirePromptToServer(registry, server, name, wiring);

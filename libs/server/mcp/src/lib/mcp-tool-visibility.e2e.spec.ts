@@ -13,6 +13,7 @@ import type { AddressInfo } from 'net';
 import * as http from 'http';
 import { McpHttpModule } from './mcp-http.module';
 import { McpTool } from './mcp-tool.decorator';
+import { McpResource } from './mcp-resource.decorator';
 import { McpGuard } from './mcp-guard.decorator';
 import { McpScopeGuard } from './mcp-scope-guard';
 import { McpToolRegistry } from './mcp-tool-registry';
@@ -79,16 +80,40 @@ const adminCalls: string[] = [];
 
 @Injectable()
 class VisibilityToolService {
-  @McpTool({ name: 'public', description: 'Anyone' })
+  @McpTool({
+    name: 'public',
+    description: 'Anyone',
+    _meta: { ui: { resourceUri: 'ui://public/view.html' } },
+  })
   async public() {
     return 'public';
   }
 
-  @McpTool({ name: 'admin-only', description: 'Admins only' })
+  @McpTool({
+    name: 'admin-only',
+    description: 'Admins only',
+    _meta: { ui: { resourceUri: 'ui://admin/view.html' } },
+  })
   @McpGuard(McpScopeGuard, { scopes: ['admin'] })
   async adminOnly() {
     adminCalls.push('admin-only');
     return 'admin';
+  }
+
+  // The MCP Apps views the two tools name, and a resource no tool names.
+  @McpResource({ name: 'public-view', uri: 'ui://public/view.html' })
+  async publicView() {
+    return '<p>public</p>';
+  }
+
+  @McpResource({ name: 'admin-view', uri: 'ui://admin/view.html' })
+  async adminView() {
+    return '<p>admin</p>';
+  }
+
+  @McpResource({ name: 'notes', uri: 'app://notes' })
+  async notes() {
+    return 'notes';
   }
 }
 
@@ -129,6 +154,10 @@ async function connect(url: URL, mode: 'auto' | 'legacy', token: string) {
 
 async function toolNames(client: Client): Promise<string[]> {
   return (await client.listTools()).tools.map((tool) => tool.name).sort();
+}
+
+async function resourceUris(client: Client): Promise<string[]> {
+  return (await client.listResources()).resources.map((r) => r.uri).sort();
 }
 
 describe('Per-caller tool visibility over HTTP', () => {
@@ -177,6 +206,34 @@ describe('Per-caller tool visibility over HTTP', () => {
             arguments: {},
           });
           expect(result.content[0].text).toBe('admin');
+          await client.close();
+        });
+
+        it("hides the admin tool's view from an agent token, and refuses to read it", async () => {
+          const client = await connect(url, mode, 'agent-token');
+          expect(await resourceUris(client)).toEqual([
+            'app://notes',
+            'ui://public/view.html',
+          ]);
+          await expect(
+            client.readResource({ uri: 'ui://admin/view.html' }),
+          ).rejects.toThrow(/not found/i);
+          await client.close();
+        });
+
+        it("lists and serves the admin tool's view to an admin token", async () => {
+          const client = await connect(url, mode, 'admin-token');
+          expect(await resourceUris(client)).toEqual([
+            'app://notes',
+            'ui://admin/view.html',
+            'ui://public/view.html',
+          ]);
+          const read = await client.readResource({
+            uri: 'ui://admin/view.html',
+          });
+          expect((read.contents[0] as { text: string }).text).toBe(
+            '<p>admin</p>',
+          );
           await client.close();
         });
 
