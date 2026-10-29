@@ -2149,7 +2149,7 @@ wrapPromptResult; // Auto-wrap raw handler return → McpPromptResult
 // Route utilities
 PROTECTED_RESOURCE_WILDCARD; // '*resourcePath' or ':resourcePath(*)', for the installed Nest
 protectedResourceWildcardRoute; // (nestVersion) => '*resourcePath' (Nest 11+) or ':resourcePath(*)' (Nest 10)
-wildcardParamToPath; // (string | string[] | undefined) => path string; joins Nest 11 segments with '/', drops trailing slashes
+wildcardParamToPath; // (string | string[] | undefined) => path string; joins Nest 11 segments with '/', drops trailing slashes. Type your @Param as `string` anyway; see "Serving the path-derived PRM route yourself"
 
 // SDK re-exports (from @modelcontextprotocol/server; the same objects, not wrappers)
 McpServer; // The SDK's server class, for custom transports

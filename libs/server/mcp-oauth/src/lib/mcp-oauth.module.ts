@@ -6,6 +6,7 @@ import {
   Logger,
   Module,
   Options,
+  Param,
   Post,
   Req,
   Res,
@@ -125,6 +126,11 @@ function createProtectedResourceController() {
 
     @Get(PROTECTED_RESOURCE_WILDCARD)
     async handlePathProtectedResourceGet(
+      // Unused: the router reads the path itself. Declared so @nestjs/swagger
+      // describes the `{resourcePath}` its path names - without it, OpenAPI
+      // client generators reject the document. Typed `string` because a union
+      // emits `Object` as the design type, which swagger leaves out too.
+      @Param('resourcePath') _resourcePath: string,
       @Req() req: Request,
       @Res() res: Response,
     ) {
@@ -133,6 +139,8 @@ function createProtectedResourceController() {
 
     @Options(PROTECTED_RESOURCE_WILDCARD)
     async handlePathProtectedResourceOptions(
+      // Declared for @nestjs/swagger; see handlePathProtectedResourceGet.
+      @Param('resourcePath') _resourcePath: string,
       @Req() req: Request,
       @Res() res: Response,
     ) {

@@ -328,6 +328,7 @@ The package test suite covers:
 - `resourceIdentifier` enforcement, and the startup check that `configureJwt()` has an audience check
 - Protected Resource Metadata route modes
 - the path-derived PRM route over real HTTP on Nest 10, including a trailing slash. Nest 11 is checked by the repository's `npm run smoke:nest11`, which runs locally, not in CI
+- the OpenAPI document `@nestjs/swagger` builds for an app serving the path-derived PRM route declares its `resourcePath` path parameter, which OpenAPI client generators require. On Nest 11, with `@nestjs/swagger` 11, `npm run smoke:nest11` checks the same
 - config validation
 - composition with `McpHttpModule` for real HTTP `401` challenges, for a missing token and for one the strategy rejects
 

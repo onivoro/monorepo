@@ -376,6 +376,7 @@ The package test suite covers the following, using a mocked SDK router except wh
 - composition with unprotected and protected MCP routes
 - config URL validation
 - the path-based PRM route on Nest 10. Nest 11 (GET and OPTIONS) is checked by the repository's `npm run smoke:nest11`, which runs locally, not in CI
+- the OpenAPI document `@nestjs/swagger` builds for an app serving the path-based PRM route declares its `resourcePath` path parameter on GET and OPTIONS, which OpenAPI client generators require. On Nest 11, with `@nestjs/swagger` 11, `npm run smoke:nest11` checks the same
 
 ## Troubleshooting
 
