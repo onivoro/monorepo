@@ -35,7 +35,12 @@ export class McpProtectedResourceController {
 
   @Get(`oauth-protected-resource/${PROTECTED_RESOURCE_WILDCARD}`)
   getPathProtectedResourceMetadata(
-    @Param('resourcePath') resourcePath: string | string[] | undefined,
+    // Nest 11 passes the wildcard's segments as an array, which
+    // wildcardParamToPath joins. Typed `string` all the same: a union emits
+    // `Object` as the design type, and @nestjs/swagger then leaves the
+    // parameter out of the document while keeping `{resourcePath}` in the
+    // path, which OpenAPI client generators reject.
+    @Param('resourcePath') resourcePath: string,
   ): Record<string, unknown> {
     this.assertMetadataRouteEnabled('path');
     this.assertResourcePathMatch(wildcardParamToPath(resourcePath));
