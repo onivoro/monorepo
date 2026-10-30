@@ -4,6 +4,10 @@ import { McpScopeRegistry } from './mcp-scope-registry';
 import { MCP_AUTH_CONFIG } from './mcp-auth-config-token';
 import type { McpAuthConfig } from './mcp-auth-config';
 
+// Nest 11 passes the wildcard as a segment array, though the handler types it
+// `string` so @nestjs/swagger can describe it.
+const nest11Segments = (...segments: string[]) => segments as unknown as string;
+
 describe('McpProtectedResourceController', () => {
   function createController(config: McpAuthConfig, scopes: string[] = []) {
     const mockScopeRegistry = {
@@ -115,7 +119,9 @@ describe('McpProtectedResourceController', () => {
       resourceServerUrl: 'https://api.example.com/api/mcp',
     });
 
-    const result = controller.getPathProtectedResourceMetadata(['api', 'mcp']);
+    const result = controller.getPathProtectedResourceMetadata(
+      nest11Segments('api', 'mcp'),
+    );
     expect(result['resource']).toBe('https://api.example.com/api/mcp');
   });
 
@@ -127,9 +133,9 @@ describe('McpProtectedResourceController', () => {
     });
 
     expect(
-      controller.getPathProtectedResourceMetadata(['api', 'mcp', ''])[
-        'resource'
-      ],
+      controller.getPathProtectedResourceMetadata(
+        nest11Segments('api', 'mcp', ''),
+      )['resource'],
     ).toBe('https://api.example.com/api/mcp/');
     expect(
       controller.getPathProtectedResourceMetadata('api/mcp')['resource'],

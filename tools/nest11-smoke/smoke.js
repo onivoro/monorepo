@@ -1,10 +1,12 @@
 // Serves the protected-resource metadata routes of the built MCP libraries on
-// Nest 11 and checks what each path answers. The repo's own tests run on
-// Nest 10. Run from the repo root with `npm run smoke:nest11`.
+// Nest 11 and checks what each path answers, and that the OpenAPI document
+// @nestjs/swagger 11 builds declares the wildcard's parameter. The repo's own
+// tests run on Nest 10. Run from the repo root with `npm run smoke:nest11`.
 require('reflect-metadata');
 const assert = require('node:assert/strict');
 const { Module } = require('@nestjs/common');
 const { NestFactory } = require('@nestjs/core');
+const { DocumentBuilder, SwaggerModule } = require('@nestjs/swagger');
 const {
   McpHttpModule,
   PROTECTED_RESOURCE_WILDCARD,
@@ -32,7 +34,40 @@ const oauthProvider = {
 
 let failures = 0;
 
-async function withApp(name, imports, globalPrefix, checks) {
+/**
+ * Client generators reject a path that names `{resourcePath}` without a
+ * parameter declaring it, which is what swagger builds for a handler that
+ * does not declare the parameter or types it as a union.
+ */
+function checkOpenApi(name, app, expectedPath) {
+  const label = `${name}: OpenAPI ${expectedPath}`;
+  try {
+    const { paths } = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().build(),
+    );
+    const operations = Object.entries(paths[expectedPath] ?? {});
+    assert.ok(operations.length, `no operations at ${expectedPath}`);
+    for (const [method, operation] of operations) {
+      assert.ok(
+        (operation.parameters ?? []).some(
+          (_) => _.name === 'resourcePath' && _.in === 'path' && _.required,
+        ),
+        `${method.toUpperCase()} does not declare resourcePath`,
+      );
+    }
+    console.log(
+      `  ok    ${label} declares resourcePath on ${operations
+        .map(([method]) => method.toUpperCase())
+        .join(', ')}`,
+    );
+  } catch (error) {
+    failures++;
+    console.log(`  FAIL  ${label}: ${error.message}`);
+  }
+}
+
+async function withApp(name, imports, globalPrefix, checks, openApiPath) {
   class SmokeAppModule {}
   Module({ imports })(SmokeAppModule);
   const app = await NestFactory.create(SmokeAppModule, {
@@ -43,6 +78,10 @@ async function withApp(name, imports, globalPrefix, checks) {
   }
   await app.listen(0, '127.0.0.1');
   const baseUrl = `http://127.0.0.1:${app.getHttpServer().address().port}`;
+
+  if (openApiPath) {
+    checkOpenApi(name, app, openApiPath);
+  }
 
   try {
     for (const [
@@ -114,6 +153,7 @@ async function main() {
       ['GET', `${prm}/other`, 404],
       ['GET', `${prm}//mcp`, 404],
     ],
+    `${prm}/{resourcePath}`,
   );
 
   await withApp(
@@ -129,6 +169,7 @@ async function main() {
       ],
       ['GET', `/api${prm}/api/internal`, 404],
     ],
+    `/api${prm}/{resourcePath}`,
   );
 
   await withApp(
@@ -145,6 +186,7 @@ async function main() {
       ['GET', `${prm}/mcp`, 200, 'https://api.example.com/mcp'],
       ['OPTIONS', `${prm}/mcp`, 204],
     ],
+    `${prm}/{resourcePath}`,
   );
 
   // Express 5's JSON parser leaves req.body unset for a POST that isn't JSON, which the

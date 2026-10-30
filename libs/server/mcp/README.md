@@ -1637,6 +1637,8 @@ Route examples:
 - `protectedResourceWildcardRoute(nestVersion)` returns `'*resourcePath'` when the major version of `nestVersion` is 11 or higher, and `':resourcePath(*)'` otherwise. Use it to pick the syntax for a version you supply yourself. The parameter is always named `resourcePath`.
 - `wildcardParamToPath(value)` turns the matched parameter into a path. Nest 10 passes a string and Nest 11 an array of segments, which are joined with `/`. Trailing slashes are removed, so `api/mcp/` becomes `api/mcp`; leading and doubled slashes are kept. `undefined` becomes `''`.
 
+Type the parameter as `string` even though Nest 11 passes an array. A union type compiles to `Object` as the parameter's design type, and `@nestjs/swagger` then leaves the parameter out of the OpenAPI document while keeping `{resourcePath}` in the path. OpenAPI client generators reject that document.
+
 ```typescript
 import { Controller, Get, Param } from '@nestjs/common';
 import { PROTECTED_RESOURCE_WILDCARD, wildcardParamToPath } from '@onivoro/server-mcp';
@@ -1644,7 +1646,7 @@ import { PROTECTED_RESOURCE_WILDCARD, wildcardParamToPath } from '@onivoro/serve
 @Controller('.well-known')
 export class MyProtectedResourceController {
   @Get(`oauth-protected-resource/${PROTECTED_RESOURCE_WILDCARD}`)
-  getMetadata(@Param('resourcePath') resourcePath: string | string[] | undefined) {
+  getMetadata(@Param('resourcePath') resourcePath: string) {
     const path = wildcardParamToPath(resourcePath); // e.g. 'api/mcp'
     // ...
   }
@@ -2147,7 +2149,7 @@ wrapPromptResult; // Auto-wrap raw handler return → McpPromptResult
 // Route utilities
 PROTECTED_RESOURCE_WILDCARD; // '*resourcePath' or ':resourcePath(*)', for the installed Nest
 protectedResourceWildcardRoute; // (nestVersion) => '*resourcePath' (Nest 11+) or ':resourcePath(*)' (Nest 10)
-wildcardParamToPath; // (string | string[] | undefined) => path string; joins Nest 11 segments with '/', drops trailing slashes
+wildcardParamToPath; // (string | string[] | undefined) => path string; joins Nest 11 segments with '/', drops trailing slashes. Type your @Param as `string` anyway; see "Serving the path-derived PRM route yourself"
 
 // SDK re-exports (from @modelcontextprotocol/server; the same objects, not wrappers)
 McpServer; // The SDK's server class, for custom transports
