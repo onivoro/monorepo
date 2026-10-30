@@ -1,6 +1,6 @@
 {
   "name": "@onivoro/server-mcp-audit",
-  "version": "25.5.0",
+  "version": "25.6.0",
   "description": "Audit interception for MCP tool calls: who called what, with which arguments, and how it ended",
   "license": "MIT",
   "type": "commonjs",
@@ -35,7 +35,7 @@
   },
   "peerDependencies": {
     "@nestjs/common": "^10.0.0 || ^11.0.0",
-    "@onivoro/server-mcp": "^25.5.0"
+    "@onivoro/server-mcp": "^25.6.0"
   },
   "files": [
     "**/*.js",
